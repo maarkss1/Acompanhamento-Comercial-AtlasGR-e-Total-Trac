@@ -4117,11 +4117,15 @@ async function construirDadosModeloForecast(webhook, meta, inicio, fim, dealsCom
     return (n.includes("contrato assinado")||(x.SEMANTICA==="success"&&n.includes("assin"))) &&
       dataDentroFaixa(x.DATA_MOVIMENTO,inicio,fim);
   });
+  // v12 — "Pendentes Assinatura" e "Pipeline Aberto" no modelo visual mostram só
+  // negócios parados na etapa atual há no máximo 60 dias, e nunca estágios "Piloto".
+  const dentroJanela60d=(x)=>x.DIAS_NO_ESTAGIO!==""&&x.DIAS_NO_ESTAGIO<=60;
   const pendentes=financeiro.filter((x)=>{
     const n=normalizarTextoChave(x.ESTAGIO);
-    return x.SEMANTICA==="process" && (n.includes("aguardando assinatura")||n.includes("analise de documentos")||n.includes("assinatura de contrato")) && !n.includes("contrato assinado");
+    return x.SEMANTICA==="process" && (n.includes("aguardando assinatura")||n.includes("analise de documentos")||n.includes("assinatura de contrato")) && !n.includes("contrato assinado")
+      && !ehEstagioPiloto(null,x.ESTAGIO) && dentroJanela60d(x);
   });
-  const pipeline=comercial.filter((x)=>x.SEMANTICA==="process"&&!ehEstagioPiloto(null,x.ESTAGIO));
+  const pipeline=comercial.filter((x)=>x.SEMANTICA==="process"&&!ehEstagioPiloto(null,x.ESTAGIO)&&dentroJanela60d(x));
   const porVend=(rows)=>{
     const m={};rows.forEach((x)=>{const k=x.RESPONSAVEL;if(!m[k])m[k]={RESPONSAVEL:k,VALOR:0,NEGOCIOS:0,CLIENTES:new Set()};m[k].VALOR+=x.VALOR;m[k].NEGOCIOS++;m[k].CLIENTES.add(x.CLIENTE_KEY)});
     return Object.values(m).map((x)=>({RESPONSAVEL:x.RESPONSAVEL,VALOR:x.VALOR,NEGOCIOS:x.NEGOCIOS,CLIENTES:x.CLIENTES.size})).sort((a,b)=>b.VALOR-a.VALOR);
@@ -4175,7 +4179,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto →</div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
   `<div class="kpi"><div class="label">Meta</div><div class="value ${meta?"":"meta-missing"}">${meta?moedaRelatorio(meta):"A definir"}</div><div class="small">${meta?"informada no extrator":"não informada"}</div></div></div></div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
-  `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix.</p><div class="top3grid">`+
+  `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p><div class="top3grid">`+
   `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado")).join("")}</div></div></details>`+
   `<details class="vcard section-card" id="detail-pendentes"><summary><span class="vcard-name">⏳ Pendentes Assinatura</span><span class="vcard-stats">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)} · ${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="month-list">${mesesForecastModelo(r.pendentes,"pendente",false)}</div></div></details>`+
   `<details class="vcard section-card" id="detail-forecast"><summary><span class="vcard-name">📈 Pipeline Aberto — Forecast</span><span class="vcard-stats">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)} · ${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_pipeline)}<div class="month-list">${mesesForecastModelo(r.pipeline,"pipeline",true)}</div></div></details>`+
