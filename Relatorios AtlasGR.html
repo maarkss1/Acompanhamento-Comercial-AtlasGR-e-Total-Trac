@@ -367,6 +367,56 @@
     color: var(--ink-2);
     line-height: 1.35;
   }
+  .meta-progress-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0 0 16px;
+  }
+  .meta-progress-row {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: var(--surface);
+  }
+  .meta-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink);
+    flex-wrap: wrap;
+  }
+  .meta-progress-valores {
+    font-weight: 600;
+    color: var(--ink-2);
+    font-size: 12px;
+  }
+  .meta-progress-track {
+    margin-top: 8px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .meta-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--brand), var(--gold));
+    transition: width .3s ease;
+  }
+  .meta-progress-fill.bateu {
+    background: linear-gradient(90deg, var(--ok), #37c98a);
+  }
+  .meta-progress-status {
+    margin-top: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .meta-progress-status.ok { color: var(--ok); }
+  .meta-progress-status.pendente { color: var(--ink-2); }
   .relatorio-subtitulo {
     margin: 18px 0 7px;
     font-size: 13px;
@@ -487,6 +537,8 @@
   .workspace-title { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; margin-bottom:10px; }
   .workspace-title h2 { margin:0; font-size:17px; letter-spacing:-.025em; }
   .workspace-title p { margin:4px 0 0; color:var(--ink-2); font-size:12px; }
+  .quick-report-grupo { margin-bottom:18px; }
+  .quick-report-grupo h3 { margin:0 0 10px; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--brand); }
   .quick-report-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
   .quick-report-card { text-align:left; background:var(--surface)!important; color:var(--ink)!important; border:1px solid var(--line)!important; box-shadow:var(--shadow-soft-forecast)!important; border-radius:13px!important; padding:15px!important; min-height:98px; position:relative; overflow:hidden; }
   .quick-report-card::before { content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--brand),var(--gold)); }
@@ -746,10 +798,13 @@
 
   <section class="workspace-intro" id="inicio">
     <div class="workspace-title">
-      <div><h2>Comece pelo que você quer descobrir</h2><p>Os atalhos abaixo configuram o relatório e o período automaticamente. Você ainda pode ajustar tudo depois.</p></div>
+      <div><h2>Comece pelo que você quer descobrir</h2><p>Um card para cada relatório que pode ser gerado. Clique em qualquer um para configurar o relatório e o período automaticamente — você ainda pode ajustar tudo depois.</p></div>
       <button type="button" class="secundario" onclick="abrirAjuda('visaoGeral')">Como usar esta tela?</button>
     </div>
-    <div class="quick-report-grid" id="atalhosRelatorios"></div>
+    <label for="buscaAtalhosRelatorios">Buscar relatório (nome, palavra-chave ou grupo)</label>
+    <input type="text" id="buscaAtalhosRelatorios" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarAtalhosRelatorios()">
+    <div id="atalhosRelatoriosGrupos"></div>
+    <p class="rodape-nota oculto" id="atalhosRelatoriosSemResultado">Nenhum relatório encontrado para esta busca.</p>
     <div class="config-summary" id="resumoConfiguracaoTopo"></div>
   </section>
 
@@ -849,10 +904,15 @@
           <input type="number" id="metaForecastSemanal" min="0" step="0.01" placeholder="Ex: 250000">
         </div>
         <div>
+          <label for="metaForecastMensal" style="margin-top:0;">Meta mensal (R$)</label>
+          <input type="number" id="metaForecastMensal" min="0" step="0.01" placeholder="Preenchida automaticamente pelo mês do período">
+        </div>
+        <div>
           <label for="palavraFunilForecast" style="margin-top:0;">Nome do pipeline para Forecast</label>
           <input type="text" id="palavraFunilForecast" value="Comercial" placeholder="Comercial">
         </div>
       </div>
+      <p class="rodape-nota" style="margin-bottom:0;">A meta mensal é preenchida automaticamente com o valor padrão do mês selecionado em "Até" (tabela de metas do forecast); você pode sobrescrevê-la a qualquer momento.</p>
     </div>
 
     <div id="nota-diario-sdr" class="aviso oculto" style="margin-top:12px; margin-bottom:0;">
@@ -1055,6 +1115,9 @@
     <div class="auditoria-grid" id="auditoriaJornadaGrid"></div>
     <ul class="auditoria-lista" id="auditoriaJornadaNotas"></ul>
     <div class="botoes-download" style="margin-top:14px;">
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('Jornada do Cliente — completa')">🤖 Perguntar à IA sobre este relatório</button>
+      <button type="button" class="primario" onclick="abrirRelatorioVisualJornada()">Abrir modelo visual</button>
+      <button type="button" class="secundario" onclick="baixarHTMLRelatorioVisualJornada()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVJornadaNormalizada()">Baixar jornada normalizada</button>
       <button type="button" class="secundario" onclick="baixarCSVDuplicidadesJornada()">Baixar duplicidades / conflitos</button>
       <button type="button" class="secundario" onclick="baixarCSVHandoffsCliente()">Baixar handoffs da jornada</button>
@@ -1080,6 +1143,7 @@
     <div class="relatorio-especial-grid" id="analiseSdrMesKpis"></div>
 
     <div class="botoes-download">
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('João Reis — análise semanal e mensal')">🤖 Perguntar à IA sobre este relatório</button>
       <button type="button" class="primario" onclick="abrirRelatorioVisualJoao()">Abrir relatório visual</button>
       <button type="button" class="secundario" onclick="baixarHTMLRelatorioJoao()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVAnaliseSdrDiario()">CSV • atividades diárias</button>
@@ -1126,7 +1190,9 @@
     <h2><span class="num">📈</span> Forecast semanal • Comercial</h2>
     <div class="aviso" id="forecastPeriodoTexto"></div>
     <div class="relatorio-especial-grid" id="forecastKpis"></div>
+    <div id="forecastMetasBarras" class="meta-progress-wrap"></div>
     <div class="botoes-download">
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('Forecast semanal — Comercial')">🤖 Perguntar à IA sobre este relatório</button>
       <button type="button" class="primario" onclick="abrirRelatorioVisualForecast()">Abrir modelo visual</button>
       <button type="button" class="secundario" onclick="baixarHTMLForecastModelo()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVForecastNegocios()">CSV • negócios</button>
@@ -1151,6 +1217,9 @@
     <div class="aviso" id="diarioSdrPeriodoTexto"></div>
     <div class="relatorio-especial-grid" id="diarioSdrKpis"></div>
     <div class="botoes-download">
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('Diário SDR — atividades, Leads atendidos e potenciais')">🤖 Perguntar à IA sobre este relatório</button>
+      <button type="button" class="primario" onclick="abrirRelatorioVisualDiarioSDR()">Abrir modelo visual</button>
+      <button type="button" class="secundario" onclick="baixarHTMLRelatorioVisualDiarioSDR()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVAtividadesDiarioSDR()">CSV • atividades</button>
       <button type="button" class="secundario" onclick="baixarCSVLeadsAtendidosDiarioSDR()">CSV • leads atendidos</button>
       <button type="button" class="secundario" onclick="baixarCSVPotenciaisLeadsSDR()">CSV • potenciais Leads</button>
@@ -1179,7 +1248,9 @@
     <h2><span class="num">📊</span> <span id="relatorioResultadoTitulo">Relatório</span></h2>
     <div class="aviso" id="relatorioResultadoSubtitulo"></div>
     <div class="relatorio-especial-grid" id="relatorioResultadoKpis"></div>
+    <div id="relatorioResultadoMetaBarras" class="meta-progress-wrap"></div>
     <div class="botoes-download">
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio(resultadoRelatorioCatalogo.titulo)">🤖 Perguntar à IA sobre este relatório</button>
       <button type="button" class="primario oculto" id="btnAbrirVisualCatalogo" onclick="abrirRelatorioVisualCatalogo()">Abrir modelo visual</button>
       <button type="button" class="secundario oculto" id="btnBaixarVisualCatalogo" onclick="baixarHTMLRelatorioVisualCatalogo()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVRelatorioCatalogo()">CSV • tabela principal</button>
@@ -1651,6 +1722,18 @@ const RELATORIOS = {
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" }
 };
+
+// v11 — Metas mensais do forecast Comercial (R$), usadas como valor padrão da
+// "Meta comercial mensal" e da meta mensal do Forecast semanal. O campo continua
+// editável — isto é só o ponto de partida por mês/ano corrente.
+const METAS_FORECAST_MENSAL_PADRAO = {
+  1: 13650.00, 2: 27300.00, 3: 38500.00, 4: 27300.00, 5: 27300.00, 6: 27300.00,
+  7: 27300.00, 8: 34845.70, 9: 40470.70, 10: 40520.70, 11: 34845.70, 12: 21195.70
+};
+function metaMensalPadrao(dataISO) {
+  const m = String(dataISO || "").match(/^\d{4}-(\d{2})/);
+  return m ? (METAS_FORECAST_MENSAL_PADRAO[Number(m[1])] || 0) : 0;
+}
 
 // Campos de usuário: não existe um método "user.fields" público no Bitrix (diferente de
 // crm.*.fields), então para a Extração completa usamos uma lista ampliada e fixa.
@@ -3079,6 +3162,34 @@ function renderizarAuditoriaJornada() {
   document.getElementById("btnHistoricoEstagiosCsv").disabled = !dadosHistoricoEstagios.length;
 }
 
+// v11 — adapta a auditoria da Jornada do Cliente para o mesmo modelo visual
+// executivo usado no Forecast, para que "todos os itens de relatórios" tenham
+// um relatório visual, não só os relatórios do catálogo v6.
+function montarResultadoVisualJornada() {
+  const a = auditoriaJornada || {};
+  if (!a.clientesUnicos && !a.negociosBrutos) return null;
+  const tabelaDe = (dados, limite = 10) => (dados || []).length ? camposDeDados(dados).slice(0, limite).map((c) => ({ label: c, valor: c })) : [];
+  return {
+    chave: "jornada",
+    titulo: "Jornada do Cliente — completa",
+    subtitulo: "Cliente único por pipeline, histórico de estágios, reentradas e duplicidades.",
+    kpis: [
+      kpi("Clientes elegíveis", a.clientesUnicos || 0), kpi("Negócios brutos", a.negociosBrutos || 0),
+      kpi("Eventos normalizados", a.eventosNormalizados || 0), kpi("Duplicatas no pipeline", a.repeticoesMesmoPipeline || 0),
+      kpi("Cadastros possiv. duplicados", a.empresasPossivelmenteDuplicadas || 0), kpi("Handoffs da jornada", a.handoffsResponsavelCliente || 0),
+      kpi("Reentradas em estágio", a.reentradasEstagioHistorico || 0), kpi("Mudanças de funil", a.mudancasFunilHistorico || 0)
+    ],
+    tabelas: [
+      { titulo: "Jornada normalizada (amostra de colunas)", dados: dadosJornadaNormalizada, colunas: tabelaDe(dadosJornadaNormalizada) },
+      { titulo: "Possíveis duplicidades", dados: dadosDuplicidadesJornada, colunas: tabelaDe(dadosDuplicidadesJornada) },
+      { titulo: "Handoffs de responsável", dados: dadosHandoffsCliente, colunas: tabelaDe(dadosHandoffsCliente) }
+    ],
+    nota: "Amostra limitada às 10 primeiras colunas de cada dataset; baixe o CSV/JSON para o detalhamento completo."
+  };
+}
+function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) abrirHtmlEmNovaAba(h); }
+function baixarHTMLRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) baixarArquivo(h, `jornada_cliente_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
+
 function baixarCSVJornadaNormalizada() {
   if (!dadosJornadaNormalizada.length) return;
   baixarArquivo("﻿" + linhasCSVDe(camposExtraidos, dadosJornadaNormalizada), `bitrix_jornada_normalizada_${dataHoje()}.csv`, "text/csv;charset=utf-8;");
@@ -3197,6 +3308,14 @@ function semanticaDeal(deal, metaStage) {
   return "process";
 }
 
+// v11 — Estágios "Piloto" (Comercial e Financeiro) não entram no pipeline
+// aberto: são fase de teste/adoção do cliente, não previsão de receita.
+const STAGE_IDS_PILOTO = new Set(["UC_R1YAOS", "UC_JWY0OY", "UC_AM8GK1", "UC_I37148", "UC_EU6LUO", "UC_WBYFT4", "UC_QT3CO8"]);
+function ehEstagioPiloto(stageId, stageLabel) {
+  if (stageId != null && STAGE_IDS_PILOTO.has(String(stageId))) return true;
+  return normalizarTextoChave(stageLabel || "").includes("piloto");
+}
+
 function probabilidadeFallbackForecast(label, semantica) {
   if (semantica === "success") return 100;
   if (semantica === "failure") return 0;
@@ -3286,6 +3405,23 @@ function cicloDealDias(d) {
 function dentroPeriodoCatalogo(v,p){ return (!p.inicio&&!p.fim)?true:dataDentroFaixa(v,p.inicio,p.fim); }
 function kpi(rotulo,valor){return{rotulo,valor};}
 
+// v11 — barra de atingimento de meta (semanal/mensal), reutilizada nos blocos
+// de Forecast semanal e Forecast mensal para mostrar visualmente se a meta
+// já foi batida ou quanto falta.
+function barraAtingimentoMeta(rotulo, realizado, meta) {
+  if (!meta) {
+    return `<div class="meta-progress-row"><div class="meta-progress-head"><span>${escapeHtmlRelatorio(rotulo)}</span><span class="meta-progress-valores">${moedaRelatorio(realizado)} · meta não informada</span></div></div>`;
+  }
+  const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
+  const bateu = realizado >= meta;
+  const largura = Math.min(100, pct);
+  return `<div class="meta-progress-row">
+    <div class="meta-progress-head"><span>${escapeHtmlRelatorio(rotulo)}</span><span class="meta-progress-valores">${moedaRelatorio(realizado)} de ${moedaRelatorio(meta)} · <strong>${pct}%</strong></span></div>
+    <div class="meta-progress-track"><div class="meta-progress-fill ${bateu ? "bateu" : ""}" style="width:${largura}%;"></div></div>
+    <div class="meta-progress-status ${bateu ? "ok" : "pendente"}">${bateu ? "✓ Meta batida" : `Faltam ${moedaRelatorio(Math.max(0, meta - realizado))} para bater a meta`}</div>
+  </div>`;
+}
+
 async function mapaOrigensRelatorio(webhook){
   const a=await carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"SOURCE","order[SORT]":"ASC"});
   const m={};a.forEach((x)=>m[String(x.STATUS_ID)]=x.NAME||x.STATUS_ID);return m;
@@ -3352,20 +3488,40 @@ function renderizarRelatorioCatalogo(){
   document.getElementById("relatorioResultadoTitulo").textContent=r.titulo;
   document.getElementById("relatorioResultadoSubtitulo").innerHTML=r.subtitulo||"";
   document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>`<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(x.valor)}</span><span class="rotulo">${escapeHtmlRelatorio(x.rotulo)}</span></div>`).join("");
+  const metaBarrasEl=document.getElementById("relatorioResultadoMetaBarras");if(metaBarrasEl)metaBarrasEl.innerHTML=r.barra_meta||"";
   document.getElementById("relatorioResultadoTabelas").innerHTML=(r.tabelas||[]).map((t)=>`<div class="relatorio-subtitulo">${escapeHtmlRelatorio(t.titulo)}</div><div class="relatorio-scroll">${tabelaRelatorio(t.colunas,t.dados||[],t.limite||300)}</div>`).join("");
   document.getElementById("relatorioResultadoNota").textContent=r.nota||"";
-  const temVisual=!!r.modelo_visual;
+  const temVisual=!!(r.titulo&&(r.kpis?.length||r.tabelas?.length));
   document.getElementById("btnAbrirVisualCatalogo")?.classList.toggle("oculto",!temVisual);
   document.getElementById("btnBaixarVisualCatalogo")?.classList.toggle("oculto",!temVisual);
 }
+// v11 — modelo visual genérico: mesmo letterhead/hero/kpis do modelo do Forecast,
+// aplicado a QUALQUER relatório do catálogo (chave/titulo/subtitulo/kpis/tabelas),
+// não só ao Forecast mensal. Cada tabela vira uma seção retrátil com model-table.
+function gerarHTMLRelatorioVisualGenerico(r){
+  if(!r?.titulo)return "";
+  const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
+  const tabelasHtml=(r.tabelas||[]).map((t,i)=>{
+    const tabela=tabelaModelo((t.colunas||[]).map((c)=>({label:c.label,valor:typeof c.valor==="function"?c.valor:(row)=>row[c.valor],html:!!c.html})),(t.dados||[]).slice(0,t.limite||300));
+    return `<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
+  }).join("");
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
+  `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
+  `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(r.titulo)}</h1><p class="subtitle">${(r.subtitulo||"").replace(/<[^>]+>/g,"")||"Extraído automaticamente pelo extrator Atlas."}</p></div></header>`+
+  `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2><div class="kpis">${kpisHtml||'<p class="small-note">Sem indicadores.</p>'}</div></div>`+
+  `<h2 class="section">Detalhamento</h2><div class="top3grid">${tabelasHtml||'<p class="small-note">Sem tabelas neste relatório.</p>'}</div>`+
+  (r.nota?`<div class="note">${escapeHtmlRelatorio(r.nota)}</div>`:"")+
+  `<a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · ${escapeHtmlRelatorio(r.titulo)}</footer></body></html>`;
+}
 function abrirRelatorioVisualCatalogo(){
-  if(resultadoRelatorioCatalogo?.chave==="forecast_mensal"&&resultadoRelatorioCatalogo.modelo_visual)
-    abrirHtmlEmNovaAba(gerarHTMLForecastModelo(resultadoRelatorioCatalogo,"mensal"));
+  const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
+  const h=(r.chave==="forecast_mensal"&&r.modelo_visual)?gerarHTMLForecastModelo(r,"mensal"):gerarHTMLRelatorioVisualGenerico(r);
+  if(h)abrirHtmlEmNovaAba(h);
 }
 function baixarHTMLRelatorioVisualCatalogo(){
-  if(resultadoRelatorioCatalogo?.chave!=="forecast_mensal"||!resultadoRelatorioCatalogo.modelo_visual)return;
-  const h=gerarHTMLForecastModelo(resultadoRelatorioCatalogo,"mensal");
-  baixarArquivo(h,`forecast_mensal_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");
+  const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
+  const h=(r.chave==="forecast_mensal"&&r.modelo_visual)?gerarHTMLForecastModelo(r,"mensal"):gerarHTMLRelatorioVisualGenerico(r);
+  if(h)baixarArquivo(h,`bitrix_${r.chave}_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");
 }
 function baixarCSVRelatorioCatalogo(){
   const t=resultadoRelatorioCatalogo?.tabelas?.find((x)=>x.dados?.length);if(t)baixarCsvDatasetEspecial(t.dados,`bitrix_${resultadoRelatorioCatalogo.chave}_${dataHoje()}.csv`);
@@ -3381,11 +3537,14 @@ async function extrairRelatorioCatalogo(webhook,chave){
     const p=periodoCatalogo();
 
     if(chave==="forecast_mensal"){
-      const b=await baseDealsCatalogo(webhook,true),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)),meta=Number(document.getElementById("metaRelatorioComercial").value)||0;
+      const b=await baseDealsCatalogo(webhook,true),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
+      const campoMetaCatalogo=document.getElementById("metaRelatorioComercial");
+      let meta=Number(campoMetaCatalogo?.value)||0;
+      if(!meta){meta=metaMensalPadrao(p.fim||p.referencia);if(campoMetaCatalogo&&meta)campoMetaCatalogo.value=meta;}
       let fechado=0,commit=0,best=0,pipe=0,pond=0,semData=0,vencidas=0;const rows=[];
       ds.forEach((d)=>{const pr=Number(d.PROBABILITY),usa=Number.isFinite(pr)&&pr>0&&pr<=100,prob=usa?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA),bucket=classificarBucketForecast(prob,d._SEMANTICA);let sit="Fora",fp=0;
         if(d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)){fechado+=d._VALOR;sit="Ganho no mês"}
-        else if(d._SEMANTICA==="process"){const cd=parteDataISO(d.CLOSEDATE);if(!cd){semData++;sit="Sem CLOSEDATE"}else if(p.inicio&&cd<p.inicio){vencidas++;sit="CLOSEDATE vencida"}else if(dentroPeriodoCatalogo(cd,p)){sit="Previsto no mês";fp=d._VALOR*prob/100;pond+=fp;if(bucket==="Commit")commit+=d._VALOR;else if(bucket==="Best Case")best+=d._VALOR;else pipe+=d._VALOR}}
+        else if(d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)){const cd=parteDataISO(d.CLOSEDATE);if(!cd){semData++;sit="Sem CLOSEDATE"}else if(p.inicio&&cd<p.inicio){vencidas++;sit="CLOSEDATE vencida"}else if(dentroPeriodoCatalogo(cd,p)){sit="Previsto no mês";fp=d._VALOR*prob/100;pond+=fp;if(bucket==="Commit")commit+=d._VALOR;else if(bucket==="Best Case")best+=d._VALOR;else pipe+=d._VALOR}}
         if(sit!=="Fora")rows.push({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ESTAGIO:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,CLOSEDATE:parteDataISO(d.CLOSEDATE),VALOR:d._VALOR,PROBABILIDADE:prob,FONTE_PROBABILIDADE:usa?"Bitrix":"Fallback",BUCKET:bucket,SITUACAO:sit,FORECAST_PONDERADO:fp});
       });
       const forecast=fechado+pond;
@@ -3396,12 +3555,13 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "PROBABILITY do Bitrix tem prioridade; quando zerada, usa fallback por estágio.");
       resultadoRelatorioCatalogo.modelo_visual=modeloVisualMensal;
       resultadoRelatorioCatalogo.meta_visual=meta;
+      resultadoRelatorioCatalogo.barra_meta=barraAtingimentoMeta(`Atingimento da meta mensal (${mesAnoBR(p.fim||p.referencia)})`,forecast,meta);
       renderizarRelatorioCatalogo();
     }
 
     else if(chave==="pipeline_coverage"){
       const b=await baseDealsCatalogo(webhook,true),ref=new Date(`${p.referencia}T12:00:00`),meta=Number(document.getElementById("metaRelatorioComercial").value)||0;
-      const ab=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process");let total=0,pond=0,d30=0,d60=0,d90=0,sem=0;const g={};
+      const ab=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));let total=0,pond=0,d30=0,d60=0,d90=0,sem=0;const g={};
       ab.forEach((d)=>{total+=d._VALOR;const pr=Number(d.PROBABILITY),prob=(Number.isFinite(pr)&&pr>0&&pr<=100)?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA);pond+=d._VALOR*prob/100;const cd=parteDataISO(d.CLOSEDATE);if(!cd)sem++;else{const dias=Math.floor((new Date(`${cd}T12:00:00`)-ref)/86400000);if(dias<=30)d30+=d._VALOR;else if(dias<=60)d60+=d._VALOR;else if(dias<=90)d90+=d._VALOR}
         const k=`${d._RESPONSAVEL}|||${d._ESTAGIO}`;(g[k]||=( {RESPONSAVEL:d._RESPONSAVEL,ESTAGIO:d._ESTAGIO,NEGOCIOS:0,PIPELINE:0,PONDERADO:0}));g[k].NEGOCIOS++;g[k].PIPELINE+=d._VALOR;g[k].PONDERADO+=d._VALOR*prob/100;});
       criarResultadoCatalogo(chave,"Pipeline & Coverage • 30/60/90 dias",`Referência: <strong>${escapeHtmlRelatorio(p.referencia)}</strong>`,
@@ -3433,7 +3593,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
     else if(chave==="performance_vendedores"){
       const b=await baseDealsCatalogo(webhook,true),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)),m={};
       const get=(d)=>{const k=String(d.ASSIGNED_BY_ID||"0");return m[k]||(m[k]={RESPONSAVEL:d._RESPONSAVEL,CRIADAS:0,PIPELINE:0,GANHOS:0,RECEITA:0,PERDAS:0,PERDIDO:0,CICLO_SOMA:0,CICLO_N:0})};
-      ds.forEach((d)=>{const r=get(d);if(dentroPeriodoCatalogo(d.DATE_CREATE,p))r.CRIADAS++;if(d._SEMANTICA==="process")r.PIPELINE+=d._VALOR;if(dentroPeriodoCatalogo(d._FECHAMENTO,p)){if(d._SEMANTICA==="success"){r.GANHOS++;r.RECEITA+=d._VALOR}else if(d._SEMANTICA==="failure"){r.PERDAS++;r.PERDIDO+=d._VALOR}if(d._CICLO!==""){r.CICLO_SOMA+=Number(d._CICLO);r.CICLO_N++}}});
+      ds.forEach((d)=>{const r=get(d);if(dentroPeriodoCatalogo(d.DATE_CREATE,p))r.CRIADAS++;if(d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO))r.PIPELINE+=d._VALOR;if(dentroPeriodoCatalogo(d._FECHAMENTO,p)){if(d._SEMANTICA==="success"){r.GANHOS++;r.RECEITA+=d._VALOR}else if(d._SEMANTICA==="failure"){r.PERDAS++;r.PERDIDO+=d._VALOR}if(d._CICLO!==""){r.CICLO_SOMA+=Number(d._CICLO);r.CICLO_N++}}});
       const rows=Object.values(m).map((r)=>({...r,WIN_RATE:taxaPct(r.GANHOS,r.GANHOS+r.PERDAS),TICKET:r.GANHOS?r.RECEITA/r.GANHOS:0,CICLO:r.CICLO_N?Math.round(r.CICLO_SOMA/r.CICLO_N*10)/10:0})).sort((a,b)=>b.RECEITA-a.RECEITA);
       criarResultadoCatalogo(chave,"Performance por vendedor",`Período: <strong>${escapeHtmlRelatorio(p.inicio||"todas")}</strong> a <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
         [kpi("Vendedores",rows.length),kpi("Receita",moedaRelatorio(rows.reduce((a,r)=>a+r.RECEITA,0))),kpi("Ganhos",rows.reduce((a,r)=>a+r.GANHOS,0)),kpi("Perdas",rows.reduce((a,r)=>a+r.PERDAS,0)),kpi("Pipeline aberto",moedaRelatorio(rows.reduce((a,r)=>a+r.PIPELINE,0))),kpi("Criadas",rows.reduce((a,r)=>a+r.CRIADAS,0)),kpi("Win Rate geral",`${taxaPct(rows.reduce((a,r)=>a+r.GANHOS,0),rows.reduce((a,r)=>a+r.GANHOS+r.PERDAS,0))}%`),kpi("Atribuição","responsável atual")],
@@ -3961,7 +4121,7 @@ async function construirDadosModeloForecast(webhook, meta, inicio, fim, dealsCom
     const n=normalizarTextoChave(x.ESTAGIO);
     return x.SEMANTICA==="process" && (n.includes("aguardando assinatura")||n.includes("analise de documentos")||n.includes("assinatura de contrato")) && !n.includes("contrato assinado");
   });
-  const pipeline=comercial.filter((x)=>x.SEMANTICA==="process");
+  const pipeline=comercial.filter((x)=>x.SEMANTICA==="process"&&!ehEstagioPiloto(null,x.ESTAGIO));
   const porVend=(rows)=>{
     const m={};rows.forEach((x)=>{const k=x.RESPONSAVEL;if(!m[k])m[k]={RESPONSAVEL:k,VALOR:0,NEGOCIOS:0,CLIENTES:new Set()};m[k].VALOR+=x.VALOR;m[k].NEGOCIOS++;m[k].CLIENTES.add(x.CLIENTE_KEY)});
     return Object.values(m).map((x)=>({RESPONSAVEL:x.RESPONSAVEL,VALOR:x.VALOR,NEGOCIOS:x.NEGOCIOS,CLIENTES:x.CLIENTES.size})).sort((a,b)=>b.VALOR-a.VALOR);
@@ -4119,7 +4279,7 @@ async function extrairForecastSemanal(webhook) {
       } else if (semantica === "failure" && dentroSemana) {
         situacaoSemana = "Perdido na semana";
         perdido += valor;
-      } else if (semantica === "process") {
+      } else if (semantica === "process" && !ehEstagioPiloto(d.STAGE_ID, stageLabel)) {
         if (!closeDate) {
           situacaoSemana = "Sem CLOSEDATE";
           semDataQtd++;
@@ -4192,6 +4352,29 @@ async function extrairForecastSemanal(webhook) {
     const forecastTotal = fechado + ponderadoAberto;
     const metaSemanal = Number(document.getElementById("metaForecastSemanal").value) || 0;
     const gap = metaSemanal > 0 ? Math.max(0, metaSemanal - forecastTotal) : 0;
+
+    // v11 — meta mensal: preenche o campo com o valor padrão do mês de referência
+    // (fim do período) quando o usuário não informou nada, e soma o já fechado no
+    // mês inteiro (não só na semana) para medir o atingimento da meta mensal.
+    const campoMetaMensal = document.getElementById("metaForecastMensal");
+    let metaMensal = Number(campoMetaMensal?.value) || 0;
+    if (!metaMensal) {
+      metaMensal = metaMensalPadrao(fim);
+      if (campoMetaMensal && metaMensal) campoMetaMensal.value = metaMensal;
+    }
+    const refMes = fim || inicio;
+    const [anoMes, mesMes] = refMes.split("-").map(Number);
+    const mesInicio = `${anoMes}-${String(mesMes).padStart(2, "0")}-01`;
+    const mesFim = formatarDataISO(new Date(anoMes, mesMes, 0));
+    let fechadoMes = 0;
+    for (const d of deals) {
+      const stageMeta = meta.estagios?.[String(categoria)]?.[String(d.STAGE_ID)] || {};
+      if (semanticaDeal(d, stageMeta) === "success" && dataDentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) {
+        fechadoMes += Number(d.OPPORTUNITY) || 0;
+      }
+    }
+    const gapMensal = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : 0;
+
     atualizarStatus("Forecast: montando modelo executivo Atlas...");
     const modeloVisualForecast = await construirDadosModeloForecast(webhook, meta, inicio, fim, deals);
 
@@ -4203,7 +4386,7 @@ async function extrairForecastSemanal(webhook) {
     resultadoForecastSemanal = {
       meta: {
         inicio, fim, pipeline_id: categoria, pipeline: nomeCategoria,
-        meta_semanal: metaSemanal,
+        meta_semanal: metaSemanal, meta_mensal: metaMensal, mes_inicio: mesInicio, mes_fim: mesFim,
         total_bitrix_pipeline: lista.total,
         registros_extraidos: deals.length,
         duplicados_api_ignorados: lista.duplicados
@@ -4219,6 +4402,11 @@ async function extrairForecastSemanal(webhook) {
         FORECAST_TOTAL: forecastTotal,
         META_SEMANAL: metaSemanal,
         GAP_META: gap,
+        ATINGIMENTO_SEMANAL_PCT: metaSemanal > 0 ? Math.round((fechado / metaSemanal) * 1000) / 10 : null,
+        FECHADO_MES: fechadoMes,
+        META_MENSAL: metaMensal,
+        GAP_MENSAL: gapMensal,
+        ATINGIMENTO_MENSAL_PCT: metaMensal > 0 ? Math.round((fechadoMes / metaMensal) * 1000) / 10 : null,
         ABERTOS_PREVISTOS_SEMANA: abertosSemanaQtd,
         SEM_CLOSEDATE_QTD: semDataQtd,
         SEM_CLOSEDATE_VALOR: semDataValor,
@@ -4249,8 +4437,9 @@ function renderizarForecastSemanal() {
   if (!r?.resumo) return;
   document.getElementById("bloco-forecast-semanal").classList.remove("oculto");
   document.getElementById("forecastPeriodoTexto").innerHTML =
-    `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))}.` +
-    (r.meta.meta_semanal ? ` Meta semanal informada: <strong>${moedaRelatorio(r.meta.meta_semanal)}</strong>.` : " Meta semanal não informada.");
+    `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))} • mês de referência ${escapeHtmlRelatorio(mesAnoBR(r.meta.fim))}.` +
+    (r.meta.meta_semanal ? ` Meta semanal: <strong>${moedaRelatorio(r.meta.meta_semanal)}</strong>.` : " Meta semanal não informada.") +
+    (r.meta.meta_mensal ? ` Meta mensal: <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
 
   const kpis = [
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
@@ -4260,11 +4449,17 @@ function renderizarForecastSemanal() {
     ["Pipeline", moedaRelatorio(r.resumo.PIPELINE)],
     ["Abertos previstos", r.resumo.ABERTOS_PREVISTOS_SEMANA],
     ["Sem CLOSEDATE", r.resumo.SEM_CLOSEDATE_QTD],
-    [r.meta.meta_semanal ? "Gap para meta" : "CLOSEDATE vencida", r.meta.meta_semanal ? moedaRelatorio(r.resumo.GAP_META) : r.resumo.CLOSEDATE_VENCIDA_QTD]
+    [r.meta.meta_semanal ? "Gap para meta semanal" : "CLOSEDATE vencida", r.meta.meta_semanal ? moedaRelatorio(r.resumo.GAP_META) : r.resumo.CLOSEDATE_VENCIDA_QTD],
+    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES)],
+    [r.meta.meta_mensal ? "Gap para meta mensal" : "Meta mensal", r.meta.meta_mensal ? moedaRelatorio(r.resumo.GAP_MENSAL) : "não informada"]
   ];
   document.getElementById("forecastKpis").innerHTML = kpis.map(([rotulo, valor]) =>
     `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
   ).join("");
+
+  document.getElementById("forecastMetasBarras").innerHTML =
+    barraAtingimentoMeta("Atingimento da meta semanal (fechado na semana)", r.resumo.FECHADO_SEMANA, r.meta.meta_semanal) +
+    barraAtingimentoMeta(`Atingimento da meta mensal (fechado em ${mesAnoBR(r.meta.fim)})`, r.resumo.FECHADO_MES, r.meta.meta_mensal);
 
   document.getElementById("forecastVendedoresTabela").innerHTML = tabelaRelatorio([
     { label: "Responsável", valor: "RESPONSAVEL" },
@@ -5728,6 +5923,32 @@ function renderizarDiarioSDR() {
   ], r.potenciais_negocios);
 }
 
+// v11 — mesma ideia do adaptador da Jornada: monta {titulo,kpis,tabelas} a
+// partir do resultado já calculado do Diário SDR para gerar o modelo visual.
+function montarResultadoVisualDiarioSDR() {
+  const r = resultadoDiarioSDR;
+  if (!r?.resumo) return null;
+  return {
+    chave: "diario_sdr",
+    titulo: "Diário SDR — atividades, Leads atendidos e potenciais",
+    subtitulo: `${formatarDataBR(r.meta.inicio)}${r.meta.fim !== r.meta.inicio ? ` até ${formatarDataBR(r.meta.fim)}` : ""}`,
+    kpis: [
+      kpi("Atividades CRM", r.resumo.ATIVIDADES_CRM_REALIZADAS), kpi("Atividades SDR/Comercial", r.resumo.ATIVIDADES_SDR_COMERCIAL),
+      kpi("Leads atendidos", r.resumo.LEADS_ATENDIDOS), kpi("Negócios atendidos", r.resumo.NEGOCIOS_ATENDIDOS),
+      kpi("Potenciais Leads SDR", r.resumo.POTENCIAIS_LEADS_SDR), kpi("Potenciais Comercial/SDR", r.resumo.POTENCIAIS_NEGOCIOS_COMERCIAL_SDR),
+      kpi("Potenciais sem atividade", r.resumo.POTENCIAIS_SEM_ATIVIDADE), kpi("Responsáveis", r.resumo.RESPONSAVEIS_MONITORADOS)
+    ],
+    tabelas: [
+      { titulo: "Resumo por SDR / responsável", dados: r.responsaveis, colunas: [{ label: "Responsável", valor: "RESPONSAVEL" }, { label: "Atividades", valor: "ATIVIDADES" }, { label: "Leads atendidos", valor: "LEADS_ATENDIDOS" }, { label: "Negócios atendidos", valor: "NEGOCIOS_ATENDIDOS" }, { label: "Potenciais Leads", valor: "POTENCIAIS_LEADS" }, { label: "Potenciais negócios", valor: "POTENCIAIS_NEGOCIOS" }] },
+      { titulo: "Leads atendidos no dia", dados: r.leads_atendidos, colunas: [{ label: "Lead", valor: "LEAD_ID" }, { label: "Empresa", valor: "EMPRESA" }, { label: "Status", valor: "STATUS" }, { label: "Responsável", valor: "RESPONSAVEL" }] },
+      { titulo: "Potenciais Leads na esteira SDR", dados: r.potenciais_leads, colunas: [{ label: "Lead", valor: "LEAD_ID" }, { label: "Empresa", valor: "EMPRESA" }, { label: "Etapa", valor: "STATUS" }, { label: "Responsável", valor: "RESPONSAVEL" }] }
+    ],
+    nota: "Atividade realizada = COMPLETED=Y com END_TIME no período. Lead atendido exige vínculo da atividade ao Lead CRM."
+  };
+}
+function abrirRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) abrirHtmlEmNovaAba(h); }
+function baixarHTMLRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) baixarArquivo(h, `diario_sdr_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
+
 
 async function extrairJornada(webhook) {
   document.getElementById("spinner").style.display = "inline-block";
@@ -7092,15 +7313,36 @@ function ativarAcordeoesExtrator(){
   });
 }
 
+// v11 — um card por item do catálogo RELATORIOS (todas as possibilidades de
+// relatório cruzadas, não só os 4 atalhos originais), agrupados por "grupo" e
+// com busca por palavra-chave em nome/descrição/grupo.
 function renderizarAtalhosRelatorios(){
-  const c=document.getElementById("atalhosRelatorios");if(!c)return;
-  const itens=[
-    ["jornada","🟣","Jornada do Cliente","Cliente único, funis, histórico, aging e reentradas."],
-    ["forecast_semanal","📈","Forecast semanal","Fechados, pendentes, pipeline e previsão."],
-    ["analise_sdr","📊","João Reis","Atividade diária, clientes diferentes e conversão."],
-    ["diario_sdr","📅","Diário SDR","Atividades realizadas, Leads atendidos e potenciais."]
-  ];
-  c.innerHTML=itens.map(([key,ic,t,sub])=>`<button type="button" class="quick-report-card" onclick="selecionarRelatorioRapido('${key}')"><span class="report-icon">${ic}</span><strong>${t}</strong><span>${sub}</span></button>`).join("");
+  const c=document.getElementById("atalhosRelatoriosGrupos");if(!c)return;
+  const grupos={};
+  Object.entries(RELATORIOS).forEach(([chave,rel])=>{(grupos[rel.grupo]||=[]).push({chave,...rel})});
+  c.innerHTML=Object.entries(grupos).map(([grupo,itens])=>{
+    const cards=itens.map(({chave,label,descricao})=>{
+      const m=label.match(/^(\S+)\s*(.*)$/),icone=m?m[1]:"📄",titulo=m?m[2]:label;
+      const textoBusca=escapeHtmlRelatorio(`${label} ${descricao} ${grupo}`.toLowerCase());
+      return `<button type="button" class="quick-report-card" data-busca="${textoBusca}" onclick="selecionarRelatorioRapido('${chave}')"><span class="report-icon">${icone}</span><strong>${escapeHtmlRelatorio(titulo)}</strong><span>${escapeHtmlRelatorio(descricao)}</span></button>`;
+    }).join("");
+    return `<div class="quick-report-grupo"><h3>${escapeHtmlRelatorio(grupo)}</h3><div class="quick-report-grid">${cards}</div></div>`;
+  }).join("");
+}
+function filtrarAtalhosRelatorios(){
+  const termo=(document.getElementById("buscaAtalhosRelatorios")?.value||"").trim().toLowerCase();
+  let visiveis=0;
+  document.querySelectorAll(".quick-report-grupo").forEach((grupoEl)=>{
+    let visiveisNoGrupo=0;
+    grupoEl.querySelectorAll(".quick-report-card").forEach((card)=>{
+      const ok=!termo||(card.dataset.busca||"").includes(termo);
+      card.style.display=ok?"":"none";
+      if(ok)visiveisNoGrupo++;
+    });
+    grupoEl.style.display=visiveisNoGrupo?"":"none";
+    visiveis+=visiveisNoGrupo;
+  });
+  document.getElementById("atalhosRelatoriosSemResultado")?.classList.toggle("oculto",visiveis>0);
 }
 function selecionarRelatorioRapido(chave){const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});}
 
@@ -7291,6 +7533,20 @@ function abrirAbaV10(nome) {
   else if (nome === "funil") renderizarFunilVisualSankey();
   else if (nome === "construtor") popularFontesPivotV10();
   else if (nome === "ia") renderizarChatIAV10();
+}
+
+// v11 — botão de IA em cada card de relatório já gerado: leva direto para a
+// aba "IA ao vivo" da Central de Inteligência com uma pergunta pronta sobre
+// possibilidades de gestão daquele relatório (o contexto enviado ao chat já é
+// o relatório mais recente gerado na página).
+function abrirIAParaRelatorio(tituloRelatorio) {
+  document.getElementById("central-inteligencia-v10")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  abrirAbaV10("ia");
+  const campo = document.getElementById("v10ChatInput");
+  if (campo) {
+    campo.value = `Com base no relatório "${tituloRelatorio || "gerado"}", quais são as possibilidades de gestão dessas informações? Aponte ações prioritárias, riscos e oportunidades, na ordem em que deveriam ser tratados.`;
+    campo.focus();
+  }
 }
 
 // ------------------------------- Radar de prioridades -----------------------
