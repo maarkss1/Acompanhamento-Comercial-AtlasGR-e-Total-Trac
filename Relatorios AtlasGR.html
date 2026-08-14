@@ -616,6 +616,18 @@
   .help-body ul { margin:10px 0 0;padding-left:18px; }
   .help-body .help-example { background:var(--surface-2);border-radius:9px;padding:10px 12px;margin-top:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;white-space:pre-wrap; }
 
+  .ferramentas-flutuantes { position:fixed; right:18px; bottom:18px; z-index:9990; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+  .ferramentas-toggle { width:48px!important; height:48px!important; border-radius:999px!important; padding:0!important; font-size:20px!important; box-shadow:0 10px 26px -8px rgba(0,0,0,.35)!important; }
+  .ferramentas-painel { display:flex; flex-direction:column; gap:7px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px; box-shadow:0 16px 40px -12px rgba(0,0,0,.35); min-width:200px; }
+  .ferramentas-painel.oculto { display:none; }
+  .ferramentas-titulo { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-2); margin-bottom:2px; }
+  .ferramentas-painel button { text-align:left; }
+  .ferramentas-painel button.ativo { background:var(--brand)!important; color:#fff!important; border-color:var(--brand)!important; }
+  @media print {
+    .ferramentas-flutuantes, .quick-nav, header, #conexao, #card-campos, #execucao, .sync-danger-zone, .card-toggle { display:none!important; }
+    .card { box-shadow:none!important; border:1px solid #ccc!important; }
+  }
+
   .selection-summary-card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:11px 13px; display:flex;align-items:center;gap:10px;margin-top:12px; }
   .selection-summary-card .selection-icon { width:34px;height:34px;border-radius:10px;background:var(--soft);display:grid;place-items:center;color:var(--brand);font-size:17px; }
   .selection-summary-card strong { display:block;font-size:11.5px; }
@@ -912,7 +924,7 @@
           <input type="text" id="palavraFunilForecast" value="Comercial" placeholder="Comercial">
         </div>
       </div>
-      <p class="rodape-nota" style="margin-bottom:0;">A meta mensal é preenchida automaticamente com o valor padrão do mês selecionado em "Até" (tabela de metas do forecast); você pode sobrescrevê-la a qualquer momento.</p>
+      <p class="rodape-nota" style="margin-bottom:0;">A meta mensal é preenchida automaticamente com o valor padrão do mês selecionado em "Até" (tabela de metas do forecast). Se a meta semanal ficar em branco, ela é calculada dividindo a meta mensal pelo número de semanas do mês (meta mensal ÷ semanas do mês); qualquer um dos dois campos pode ser sobrescrito manualmente a qualquer momento.</p>
     </div>
 
     <div id="nota-diario-sdr" class="aviso oculto" style="margin-top:12px; margin-bottom:0;">
@@ -1440,6 +1452,19 @@
   <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitulo">
     <div class="help-head"><div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">Ajuda contextual</div><h3 id="helpTitulo">Como funciona</h3></div><button type="button" class="help-close" onclick="fecharAjuda()">×</button></div>
     <div class="help-body" id="helpConteudo"></div>
+  </div>
+</div>
+
+<div class="ferramentas-flutuantes" id="ferramentasFlutuantes">
+  <button type="button" class="ferramentas-toggle" onclick="alternarPainelFerramentas()" title="Ferramentas">🛠️</button>
+  <div class="ferramentas-painel oculto" id="ferramentasPainel">
+    <div class="ferramentas-titulo">Ferramentas</div>
+    <button type="button" onclick="ferramentaImprimir()">🖨️ Imprimir</button>
+    <button type="button" onclick="ferramentaBaixar()">⬇️ Baixar</button>
+    <button type="button" onclick="ferramentaSincronizar()">↻ Sincronizar</button>
+    <button type="button" id="btnFerramentaDitar" onclick="alternarDitado()">🎙️ Ditar</button>
+    <button type="button" id="btnFerramentaComandoVoz" onclick="alternarComandoDeVoz()">🗣️ Comando de Voz</button>
+    <p class="rodape-nota" id="ferramentasVozStatus" style="margin:6px 0 0;"></p>
   </div>
 </div>
 
@@ -3541,6 +3566,11 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const campoMetaCatalogo=document.getElementById("metaRelatorioComercial");
       let meta=Number(campoMetaCatalogo?.value)||0;
       if(!meta){meta=metaMensalPadrao(p.fim||p.referencia);if(campoMetaCatalogo&&meta)campoMetaCatalogo.value=meta;}
+      // v12 — deixa explícita a divisão da meta mensal pelas semanas do mês, igual ao Forecast semanal.
+      const refMesCatalogo=p.fim||p.referencia;
+      const [anoMesCatalogo,mesMesCatalogo]=refMesCatalogo.split("-").map(Number);
+      const semanasNoMesCatalogo=Math.ceil(new Date(anoMesCatalogo,mesMesCatalogo,0).getDate()/7);
+      const metaSemanalImplicita=meta>0?Math.round((meta/semanasNoMesCatalogo)*100)/100:0;
       let fechado=0,commit=0,best=0,pipe=0,pond=0,semData=0,vencidas=0;const rows=[];
       ds.forEach((d)=>{const pr=Number(d.PROBABILITY),usa=Number.isFinite(pr)&&pr>0&&pr<=100,prob=usa?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA),bucket=classificarBucketForecast(prob,d._SEMANTICA);let sit="Fora",fp=0;
         if(d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)){fechado+=d._VALOR;sit="Ganho no mês"}
@@ -3550,7 +3580,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const forecast=fechado+pond;
       const modeloVisualMensal=await construirDadosModeloForecast(webhook,b.meta,p.inicio,p.fim,b.deals);
       criarResultadoCatalogo(chave,"Forecast mensal • Comercial",`<strong>${escapeHtmlRelatorio(formatarDataBR(p.inicio))} a ${escapeHtmlRelatorio(formatarDataBR(p.fim))}</strong>`,
-        [kpi("Fechado",moedaRelatorio(fechado)),kpi("Forecast total",moedaRelatorio(forecast)),kpi("Commit",moedaRelatorio(commit)),kpi("Best Case",moedaRelatorio(best)),kpi("Pipeline",moedaRelatorio(pipe)),kpi("Sem CLOSEDATE",semData),kpi("CLOSEDATE vencida",vencidas),kpi(meta?"Gap para meta":"Meta",meta?moedaRelatorio(Math.max(0,meta-forecast)):"não informada")],
+        [kpi("Fechado",moedaRelatorio(fechado)),kpi("Forecast total",moedaRelatorio(forecast)),kpi("Commit",moedaRelatorio(commit)),kpi("Best Case",moedaRelatorio(best)),kpi("Pipeline",moedaRelatorio(pipe)),kpi("Sem CLOSEDATE",semData),kpi("CLOSEDATE vencida",vencidas),kpi(meta?"Gap para meta":"Meta",meta?moedaRelatorio(Math.max(0,meta-forecast)):"não informada"),kpi(`Meta semanal (÷${semanasNoMesCatalogo} semanas)`,metaSemanalImplicita?moedaRelatorio(metaSemanalImplicita):"—")],
         [{titulo:"Negócios do forecast",dados:rows,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Estágio",valor:"ESTAGIO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"CLOSEDATE",valor:"CLOSEDATE"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Prob.",valor:(x)=>`${x.PROBABILIDADE}%`},{label:"Bucket",valor:"BUCKET"},{label:"Situação",valor:"SITUACAO"},{label:"Ponderado",valor:(x)=>moedaRelatorio(x.FORECAST_PONDERADO),html:true}]}],
         "PROBABILITY do Bitrix tem prioridade; quando zerada, usa fallback por estágio.");
       resultadoRelatorioCatalogo.modelo_visual=modeloVisualMensal;
@@ -4354,10 +4384,8 @@ async function extrairForecastSemanal(webhook) {
     }
 
     const forecastTotal = fechado + ponderadoAberto;
-    const metaSemanal = Number(document.getElementById("metaForecastSemanal").value) || 0;
-    const gap = metaSemanal > 0 ? Math.max(0, metaSemanal - forecastTotal) : 0;
 
-    // v11 — meta mensal: preenche o campo com o valor padrão do mês de referência
+    // v12 — meta mensal: preenche o campo com o valor padrão do mês de referência
     // (fim do período) quando o usuário não informou nada, e soma o já fechado no
     // mês inteiro (não só na semana) para medir o atingimento da meta mensal.
     const campoMetaMensal = document.getElementById("metaForecastMensal");
@@ -4370,6 +4398,23 @@ async function extrairForecastSemanal(webhook) {
     const [anoMes, mesMes] = refMes.split("-").map(Number);
     const mesInicio = `${anoMes}-${String(mesMes).padStart(2, "0")}-01`;
     const mesFim = formatarDataISO(new Date(anoMes, mesMes, 0));
+
+    // v12 — meta semanal explícita = meta mensal ÷ nº de semanas do mês (7 em 7 dias,
+    // arredondado para cima). Só é usada quando o campo "Meta semanal" está vazio —
+    // se o usuário informar um valor manual, esse valor manda.
+    const diasNoMes = new Date(anoMes, mesMes, 0).getDate();
+    const semanasNoMes = Math.ceil(diasNoMes / 7);
+    const metaSemanalDerivada = metaMensal > 0 ? Math.round((metaMensal / semanasNoMes) * 100) / 100 : 0;
+    const campoMetaSemanal = document.getElementById("metaForecastSemanal");
+    let metaSemanal = Number(campoMetaSemanal?.value) || 0;
+    let metaSemanalOrigem = "manual";
+    if (!metaSemanal && metaSemanalDerivada) {
+      metaSemanal = metaSemanalDerivada;
+      metaSemanalOrigem = "derivada";
+      if (campoMetaSemanal) campoMetaSemanal.value = metaSemanal;
+    }
+    const gap = metaSemanal > 0 ? Math.max(0, metaSemanal - forecastTotal) : 0;
+
     let fechadoMes = 0;
     for (const d of deals) {
       const stageMeta = meta.estagios?.[String(categoria)]?.[String(d.STAGE_ID)] || {};
@@ -4391,6 +4436,7 @@ async function extrairForecastSemanal(webhook) {
       meta: {
         inicio, fim, pipeline_id: categoria, pipeline: nomeCategoria,
         meta_semanal: metaSemanal, meta_mensal: metaMensal, mes_inicio: mesInicio, mes_fim: mesFim,
+        semanas_no_mes: semanasNoMes, meta_semanal_derivada: metaSemanalDerivada, meta_semanal_origem: metaSemanalOrigem,
         total_bitrix_pipeline: lista.total,
         registros_extraidos: deals.length,
         duplicados_api_ignorados: lista.duplicados
@@ -4442,8 +4488,13 @@ function renderizarForecastSemanal() {
   document.getElementById("bloco-forecast-semanal").classList.remove("oculto");
   document.getElementById("forecastPeriodoTexto").innerHTML =
     `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))} • mês de referência ${escapeHtmlRelatorio(mesAnoBR(r.meta.fim))}.` +
-    (r.meta.meta_semanal ? ` Meta semanal: <strong>${moedaRelatorio(r.meta.meta_semanal)}</strong>.` : " Meta semanal não informada.") +
-    (r.meta.meta_mensal ? ` Meta mensal: <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
+    (r.meta.meta_mensal ? ` Meta mensal: <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.") +
+    (r.meta.meta_semanal
+      ? ` Meta semanal: <strong>${moedaRelatorio(r.meta.meta_semanal)}</strong>` +
+        (r.meta.meta_semanal_origem === "derivada"
+          ? ` <span class="badge-relatorio">= meta mensal ÷ ${r.meta.semanas_no_mes} semana(s) do mês</span>.`
+          : " (informada manualmente).")
+      : " Meta semanal não informada.");
 
   const kpis = [
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
@@ -8149,10 +8200,164 @@ function iniciarCentralInteligenciaV10() {
   renderizarRadarPrioridades();
 }
 
+// =============================================================================
+// v12 — Ferramentas flutuantes: Imprimir, Baixar, Sincronizar, Ditar e
+// Comando de Voz. Ditado e Comando de Voz usam a Web Speech API do navegador
+// (SpeechRecognition) — só funcionam em navegadores que a suportam (Chrome/Edge;
+// Firefox e Safari não têm suporte completo) e não enviam áudio a nenhum
+// servidor da Atlas: o reconhecimento roda inteiramente no navegador do usuário.
+// =============================================================================
+
+function alternarPainelFerramentas() {
+  document.getElementById("ferramentasPainel")?.classList.toggle("oculto");
+}
+
+function ferramentaImprimir() {
+  window.print();
+}
+
+function ferramentaBaixar() {
+  if (dadosExtraidos && dadosExtraidos.length) {
+    baixarCSV();
+  } else {
+    alert("Nada para baixar ainda — rode uma extração ou um relatório primeiro.");
+  }
+}
+
+function ferramentaSincronizar() {
+  document.getElementById("card-sincronizacao")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// -------------------------- Ditado (voz → campo de texto) ------------------
+
+let ultimoCampoTextoFocado = null;
+document.addEventListener("focusin", (e) => {
+  const alvo = e.target;
+  if (alvo && (alvo.tagName === "TEXTAREA" || (alvo.tagName === "INPUT" && ["text", "search", "number", "password"].includes(alvo.type)))) {
+    ultimoCampoTextoFocado = alvo;
+  }
+});
+
+function reconhecimentoDeVozDisponivel() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+function criarReconhecimentoDeVoz(continuo) {
+  const Motor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const r = new Motor();
+  r.lang = "pt-BR";
+  r.continuous = continuo;
+  r.interimResults = false;
+  return r;
+}
+
+let reconhecimentoDitado = null;
+function alternarDitado() {
+  const btn = document.getElementById("btnFerramentaDitar");
+  if (!reconhecimentoDeVozDisponivel()) {
+    document.getElementById("ferramentasVozStatus").textContent = "Ditado por voz não é suportado neste navegador (funciona no Chrome/Edge).";
+    return;
+  }
+  if (reconhecimentoDitado) {
+    reconhecimentoDitado.stop();
+    return;
+  }
+  const campo = ultimoCampoTextoFocado || document.getElementById("v10ChatInput");
+  if (!campo) {
+    document.getElementById("ferramentasVozStatus").textContent = "Clique em um campo de texto antes de ditar.";
+    return;
+  }
+  reconhecimentoDitado = criarReconhecimentoDeVoz(false);
+  btn?.classList.add("ativo");
+  document.getElementById("ferramentasVozStatus").textContent = `Ouvindo... fale para ditar em "${campo.id || campo.name || "campo de texto"}".`;
+  reconhecimentoDitado.onresult = (ev) => {
+    const texto = ev.results[0][0].transcript;
+    const inicio = campo.selectionStart ?? campo.value.length;
+    const fim = campo.selectionEnd ?? campo.value.length;
+    campo.value = campo.value.slice(0, inicio) + texto + campo.value.slice(fim);
+    campo.dispatchEvent(new Event("input", { bubbles: true }));
+    campo.focus();
+  };
+  reconhecimentoDitado.onerror = (ev) => {
+    document.getElementById("ferramentasVozStatus").textContent = `Erro no ditado: ${ev.error}.`;
+  };
+  reconhecimentoDitado.onend = () => {
+    btn?.classList.remove("ativo");
+    reconhecimentoDitado = null;
+    document.getElementById("ferramentasVozStatus").textContent = "";
+  };
+  reconhecimentoDitado.start();
+}
+
+// -------------------------- Comando de voz (navegação/ações) ---------------
+
+const COMANDOS_DE_VOZ = [
+  { padroes: ["extrair dados", "extrair", "executar consulta", "rodar relatório", "rodar relatorio"], acao: () => extrair(), fala: "Extraindo dados." },
+  { padroes: ["sincronizar", "ir para sincronizar", "sincronização"], acao: () => ferramentaSincronizar(), fala: "Abrindo sincronização." },
+  { padroes: ["imprimir"], acao: () => ferramentaImprimir(), fala: "Imprimindo." },
+  { padroes: ["baixar", "baixar csv", "baixar arquivo"], acao: () => ferramentaBaixar(), fala: "Baixando." },
+  { padroes: ["topo", "início", "inicio", "voltar ao topo"], acao: () => document.getElementById("inicio")?.scrollIntoView({ behavior: "smooth" }), fala: "Voltando ao topo." },
+  { padroes: ["jornada", "jornada do cliente"], acao: () => selecionarRelatorioRapido("jornada"), fala: "Abrindo Jornada do Cliente." },
+  { padroes: ["forecast semanal"], acao: () => selecionarRelatorioRapido("forecast_semanal"), fala: "Abrindo Forecast semanal." },
+  { padroes: ["forecast mensal"], acao: () => selecionarRelatorioRapido("forecast_mensal"), fala: "Abrindo Forecast mensal." },
+  { padroes: ["central de inteligência", "central de inteligencia"], acao: () => document.getElementById("central-inteligencia-v10")?.scrollIntoView({ behavior: "smooth" }), fala: "Abrindo Central de Inteligência." },
+  { padroes: ["parar", "parar comando", "cancelar"], acao: () => alternarComandoDeVoz(), fala: "Parando comando de voz." }
+];
+
+let reconhecimentoComandoVoz = null;
+function interpretarComandoDeVoz(transcript) {
+  const t = normalizarTextoChave(transcript);
+  const status = document.getElementById("ferramentasVozStatus");
+  const comando = COMANDOS_DE_VOZ.find((c) => c.padroes.some((p) => t.includes(normalizarTextoChave(p))));
+  if (comando) {
+    if (status) status.textContent = `Comando: "${transcript}" → ${comando.fala}`;
+    comando.acao();
+  } else if (status) {
+    status.textContent = `Não reconheci o comando: "${transcript}".`;
+  }
+}
+function alternarComandoDeVoz() {
+  const btn = document.getElementById("btnFerramentaComandoVoz");
+  if (!reconhecimentoDeVozDisponivel()) {
+    document.getElementById("ferramentasVozStatus").textContent = "Comando de voz não é suportado neste navegador (funciona no Chrome/Edge).";
+    return;
+  }
+  if (reconhecimentoComandoVoz) {
+    reconhecimentoComandoVoz.stop();
+    reconhecimentoComandoVoz = null;
+    btn?.classList.remove("ativo");
+    document.getElementById("ferramentasVozStatus").textContent = "";
+    return;
+  }
+  reconhecimentoComandoVoz = criarReconhecimentoDeVoz(true);
+  btn?.classList.add("ativo");
+  document.getElementById("ferramentasVozStatus").textContent = "Comando de voz ativo — diga \"extrair\", \"sincronizar\", \"imprimir\", \"jornada\", \"forecast semanal\"...";
+  reconhecimentoComandoVoz.onresult = (ev) => {
+    const ultimo = ev.results[ev.results.length - 1];
+    if (ultimo.isFinal) interpretarComandoDeVoz(ultimo[0].transcript);
+  };
+  reconhecimentoComandoVoz.onerror = (ev) => {
+    document.getElementById("ferramentasVozStatus").textContent = `Erro no comando de voz: ${ev.error}.`;
+  };
+  reconhecimentoComandoVoz.onend = () => {
+    btn?.classList.remove("ativo");
+    reconhecimentoComandoVoz = null;
+  };
+  reconhecimentoComandoVoz.start();
+}
+
+function iniciarFerramentasFlutuantes() {
+  if (!reconhecimentoDeVozDisponivel()) {
+    document.getElementById("btnFerramentaDitar")?.setAttribute("disabled", "disabled");
+    document.getElementById("btnFerramentaComandoVoz")?.setAttribute("disabled", "disabled");
+    const status = document.getElementById("ferramentasVozStatus");
+    if (status) status.textContent = "Ditado e Comando de Voz precisam do Chrome ou Edge.";
+  }
+}
 
 iniciar();
 iniciarExperienciaV7();
 iniciarCentralInteligenciaV10();
+iniciarFerramentasFlutuantes();
 </script>
 
 </body>
