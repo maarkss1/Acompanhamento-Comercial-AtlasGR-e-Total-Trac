@@ -1,0 +1,12 @@
+{
+  "name": "atlasgr-forecast-semanal",
+  "private": true,
+  "type": "module",
+  "description": "Script de automacao que gera o Forecast semanal Comercial a partir do Bitrix e envia por e-mail.",
+  "scripts": {
+    "forecast-semanal": "node scripts/forecast-semanal.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.14"
+  }
+}

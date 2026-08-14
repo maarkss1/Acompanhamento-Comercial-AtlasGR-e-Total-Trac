@@ -1,0 +1,49 @@
+name: Forecast semanal - Comercial
+
+on:
+  schedule:
+    # Toda sexta-feira as 13h no horario de Brasilia (UTC-3, sem horario de
+    # verao desde 2019) = 16h UTC. Cron do GitHub Actions e sempre em UTC.
+    - cron: "0 16 * * 5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forecast-semanal
+  cancel-in-progress: false
+
+jobs:
+  gerar-e-enviar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: npm install --omit=dev
+
+      - name: Gerar (e enviar por e-mail, se configurado) o Forecast semanal
+        env:
+          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          FORECAST_DESTINATARIOS: ${{ vars.FORECAST_DESTINATARIOS }}
+        run: node scripts/forecast-semanal.mjs
+
+      - name: Commitar relatorio gerado
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add relatorios/forecast-semanal/
+          git diff --cached --quiet && echo "Nada novo para commitar" || git commit -m "Forecast semanal automatico - $(date -u +%F)"
+          git push

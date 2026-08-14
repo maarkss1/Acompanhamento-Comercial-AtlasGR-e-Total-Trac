@@ -417,6 +417,9 @@
   }
   .meta-progress-status.ok { color: var(--ok); }
   .meta-progress-status.pendente { color: var(--ink-2); }
+  .meta-seta { font-size: 13px; margin-right: 3px; font-weight: 900; }
+  .meta-seta-up { color: var(--ok); }
+  .meta-seta-down { color: var(--danger); }
   .relatorio-subtitulo {
     margin: 18px 0 7px;
     font-size: 13px;
@@ -964,6 +967,10 @@
         <div id="configSlaPrimeiroContato">
           <label for="slaPrimeiroContatoHoras" style="margin-top:0;">SLA de primeiro contato (horas)</label>
           <input type="number" id="slaPrimeiroContatoHoras" min="1" step="1" value="4">
+        </div>
+        <div id="configDiasEstagnacaoSDR">
+          <label for="diasEstagnacaoSDR" style="margin-top:0;">Considerar Lead estagnado a partir de (dias)</label>
+          <input type="number" id="diasEstagnacaoSDR" min="1" step="1" value="15">
         </div>
       </div>
       <p class="rodape-nota" style="margin-bottom:0;">
@@ -1743,6 +1750,8 @@ const RELATORIOS = {
   funil_leads: { grupo:"SDR & Leads", label:"🪜 Funil de Leads & conversão SDR", descricao:"Leads criados, status, desqualificação, oportunidades e ganhos.", handler:"catalogo", periodo:"mensal" },
   produtividade_atividades: { grupo:"SDR & Leads", label:"⚡ Produtividade de atividades por responsável", descricao:"Atividades concluídas por usuário/canal e entidades únicas tocadas.", handler:"catalogo", periodo:"mensal" },
   sla_primeiro_contato: { grupo:"SDR & Leads", label:"☎️ SLA de primeiro contato", descricao:"Tempo da criação do Lead até a primeira atividade concluída vinculada.", handler:"catalogo", periodo:"mensal", slaPrimeiroContato:true },
+  auditoria_sdr: { grupo:"SDR & Leads", label:"🧪 Auditoria SDR — validar dados e plano", descricao:"Leads sem atividade, atividades sem resultado registrado e completude de campos-chave do trabalho de SDR.", handler:"catalogo", periodo:"mensal" },
+  decisao_final_sdr: { grupo:"SDR & Leads", label:"🧭 Decisão Final SDR — saneamento seguro", descricao:"Leads estagnados classificados em ação recomendada (recontatar, desqualificar, escalar ou nutrir), sem escrever no Bitrix.", handler:"catalogo", periodo:"todas", diasEstagnacao:true },
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" }
@@ -2012,6 +2021,7 @@ function aoTrocarRelatorio() {
     document.getElementById("configMetaComercial").classList.toggle("oculto", !rel.meta);
     document.getElementById("configSlaAging").classList.toggle("oculto", !rel.slaAging);
     document.getElementById("configSlaPrimeiroContato").classList.toggle("oculto", !rel.slaPrimeiroContato);
+    document.getElementById("configDiasEstagnacaoSDR").classList.toggle("oculto", !rel.diasEstagnacao);
   }
 
   aplicarPeriodoRelatorioEspecial(chave);
@@ -3433,17 +3443,26 @@ function kpi(rotulo,valor){return{rotulo,valor};}
 // v11 — barra de atingimento de meta (semanal/mensal), reutilizada nos blocos
 // de Forecast semanal e Forecast mensal para mostrar visualmente se a meta
 // já foi batida ou quanto falta.
-function barraAtingimentoMeta(rotulo, realizado, meta) {
+// v13 — seta de tendência: verde pra cima quando já bateu a meta OU a projeção
+// (fechado + pipeline ponderado) aponta para bater; vermelha pra baixo quando
+// nem bateu nem está projetando bater. `projetado` é opcional — sem ele, a
+// seta usa o próprio `realizado` como referência (comportamento anterior).
+function barraAtingimentoMeta(rotulo, realizado, meta, projetado) {
   if (!meta) {
     return `<div class="meta-progress-row"><div class="meta-progress-head"><span>${escapeHtmlRelatorio(rotulo)}</span><span class="meta-progress-valores">${moedaRelatorio(realizado)} · meta não informada</span></div></div>`;
   }
   const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
   const bateu = realizado >= meta;
+  const referenciaProjecao = projetado != null ? projetado : realizado;
+  const noCaminho = bateu || referenciaProjecao >= meta;
   const largura = Math.min(100, pct);
+  const seta = noCaminho
+    ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
+    : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
   return `<div class="meta-progress-row">
-    <div class="meta-progress-head"><span>${escapeHtmlRelatorio(rotulo)}</span><span class="meta-progress-valores">${moedaRelatorio(realizado)} de ${moedaRelatorio(meta)} · <strong>${pct}%</strong></span></div>
+    <div class="meta-progress-head"><span>${seta} ${escapeHtmlRelatorio(rotulo)}</span><span class="meta-progress-valores">${moedaRelatorio(realizado)} de ${moedaRelatorio(meta)} · <strong>${pct}%</strong></span></div>
     <div class="meta-progress-track"><div class="meta-progress-fill ${bateu ? "bateu" : ""}" style="width:${largura}%;"></div></div>
-    <div class="meta-progress-status ${bateu ? "ok" : "pendente"}">${bateu ? "✓ Meta batida" : `Faltam ${moedaRelatorio(Math.max(0, meta - realizado))} para bater a meta`}</div>
+    <div class="meta-progress-status ${bateu ? "ok" : "pendente"}">${bateu ? "✓ Meta batida" : `Faltam ${moedaRelatorio(Math.max(0, meta - realizado))} para bater a meta${projetado != null ? ` · projeção: ${moedaRelatorio(projetado)}` : ""}`}</div>
   </div>`;
 }
 
@@ -3590,7 +3609,10 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="pipeline_coverage"){
-      const b=await baseDealsCatalogo(webhook,true),ref=new Date(`${p.referencia}T12:00:00`),meta=Number(document.getElementById("metaRelatorioComercial").value)||0;
+      const b=await baseDealsCatalogo(webhook,true),ref=new Date(`${p.referencia}T12:00:00`);
+      const campoMetaCoverage=document.getElementById("metaRelatorioComercial");
+      let meta=Number(campoMetaCoverage?.value)||0;
+      if(!meta){meta=metaMensalPadrao(p.fim||p.referencia);if(campoMetaCoverage&&meta)campoMetaCoverage.value=meta;}
       const ab=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));let total=0,pond=0,d30=0,d60=0,d90=0,sem=0;const g={};
       ab.forEach((d)=>{total+=d._VALOR;const pr=Number(d.PROBABILITY),prob=(Number.isFinite(pr)&&pr>0&&pr<=100)?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA);pond+=d._VALOR*prob/100;const cd=parteDataISO(d.CLOSEDATE);if(!cd)sem++;else{const dias=Math.floor((new Date(`${cd}T12:00:00`)-ref)/86400000);if(dias<=30)d30+=d._VALOR;else if(dias<=60)d60+=d._VALOR;else if(dias<=90)d90+=d._VALOR}
         const k=`${d._RESPONSAVEL}|||${d._ESTAGIO}`;(g[k]||=( {RESPONSAVEL:d._RESPONSAVEL,ESTAGIO:d._ESTAGIO,NEGOCIOS:0,PIPELINE:0,PONDERADO:0}));g[k].NEGOCIOS++;g[k].PIPELINE+=d._VALOR;g[k].PONDERADO+=d._VALOR*prob/100;});
@@ -3605,14 +3627,14 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const hist=await buscarHistoricoEntidadeSDR(webhook,2,co.map((d)=>d.ID)),vis={};hist.forEach((h)=>{const d=co.find((x)=>String(x.ID)===String(h.OWNER_ID));if(!d)return;const cat=String(h.CATEGORY_ID??d.CATEGORY_ID),sid=String(h.STAGE_ID||""),lab=b.meta.estagios?.[cat]?.[sid]?.label||sid;(vis[lab]||=new Set()).add(String(h.OWNER_ID));});
       const wids=new Set(won.map((d)=>String(d.ID))),rows=Object.entries(vis).map(([stage,set])=>({ESTAGIO:stage,VISITARAM:set.size,GANHOS:[...set].filter((id)=>wids.has(id)).length})).map((x)=>({...x,CONVERSAO_PCT:taxaPct(x.GANHOS,x.VISITARAM)})).sort((a,b)=>b.VISITARAM-a.VISITARAM);
       criarResultadoCatalogo(chave,"Conversão Comercial • funil e Win Rate",`Coorte criada entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
-        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",co.length-closed),kpi("Win Rate",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
+        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",co.filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)).length),kpi("Win Rate",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
         [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]}],
         "Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa.");
     }
 
     else if(chave==="aging_sla"){
       const b=await baseDealsCatalogo(webhook,true),sla=Math.max(1,Number(document.getElementById("slaAgingRelatorio").value)||30),ref=new Date(`${p.referencia}T12:00:00`);
-      const rows=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process").map((d)=>{const mt=parteDataISO(d.MOVED_TIME),dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):"";return{DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ESTAGIO:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,VALOR:d._VALOR,DIAS_NO_ESTAGIO:dias,FORA_SLA:dias!==""&&dias>sla?"S":"N"}}).sort((a,b)=>Number(b.DIAS_NO_ESTAGIO||-1)-Number(a.DIAS_NO_ESTAGIO||-1));
+      const rows=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)).map((d)=>{const mt=parteDataISO(d.MOVED_TIME),dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):"";return{DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ESTAGIO:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,VALOR:d._VALOR,DIAS_NO_ESTAGIO:dias,FORA_SLA:dias!==""&&dias>sla?"S":"N"}}).sort((a,b)=>Number(b.DIAS_NO_ESTAGIO||-1)-Number(a.DIAS_NO_ESTAGIO||-1));
       const crit=rows.filter((x)=>x.FORA_SLA==="S");
       criarResultadoCatalogo(chave,"Aging & SLA Comercial",`SLA: <strong>${sla} dias</strong>.`,
         [kpi("Abertas",rows.length),kpi("Fora SLA",crit.length),kpi("% fora SLA",`${taxaPct(crit.length,rows.length)}%`),kpi("Pipeline fora SLA",moedaRelatorio(crit.reduce((a,x)=>a+x.VALOR,0))),kpi(">30d",rows.filter((x)=>Number(x.DIAS_NO_ESTAGIO)>30).length),kpi(">60d",rows.filter((x)=>Number(x.DIAS_NO_ESTAGIO)>60).length),kpi(">90d",rows.filter((x)=>Number(x.DIAS_NO_ESTAGIO)>90).length),kpi("Sem MOVED_TIME",rows.filter((x)=>x.DIAS_NO_ESTAGIO==="").length)],
@@ -3724,11 +3746,13 @@ async function extrairRelatorioCatalogo(webhook,chave){
 
     else if(chave==="implantacao_posvenda"){
       const b=await baseDealsCatalogo(webhook,false),cats=encontrarCategoriasPorPalavras(b.meta,["financeiro","implantacao","implantação","sucesso do cliente","pos vendas","pós vendas","perfil securitario","perfil securitário"],false),ref=new Date(`${p.referencia}T12:00:00`);
-      const rows=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>cats.includes(String(d.CATEGORY_ID))).map((d)=>{const mt=parteDataISO(d.MOVED_TIME),dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):"";return{DEAL_ID:d.ID,CLIENTE:d._CLIENTE,PIPELINE:d._FUNIL,ETAPA:d._ESTAGIO,STATUS:d._SEMANTICA,RESPONSAVEL:d._RESPONSAVEL,DIAS_NO_ESTAGIO:dias,VALOR:d._VALOR}});
-      const g={};rows.forEach((x)=>{if(!g[x.PIPELINE])g[x.PIPELINE]={PIPELINE:x.PIPELINE,NEGOCIOS:0,ABERTOS:0,CONCLUIDOS:0,FORA_30D:0};const r=g[x.PIPELINE];r.NEGOCIOS++;if(x.STATUS==="process")r.ABERTOS++;else r.CONCLUIDOS++;if(Number(x.DIAS_NO_ESTAGIO)>30)r.FORA_30D++});
+      const rows=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>cats.includes(String(d.CATEGORY_ID))).map((d)=>{const mt=parteDataISO(d.MOVED_TIME),dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):"";return{DEAL_ID:d.ID,CLIENTE:d._CLIENTE,PIPELINE:d._FUNIL,ETAPA:d._ESTAGIO,STATUS:d._SEMANTICA,RESPONSAVEL:d._RESPONSAVEL,DIAS_NO_ESTAGIO:dias,VALOR:d._VALOR,PILOTO:ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)}});
+      // Piloto continua contado em Negócios/Concluídos/Pipelines (é uma etapa real de onboarding),
+      // mas sai de Abertos/Pipeline aberto/Backlog operacional — mesma regra usada no resto do pedido.
+      const g={};rows.forEach((x)=>{if(!g[x.PIPELINE])g[x.PIPELINE]={PIPELINE:x.PIPELINE,NEGOCIOS:0,ABERTOS:0,CONCLUIDOS:0,FORA_30D:0};const r=g[x.PIPELINE];r.NEGOCIOS++;if(x.STATUS==="process"){if(!x.PILOTO)r.ABERTOS++;}else r.CONCLUIDOS++;if(Number(x.DIAS_NO_ESTAGIO)>30)r.FORA_30D++});
       criarResultadoCatalogo(chave,"Implantação, Onboarding e Pós-Venda","Pipelines posteriores ao Comercial.",
-        [kpi("Negócios",rows.length),kpi("Abertos",rows.filter((x)=>x.STATUS==="process").length),kpi("Concluídos",rows.filter((x)=>x.STATUS!=="process").length),kpi(">30d",rows.filter((x)=>Number(x.DIAS_NO_ESTAGIO)>30).length),kpi("Pipelines",Object.keys(g).length),kpi("Clientes",new Set(rows.map((x)=>x.CLIENTE)).size),kpi("Pipeline aberto",moedaRelatorio(rows.filter((x)=>x.STATUS==="process").reduce((a,x)=>a+x.VALOR,0))),kpi("Responsáveis",new Set(rows.map((x)=>x.RESPONSAVEL)).size)],
-        [{titulo:"Resumo por pipeline",dados:Object.values(g),colunas:[{label:"Pipeline",valor:"PIPELINE"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Abertos",valor:"ABERTOS"},{label:"Concluídos",valor:"CONCLUIDOS"},{label:">30d",valor:"FORA_30D"}]},{titulo:"Backlog operacional",dados:rows.filter((x)=>x.STATUS==="process"),colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Pipeline",valor:"PIPELINE"},{label:"Etapa",valor:"ETAPA"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias",valor:"DIAS_NO_ESTAGIO"}]}]);
+        [kpi("Negócios",rows.length),kpi("Abertos",rows.filter((x)=>x.STATUS==="process"&&!x.PILOTO).length),kpi("Concluídos",rows.filter((x)=>x.STATUS!=="process").length),kpi(">30d",rows.filter((x)=>Number(x.DIAS_NO_ESTAGIO)>30).length),kpi("Pipelines",Object.keys(g).length),kpi("Clientes",new Set(rows.map((x)=>x.CLIENTE)).size),kpi("Pipeline aberto",moedaRelatorio(rows.filter((x)=>x.STATUS==="process"&&!x.PILOTO).reduce((a,x)=>a+x.VALOR,0))),kpi("Responsáveis",new Set(rows.map((x)=>x.RESPONSAVEL)).size)],
+        [{titulo:"Resumo por pipeline",dados:Object.values(g),colunas:[{label:"Pipeline",valor:"PIPELINE"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Abertos",valor:"ABERTOS"},{label:"Concluídos",valor:"CONCLUIDOS"},{label:">30d",valor:"FORA_30D"}]},{titulo:"Backlog operacional",dados:rows.filter((x)=>x.STATUS==="process"&&!x.PILOTO),colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Pipeline",valor:"PIPELINE"},{label:"Etapa",valor:"ETAPA"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias",valor:"DIAS_NO_ESTAGIO"}]}]);
     }
 
     else if(chave==="atividades_pendentes"){
@@ -3740,7 +3764,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
 
     else if(chave==="qualidade_crm"){
       const [db,lb]=await Promise.all([baseDealsCatalogo(webhook,false),baseLeadsCatalogo(webhook)]),ds=db.deals,ls=lb.leads;
-      const open=ds.filter((d)=>semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{})==="process");
+      const open=ds.filter((d)=>semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{})==="process"&&!ehEstagioPiloto(d.STAGE_ID,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]?.label));
       const checks=[
         {ENTIDADE:"Negócios",CAMPO:"Vínculo cliente",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!idBitrixValido(d.COMPANY_ID)&&!idBitrixValido(d.CONTACT_ID)&&!idBitrixValido(d.LEAD_ID)).length},
         {ENTIDADE:"Negócios",CAMPO:"SOURCE_ID",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!String(d.SOURCE_ID||"").trim()).length},
@@ -3756,6 +3780,58 @@ async function extrairRelatorioCatalogo(webhook,chave){
         [kpi("Negócios",ds.length),kpi("Leads",ls.length),kpi("Checks",checks.length),kpi("Ocorrências faltantes",checks.reduce((a,x)=>a+x.FALTANTES,0)),kpi("Deals sem cliente",checks[0].FALTANTES),kpi("Deals sem origem",checks[1].FALTANTES),kpi("Leads sem origem",checks[5].FALTANTES),kpi("Leads sem contato",checks[8].FALTANTES)],
         [{titulo:"Completude por regra",dados:checks,colunas:[{label:"Entidade",valor:"ENTIDADE"},{label:"Campo/regra",valor:"CAMPO"},{label:"Total",valor:"TOTAL"},{label:"Faltantes",valor:"FALTANTES"},{label:"Completude",valor:(x)=>`${x.COMPLETUDE_PCT}%`}]}],
         "Completude mede disponibilidade para operação e análise; não afirma que todo campo seja obrigatório.");
+    }
+
+    else if(chave==="auditoria_sdr"){
+      const lb=await baseLeadsCatalogo(webhook),ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p));
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),by={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(by[b.OWNER_ID]||=[]).push(x)}));
+      const semAtividade=ls.filter((l)=>!(by[String(l.ID)]||[]).length);
+      const concluidasSemAssunto=a.dados.filter((x)=>x.COMPLETED==="Y"&&!String(x.SUBJECT||"").trim());
+      const abertos=ls.filter((l)=>semanticaLead(l)==="process");
+      const semContatoRecente=abertos.filter((l)=>{
+        const ultimas=(by[String(l.ID)]||[]).map((x)=>new Date(x.END_TIME)).filter((d)=>!isNaN(d)).sort((x,y)=>y-x);
+        const ref=ultimas[0]||(l.LAST_ACTIVITY_TIME?new Date(l.LAST_ACTIVITY_TIME):new Date(l.DATE_CREATE));
+        return !isNaN(ref)&&(new Date()-ref)/86400000>7;
+      });
+      const checks=[
+        {ENTIDADE:"Leads",CAMPO:"Ao menos 1 atividade vinculada",TOTAL:ls.length,FALTANTES:semAtividade.length},
+        {ENTIDADE:"Atividades concluídas",CAMPO:"Assunto/resultado preenchido",TOTAL:a.dados.filter((x)=>x.COMPLETED==="Y").length,FALTANTES:concluidasSemAssunto.length},
+        {ENTIDADE:"Leads em aberto",CAMPO:"Contato nos últimos 7 dias",TOTAL:abertos.length,FALTANTES:semContatoRecente.length},
+        {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l.PHONE).length||valoresMulticampo(l.EMAIL).length)).length},
+        {ENTIDADE:"Leads",CAMPO:"Origem (SOURCE_ID)",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
+        {ENTIDADE:"Leads",CAMPO:"Responsável atribuído",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length}
+      ].map((x)=>({...x,COMPLETUDE_PCT:x.TOTAL?Math.round((1-x.FALTANTES/x.TOTAL)*10000)/100:100}));
+      const linhaLead=(l)=>({LEAD_ID:l.ID,CLIENTE:l.COMPANY_TITLE||`${l.NAME||""} ${l.LAST_NAME||""}`.trim()||l.TITLE||"",STATUS:labelStatusLead(lb.statusMap,l.STATUS_ID),RESPONSAVEL:nomeUsuario(l.ASSIGNED_BY_ID),CRIADO:l.DATE_CREATE||""});
+      criarResultadoCatalogo(chave,"Auditoria SDR • validar dados e plano",`Leads criados entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
+        [kpi("Leads no período",ls.length),kpi("Sem nenhuma atividade",semAtividade.length),kpi("Atividades sem resultado",concluidasSemAssunto.length),kpi("Abertos sem contato 7d+",semContatoRecente.length),kpi("Checks",checks.length),kpi("Ocorrências faltantes",checks.reduce((a,x)=>a+x.FALTANTES,0))],
+        [{titulo:"Completude e aderência ao plano de contato",dados:checks,colunas:[{label:"Entidade",valor:"ENTIDADE"},{label:"Campo/regra",valor:"CAMPO"},{label:"Total",valor:"TOTAL"},{label:"Faltantes",valor:"FALTANTES"},{label:"Completude",valor:(x)=>`${x.COMPLETUDE_PCT}%`}]},
+         {titulo:"Leads sem nenhuma atividade",dados:semAtividade.map(linhaLead),colunas:[{label:"Lead",valor:"LEAD_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Status",valor:"STATUS"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Criado",valor:"CRIADO"}]},
+         {titulo:"Leads em aberto sem contato recente (7d+)",dados:semContatoRecente.map(linhaLead),colunas:[{label:"Lead",valor:"LEAD_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Status",valor:"STATUS"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Criado",valor:"CRIADO"}]}],
+        "Auditoria usa apenas atividades e campos já mapeados pelo extrator; valida existência e completude, não a qualidade do conteúdo registrado em cada atividade.");
+    }
+
+    else if(chave==="decisao_final_sdr"){
+      const lb=await baseLeadsCatalogo(webhook),diasLimite=Math.max(1,Number(document.getElementById("diasEstagnacaoSDR").value)||15);
+      const a=await atividadesCatalogo(webhook,null,"",""),by={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(by[b.OWNER_ID]||=[]).push(x)}));
+      const agora=new Date();
+      const candidatos=lb.leads.filter((l)=>semanticaLead(l)==="process").map((l)=>{
+        const atividadesLead=by[String(l.ID)]||[],tentativas=atividadesLead.length;
+        const refParado=parteDataISO(l.MOVED_TIME)||parteDataISO(l.DATE_CREATE);
+        const diasParado=refParado?Math.max(0,Math.floor((agora-new Date(`${refParado}T12:00:00`))/86400000)):"";
+        let acao="Manter em nutrição";
+        if(diasParado===""||diasParado<diasLimite)acao=null;
+        else if(tentativas===0)acao="Recontatar";
+        else if(diasParado>diasLimite*3)acao="Desqualificar";
+        else if(tentativas>=3||Number(l.OPPORTUNITY)>0)acao="Escalar para Comercial";
+        return{LEAD_ID:l.ID,CLIENTE:l.COMPANY_TITLE||`${l.NAME||""} ${l.LAST_NAME||""}`.trim()||l.TITLE||"",STATUS:labelStatusLead(lb.statusMap,l.STATUS_ID),RESPONSAVEL:nomeUsuario(l.ASSIGNED_BY_ID),DIAS_PARADO:diasParado,TENTATIVAS:tentativas,ACAO_RECOMENDADA:acao};
+      }).filter((x)=>x.ACAO_RECOMENDADA).sort((x,y)=>Number(y.DIAS_PARADO)-Number(x.DIAS_PARADO));
+      const porAcao={};candidatos.forEach((x)=>{porAcao[x.ACAO_RECOMENDADA]=(porAcao[x.ACAO_RECOMENDADA]||0)+1});
+      criarResultadoCatalogo(chave,"Decisão Final SDR • saneamento seguro",`Leads em aberto estagnados há <strong>${diasLimite}+ dias</strong> sem mudança de etapa.`,
+        [kpi("Leads estagnados",candidatos.length),kpi("Recontatar",porAcao["Recontatar"]||0),kpi("Desqualificar",porAcao["Desqualificar"]||0),kpi("Escalar para Comercial",porAcao["Escalar para Comercial"]||0),kpi("Manter em nutrição",porAcao["Manter em nutrição"]||0),kpi("Limiar de estagnação",`${diasLimite} dias`)],
+        [{titulo:"Leads estagnados e ação recomendada",dados:candidatos,colunas:[{label:"Lead",valor:"LEAD_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Status",valor:"STATUS"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias parado",valor:"DIAS_PARADO"},{label:"Tentativas de contato",valor:"TENTATIVAS"},{label:"Ação recomendada",valor:"ACAO_RECOMENDADA"}]}],
+        "Apoio a decisão apenas — nenhuma alteração é enviada ao Bitrix automaticamente. Para aplicar uma ação, use a seção de Sincronização com o registro e o novo status.");
     }
 
     else throw new Error(`Relatório "${chave}" ainda não possui implementação.`);
@@ -4415,13 +4491,26 @@ async function extrairForecastSemanal(webhook) {
     }
     const gap = metaSemanal > 0 ? Math.max(0, metaSemanal - forecastTotal) : 0;
 
+    // v13 — além do fechado no mês, soma o pipeline aberto ponderado do mês
+    // inteiro (mesmo critério do semanal: sem estágios "Piloto") para dar uma
+    // projeção mensal de verdade, não só o que já foi entregue.
     let fechadoMes = 0;
+    let pipelinePonderadoMes = 0;
     for (const d of deals) {
       const stageMeta = meta.estagios?.[String(categoria)]?.[String(d.STAGE_ID)] || {};
-      if (semanticaDeal(d, stageMeta) === "success" && dataDentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) {
+      const stageLabelMes = stageMeta.label || d.STAGE_ID || "";
+      const semanticaMes = semanticaDeal(d, stageMeta);
+      if (semanticaMes === "success" && dataDentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) {
         fechadoMes += Number(d.OPPORTUNITY) || 0;
+      } else if (semanticaMes === "process" && !ehEstagioPiloto(d.STAGE_ID, stageLabelMes) && dataDentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) {
+        const probInformadaMes = Number(d.PROBABILITY);
+        const probMes = Number.isFinite(probInformadaMes) && probInformadaMes > 0 && probInformadaMes <= 100
+          ? probInformadaMes
+          : probabilidadeFallbackForecast(stageLabelMes, semanticaMes);
+        pipelinePonderadoMes += (Number(d.OPPORTUNITY) || 0) * probMes / 100;
       }
     }
+    const forecastMesTotal = fechadoMes + pipelinePonderadoMes;
     const gapMensal = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : 0;
 
     atualizarStatus("Forecast: montando modelo executivo Atlas...");
@@ -4454,6 +4543,8 @@ async function extrairForecastSemanal(webhook) {
         GAP_META: gap,
         ATINGIMENTO_SEMANAL_PCT: metaSemanal > 0 ? Math.round((fechado / metaSemanal) * 1000) / 10 : null,
         FECHADO_MES: fechadoMes,
+        PIPELINE_PONDERADO_MES: pipelinePonderadoMes,
+        FORECAST_MES_TOTAL: forecastMesTotal,
         META_MENSAL: metaMensal,
         GAP_MENSAL: gapMensal,
         ATINGIMENTO_MENSAL_PCT: metaMensal > 0 ? Math.round((fechadoMes / metaMensal) * 1000) / 10 : null,
@@ -4497,15 +4588,18 @@ function renderizarForecastSemanal() {
       : " Meta semanal não informada.");
 
   const kpis = [
+    ["Meta semanal", r.meta.meta_semanal ? moedaRelatorio(r.meta.meta_semanal) : "não informada"],
+    ["Meta mensal", r.meta.meta_mensal ? moedaRelatorio(r.meta.meta_mensal) : "não informada"],
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
-    ["Forecast total", moedaRelatorio(r.resumo.FORECAST_TOTAL)],
+    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES)],
+    ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL)],
+    ["Forecast total (mês)", moedaRelatorio(r.resumo.FORECAST_MES_TOTAL)],
     ["Commit", moedaRelatorio(r.resumo.COMMIT)],
     ["Best Case", moedaRelatorio(r.resumo.BEST_CASE)],
     ["Pipeline", moedaRelatorio(r.resumo.PIPELINE)],
     ["Abertos previstos", r.resumo.ABERTOS_PREVISTOS_SEMANA],
     ["Sem CLOSEDATE", r.resumo.SEM_CLOSEDATE_QTD],
     [r.meta.meta_semanal ? "Gap para meta semanal" : "CLOSEDATE vencida", r.meta.meta_semanal ? moedaRelatorio(r.resumo.GAP_META) : r.resumo.CLOSEDATE_VENCIDA_QTD],
-    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES)],
     [r.meta.meta_mensal ? "Gap para meta mensal" : "Meta mensal", r.meta.meta_mensal ? moedaRelatorio(r.resumo.GAP_MENSAL) : "não informada"]
   ];
   document.getElementById("forecastKpis").innerHTML = kpis.map(([rotulo, valor]) =>
@@ -4513,8 +4607,9 @@ function renderizarForecastSemanal() {
   ).join("");
 
   document.getElementById("forecastMetasBarras").innerHTML =
-    barraAtingimentoMeta("Atingimento da meta semanal (fechado na semana)", r.resumo.FECHADO_SEMANA, r.meta.meta_semanal) +
-    barraAtingimentoMeta(`Atingimento da meta mensal (fechado em ${mesAnoBR(r.meta.fim)})`, r.resumo.FECHADO_MES, r.meta.meta_mensal);
+    `<div class="relatorio-subtitulo" style="margin-top:0;">Metas (semanal e mensal)</div>` +
+    barraAtingimentoMeta("Meta semanal — fechado na semana", r.resumo.FECHADO_SEMANA, r.meta.meta_semanal, r.resumo.FORECAST_TOTAL) +
+    barraAtingimentoMeta(`Meta mensal — fechado em ${mesAnoBR(r.meta.fim)}`, r.resumo.FECHADO_MES, r.meta.meta_mensal, r.resumo.FORECAST_MES_TOTAL);
 
   document.getElementById("forecastVendedoresTabela").innerHTML = tabelaRelatorio([
     { label: "Responsável", valor: "RESPONSAVEL" },
