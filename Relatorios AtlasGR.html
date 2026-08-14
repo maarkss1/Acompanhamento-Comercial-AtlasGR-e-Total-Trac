@@ -3604,6 +3604,8 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "PROBABILITY do Bitrix tem prioridade; quando zerada, usa fallback por estágio.");
       resultadoRelatorioCatalogo.modelo_visual=modeloVisualMensal;
       resultadoRelatorioCatalogo.meta_visual=meta;
+      resultadoRelatorioCatalogo.meta_semanal_implicita=metaSemanalImplicita;
+      resultadoRelatorioCatalogo.resumo={FECHADO:fechado,FORECAST_TOTAL:forecast};
       resultadoRelatorioCatalogo.barra_meta=barraAtingimentoMeta(`Atingimento da meta mensal (${mesAnoBR(p.fim||p.referencia)})`,forecast,meta);
       renderizarRelatorioCatalogo();
     }
@@ -4152,6 +4154,19 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .activity-insight .mini-kpi b{display:block;font-size:22px;color:var(--orange);margin-bottom:4px}
 .activity-insight .mini-kpi span{font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700}
 @media(max-width:860px){.activity-insight{grid-template-columns:repeat(2,1fr)}}
+.meta-progress-wrap{display:flex;flex-direction:column;gap:12px;margin:16px 0 0}
+.meta-progress-row{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff}
+.meta-progress-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px;font-weight:700;color:var(--text-primary);flex-wrap:wrap}
+.meta-progress-valores{font-weight:600;color:var(--text-secondary);font-size:12px}
+.meta-progress-track{margin-top:8px;height:10px;border-radius:999px;background:var(--cream);overflow:hidden}
+.meta-progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--orange),#ffb703)}
+.meta-progress-fill.bateu{background:linear-gradient(90deg,var(--good),#37c98a)}
+.meta-progress-status{margin-top:6px;font-size:11.5px;font-weight:700}
+.meta-progress-status.ok{color:var(--good)}
+.meta-progress-status.pendente{color:var(--text-secondary)}
+.meta-seta{font-size:13px;margin-right:3px;font-weight:900}
+.meta-seta-up{color:var(--good)}
+.meta-seta-down{color:#d03b3b}
 `;
 const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
         <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>
@@ -4274,8 +4289,15 @@ function mesesForecastModelo(rows,tipo,porEtapa=false) {
 function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const r=resultado?.modelo_visual;if(!r)return "";
   const periodo=tipo==="mensal"?mesAnoBR(r.periodo_fim):`${formatarDataBR(r.periodo_inicio)} a ${formatarDataBR(r.periodo_fim)}`;
-  const meta=tipo==="semanal"?(Number(resultado?.meta?.meta_semanal)||0):(Number(resultado?.meta_visual)||0);
+  const metaSemanal=tipo==="semanal"?(Number(resultado?.meta?.meta_semanal)||0):(Number(resultado?.meta_semanal_implicita)||0);
+  const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
+  // v14 — mesmas barras "Metas (semanal e mensal)" (com seta verde/vermelha)
+  // do relatório dentro do app, agora também no HTML executivo exportado.
+  const barrasMetas=tipo==="semanal"
+    ?barraAtingimentoMeta("Meta semanal — fechado na semana",resultado.resumo.FECHADO_SEMANA,metaSemanal,resultado.resumo.FORECAST_TOTAL)
+      +barraAtingimentoMeta(`Meta mensal — fechado em ${mesAnoBR(resultado?.meta?.fim)}`,resultado.resumo.FECHADO_MES,metaMensal,resultado.resumo.FORECAST_MES_TOTAL)
+    :barraAtingimentoMeta(`Meta mensal — ${escapeHtmlRelatorio(periodo)}`,resultado.resumo?.FECHADO||resultado.resumo?.FORECAST_TOTAL||0,metaMensal);
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
@@ -4283,7 +4305,9 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   `<div class="kpi good kpi-clickable" onclick="abrirDetalhe('detail-fechados')"><div class="label">Fechados →</div><div class="value">${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</div><div class="small">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)}</div></div>`+
   `<div class="kpi warn kpi-clickable" onclick="abrirDetalhe('detail-pendentes')"><div class="label">Pendentes Assinatura →</div><div class="value">${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</div><div class="small">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)}</div></div>`+
   `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto →</div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
-  `<div class="kpi"><div class="label">Meta</div><div class="value ${meta?"":"meta-missing"}">${meta?moedaRelatorio(meta):"A definir"}</div><div class="small">${meta?"informada no extrator":"não informada"}</div></div></div></div>`+
+  `<div class="kpi"><div class="label">Meta semanal</div><div class="value ${metaSemanal?"":"meta-missing"}">${metaSemanal?moedaRelatorio(metaSemanal):"A definir"}</div><div class="small">${metaSemanal?"informada no extrator":"não informada"}</div></div>`+
+  `<div class="kpi"><div class="label">Meta mensal</div><div class="value ${metaMensal?"":"meta-missing"}">${metaMensal?moedaRelatorio(metaMensal):"A definir"}</div><div class="small">${metaMensal?"informada no extrator":"não informada"}</div></div></div>`+
+  `<div class="meta-progress-wrap">${barrasMetas}</div></div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
   `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p><div class="top3grid">`+
   `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado")).join("")}</div></div></details>`+
