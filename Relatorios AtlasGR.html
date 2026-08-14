@@ -420,7 +420,7 @@
   .meta-seta { font-size: 13px; margin-right: 3px; font-weight: 900; }
   .meta-seta-up { color: var(--ok); }
   .meta-seta-down { color: var(--danger); }
-  .meta-cards-destaque { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 0 0 16px; }
+  .meta-cards-destaque { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 0 0 16px; }
   .meta-card-destaque { border-radius: 16px; padding: 18px 20px; background: var(--surface); border: 2px solid var(--line); box-shadow: var(--shadow-card); }
   .meta-card-destaque.no-caminho { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 7%, var(--surface)); }
   .meta-card-destaque.abaixo { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
@@ -3492,8 +3492,8 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
     <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
     <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
-    <div class="meta-card-linha"><span>Entregue</span><strong>${moedaRelatorio(realizado)}</strong></div>
-    <div class="meta-card-linha"><span>Projeção</span><strong>${seta} ${projetado != null ? moedaRelatorio(projetado) : "—"}</strong></div>
+    <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
+    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
     <div class="meta-card-pct">${pct}% da meta atingido</div>
   </div>`;
 }
@@ -4199,7 +4199,7 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .meta-seta{font-size:13px;margin-right:3px;font-weight:900}
 .meta-seta-up{color:var(--good)}
 .meta-seta-down{color:#d03b3b}
-.meta-cards-destaque{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:18px 0 0}
+.meta-cards-destaque{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0 0}
 .meta-card-destaque{border-radius:16px;padding:20px 22px;background:#fff;border:2px solid var(--line);box-shadow:var(--shadow-card)}
 .meta-card-destaque.no-caminho{border-color:var(--good);background:rgba(12,163,12,.05)}
 .meta-card-destaque.abaixo{border-color:#d03b3b;background:rgba(208,59,59,.05)}
@@ -4331,16 +4331,14 @@ function mesesForecastModelo(rows,tipo,porEtapa=false) {
 function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const r=resultado?.modelo_visual;if(!r)return "";
   const periodo=tipo==="mensal"?mesAnoBR(r.periodo_fim):`${formatarDataBR(r.periodo_inicio)} a ${formatarDataBR(r.periodo_fim)}`;
-  const metaSemanal=tipo==="semanal"?(Number(resultado?.meta?.meta_semanal)||0):(Number(resultado?.meta_semanal_implicita)||0);
   const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
-  // v15 — cards de meta em destaque (meta + entregue + projeção + seta, tudo
-  // no mesmo card), abaixo da faixa principal de KPIs. Substitui a barra
-  // separada do v14 no HTML executivo exportado.
+  // v16 — só o card de Meta Mensal (sem semanal, sem projeção): meta e
+  // realizado no mês-calendário atual, contado até hoje.
+  const rotuloMesMeta=tipo==="semanal"?mesAnoBR(resultado?.meta?.mes_inicio):periodo;
   const cardsMetas=tipo==="semanal"
-    ?cardMetaDestaque("Meta Mensal",metaMensal,resultado.resumo.FECHADO_MES,resultado.resumo.FORECAST_MES_TOTAL)
-      +cardMetaDestaque("Meta Semanal",metaSemanal,resultado.resumo.FECHADO_SEMANA,resultado.resumo.FORECAST_TOTAL)
-    :cardMetaDestaque("Meta Mensal",metaMensal,resultado.resumo?.FECHADO||0,resultado.resumo?.FORECAST_TOTAL);
+    ?cardMetaDestaque(`Meta Mensal — ${rotuloMesMeta}`,metaMensal,resultado.resumo.FECHADO_MES)
+    :cardMetaDestaque(`Meta Mensal — ${rotuloMesMeta}`,metaMensal,resultado.resumo?.FECHADO||0);
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
@@ -4526,19 +4524,21 @@ async function extrairForecastSemanal(webhook) {
 
     const forecastTotal = fechado + ponderadoAberto;
 
-    // v12 — meta mensal: preenche o campo com o valor padrão do mês de referência
-    // (fim do período) quando o usuário não informou nada, e soma o já fechado no
-    // mês inteiro (não só na semana) para medir o atingimento da meta mensal.
+    // v16 — meta mensal sempre olha o mês-calendário ATUAL (hoje), não o mês do
+    // período selecionado no passo 3: o card de meta mensal deve refletir "como
+    // estamos indo este mês", mesmo que o usuário esteja olhando o forecast de
+    // outra semana. "Fechado no mês" soma até hoje (nunca no futuro).
+    const hojeISO = formatarDataISO(new Date());
     const campoMetaMensal = document.getElementById("metaForecastMensal");
     let metaMensal = Number(campoMetaMensal?.value) || 0;
     if (!metaMensal) {
-      metaMensal = metaMensalPadrao(fim);
+      metaMensal = metaMensalPadrao(hojeISO);
       if (campoMetaMensal && metaMensal) campoMetaMensal.value = metaMensal;
     }
-    const refMes = fim || inicio;
-    const [anoMes, mesMes] = refMes.split("-").map(Number);
+    const [anoMes, mesMes] = hojeISO.split("-").map(Number);
     const mesInicio = `${anoMes}-${String(mesMes).padStart(2, "0")}-01`;
-    const mesFim = formatarDataISO(new Date(anoMes, mesMes, 0));
+    const ultimoDiaMesCalendario = formatarDataISO(new Date(anoMes, mesMes, 0));
+    const mesFim = hojeISO < ultimoDiaMesCalendario ? hojeISO : ultimoDiaMesCalendario;
 
     // v12 — meta semanal explícita = meta mensal ÷ nº de semanas do mês (7 em 7 dias,
     // arredondado para cima). Só é usada quando o campo "Meta semanal" está vazio —
@@ -4643,14 +4643,8 @@ function renderizarForecastSemanal() {
   if (!r?.resumo) return;
   document.getElementById("bloco-forecast-semanal").classList.remove("oculto");
   document.getElementById("forecastPeriodoTexto").innerHTML =
-    `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))} • mês de referência ${escapeHtmlRelatorio(mesAnoBR(r.meta.fim))}.` +
-    (r.meta.meta_mensal ? ` Meta mensal: <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.") +
-    (r.meta.meta_semanal
-      ? ` Meta semanal: <strong>${moedaRelatorio(r.meta.meta_semanal)}</strong>` +
-        (r.meta.meta_semanal_origem === "derivada"
-          ? ` <span class="badge-relatorio">= meta mensal ÷ ${r.meta.semanas_no_mes} semana(s) do mês</span>.`
-          : " (informada manualmente).")
-      : " Meta semanal não informada.");
+    `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))}.` +
+    (r.meta.meta_mensal ? ` Meta mensal (${escapeHtmlRelatorio(mesAnoBR(r.meta.mes_inicio))}): <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
 
   const kpis = [
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
@@ -4669,13 +4663,12 @@ function renderizarForecastSemanal() {
     `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
   ).join("");
 
-  // v15 — cards de meta em destaque (meta + entregue + projeção + seta, tudo
-  // no mesmo card) no lugar das barras separadas.
+  // v16 — só o card de Meta Mensal (sem semanal, sem projeção): meta e
+  // realizado no mês-calendário atual, contado até hoje.
   document.getElementById("forecastMetasBarras").innerHTML =
-    `<div class="relatorio-subtitulo" style="margin-top:0;">Metas (semanal e mensal)</div>` +
+    `<div class="relatorio-subtitulo" style="margin-top:0;">Meta mensal</div>` +
     `<div class="meta-cards-destaque">` +
-    cardMetaDestaque("Meta Mensal", r.meta.meta_mensal, r.resumo.FECHADO_MES, r.resumo.FORECAST_MES_TOTAL) +
-    cardMetaDestaque("Meta Semanal", r.meta.meta_semanal, r.resumo.FECHADO_SEMANA, r.resumo.FORECAST_TOTAL) +
+    cardMetaDestaque(`Meta Mensal — ${mesAnoBR(r.meta.mes_inicio)}`, r.meta.meta_mensal, r.resumo.FECHADO_MES) +
     `</div>`;
 
   document.getElementById("forecastVendedoresTabela").innerHTML = tabelaRelatorio([
