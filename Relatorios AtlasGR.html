@@ -420,6 +420,16 @@
   .meta-seta { font-size: 13px; margin-right: 3px; font-weight: 900; }
   .meta-seta-up { color: var(--ok); }
   .meta-seta-down { color: var(--danger); }
+  .meta-cards-destaque { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 0 0 16px; }
+  .meta-card-destaque { border-radius: 16px; padding: 18px 20px; background: var(--surface); border: 2px solid var(--line); box-shadow: var(--shadow-card); }
+  .meta-card-destaque.no-caminho { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 7%, var(--surface)); }
+  .meta-card-destaque.abaixo { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
+  .meta-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 800; color: var(--ink-2); }
+  .meta-card-valor { font-size: 26px; font-weight: 800; color: var(--ink); margin: 4px 0 12px; letter-spacing: -0.02em; }
+  .meta-card-linha { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--ink-2); padding: 6px 0; border-top: 1px dashed var(--line); }
+  .meta-card-linha strong { color: var(--ink); font-weight: 700; }
+  .meta-card-pct { margin-top: 8px; font-size: 11px; font-weight: 700; color: var(--ink-2); }
+  @media (max-width: 640px) { .meta-cards-destaque { grid-template-columns: 1fr; } }
   .relatorio-subtitulo {
     margin: 18px 0 7px;
     font-size: 13px;
@@ -3466,6 +3476,28 @@ function barraAtingimentoMeta(rotulo, realizado, meta, projetado) {
   </div>`;
 }
 
+// v15 — card de meta em destaque: meta, entregue e projeção juntos no mesmo
+// card, com a seta de tendência dentro do próprio card (substitui a barra
+// separada na Visão geral do forecast — mais destaque, menos peças soltas).
+function cardMetaDestaque(titulo, meta, realizado, projetado) {
+  if (!meta) {
+    return `<div class="meta-card-destaque sem-meta"><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor">A definir</div><div class="meta-card-linha"><span>Meta não informada</span></div></div>`;
+  }
+  const bateu = realizado >= meta;
+  const noCaminho = bateu || (projetado != null && projetado >= meta);
+  const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
+  const seta = noCaminho
+    ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
+    : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
+  return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
+    <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
+    <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
+    <div class="meta-card-linha"><span>Entregue</span><strong>${moedaRelatorio(realizado)}</strong></div>
+    <div class="meta-card-linha"><span>Projeção</span><strong>${seta} ${projetado != null ? moedaRelatorio(projetado) : "—"}</strong></div>
+    <div class="meta-card-pct">${pct}% da meta atingido</div>
+  </div>`;
+}
+
 async function mapaOrigensRelatorio(webhook){
   const a=await carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"SOURCE","order[SORT]":"ASC"});
   const m={};a.forEach((x)=>m[String(x.STATUS_ID)]=x.NAME||x.STATUS_ID);return m;
@@ -4167,6 +4199,16 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .meta-seta{font-size:13px;margin-right:3px;font-weight:900}
 .meta-seta-up{color:var(--good)}
 .meta-seta-down{color:#d03b3b}
+.meta-cards-destaque{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:18px 0 0}
+.meta-card-destaque{border-radius:16px;padding:20px 22px;background:#fff;border:2px solid var(--line);box-shadow:var(--shadow-card)}
+.meta-card-destaque.no-caminho{border-color:var(--good);background:rgba(12,163,12,.05)}
+.meta-card-destaque.abaixo{border-color:#d03b3b;background:rgba(208,59,59,.05)}
+.meta-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--muted)}
+.meta-card-valor{font-size:28px;font-weight:800;color:var(--text-primary);margin:4px 0 12px;letter-spacing:-.02em}
+.meta-card-linha{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--text-secondary);padding:6px 0;border-top:1px dashed var(--line)}
+.meta-card-linha strong{color:var(--text-primary);font-weight:700}
+.meta-card-pct{margin-top:8px;font-size:11.5px;font-weight:700;color:var(--muted)}
+@media(max-width:640px){.meta-cards-destaque{grid-template-columns:1fr}}
 `;
 const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
         <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>
@@ -4292,22 +4334,21 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const metaSemanal=tipo==="semanal"?(Number(resultado?.meta?.meta_semanal)||0):(Number(resultado?.meta_semanal_implicita)||0);
   const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
-  // v14 — mesmas barras "Metas (semanal e mensal)" (com seta verde/vermelha)
-  // do relatório dentro do app, agora também no HTML executivo exportado.
-  const barrasMetas=tipo==="semanal"
-    ?barraAtingimentoMeta("Meta semanal — fechado na semana",resultado.resumo.FECHADO_SEMANA,metaSemanal,resultado.resumo.FORECAST_TOTAL)
-      +barraAtingimentoMeta(`Meta mensal — fechado em ${mesAnoBR(resultado?.meta?.fim)}`,resultado.resumo.FECHADO_MES,metaMensal,resultado.resumo.FORECAST_MES_TOTAL)
-    :barraAtingimentoMeta(`Meta mensal — ${escapeHtmlRelatorio(periodo)}`,resultado.resumo?.FECHADO||resultado.resumo?.FORECAST_TOTAL||0,metaMensal);
+  // v15 — cards de meta em destaque (meta + entregue + projeção + seta, tudo
+  // no mesmo card), abaixo da faixa principal de KPIs. Substitui a barra
+  // separada do v14 no HTML executivo exportado.
+  const cardsMetas=tipo==="semanal"
+    ?cardMetaDestaque("Meta Mensal",metaMensal,resultado.resumo.FECHADO_MES,resultado.resumo.FORECAST_MES_TOTAL)
+      +cardMetaDestaque("Meta Semanal",metaSemanal,resultado.resumo.FECHADO_SEMANA,resultado.resumo.FORECAST_TOTAL)
+    :cardMetaDestaque("Meta Mensal",metaMensal,resultado.resumo?.FECHADO||0,resultado.resumo?.FORECAST_TOTAL);
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
   `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2><div class="kpis">`+
   `<div class="kpi good kpi-clickable" onclick="abrirDetalhe('detail-fechados')"><div class="label">Fechados →</div><div class="value">${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</div><div class="small">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)}</div></div>`+
   `<div class="kpi warn kpi-clickable" onclick="abrirDetalhe('detail-pendentes')"><div class="label">Pendentes Assinatura →</div><div class="value">${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</div><div class="small">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)}</div></div>`+
-  `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto →</div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
-  `<div class="kpi"><div class="label">Meta semanal</div><div class="value ${metaSemanal?"":"meta-missing"}">${metaSemanal?moedaRelatorio(metaSemanal):"A definir"}</div><div class="small">${metaSemanal?"informada no extrator":"não informada"}</div></div>`+
-  `<div class="kpi"><div class="label">Meta mensal</div><div class="value ${metaMensal?"":"meta-missing"}">${metaMensal?moedaRelatorio(metaMensal):"A definir"}</div><div class="small">${metaMensal?"informada no extrator":"não informada"}</div></div></div>`+
-  `<div class="meta-progress-wrap">${barrasMetas}</div></div>`+
+  `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto →</div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div></div>`+
+  `<div class="meta-cards-destaque">${cardsMetas}</div></div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
   `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p><div class="top3grid">`+
   `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado")).join("")}</div></div></details>`+
@@ -4612,8 +4653,6 @@ function renderizarForecastSemanal() {
       : " Meta semanal não informada.");
 
   const kpis = [
-    ["Meta semanal", r.meta.meta_semanal ? moedaRelatorio(r.meta.meta_semanal) : "não informada"],
-    ["Meta mensal", r.meta.meta_mensal ? moedaRelatorio(r.meta.meta_mensal) : "não informada"],
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
     ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES)],
     ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL)],
@@ -4630,10 +4669,14 @@ function renderizarForecastSemanal() {
     `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
   ).join("");
 
+  // v15 — cards de meta em destaque (meta + entregue + projeção + seta, tudo
+  // no mesmo card) no lugar das barras separadas.
   document.getElementById("forecastMetasBarras").innerHTML =
     `<div class="relatorio-subtitulo" style="margin-top:0;">Metas (semanal e mensal)</div>` +
-    barraAtingimentoMeta("Meta semanal — fechado na semana", r.resumo.FECHADO_SEMANA, r.meta.meta_semanal, r.resumo.FORECAST_TOTAL) +
-    barraAtingimentoMeta(`Meta mensal — fechado em ${mesAnoBR(r.meta.fim)}`, r.resumo.FECHADO_MES, r.meta.meta_mensal, r.resumo.FORECAST_MES_TOTAL);
+    `<div class="meta-cards-destaque">` +
+    cardMetaDestaque("Meta Mensal", r.meta.meta_mensal, r.resumo.FECHADO_MES, r.resumo.FORECAST_MES_TOTAL) +
+    cardMetaDestaque("Meta Semanal", r.meta.meta_semanal, r.resumo.FECHADO_SEMANA, r.resumo.FORECAST_TOTAL) +
+    `</div>`;
 
   document.getElementById("forecastVendedoresTabela").innerHTML = tabelaRelatorio([
     { label: "Responsável", valor: "RESPONSAVEL" },
