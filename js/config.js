@@ -282,6 +282,12 @@ const RELATORIOS = {
 // v11 — Metas mensais do forecast Comercial (R$), usadas como valor padrão da
 // "Meta comercial mensal" e da meta mensal do Forecast semanal. O campo continua
 // editável — isto é só o ponto de partida por mês/ano corrente.
+//
+// ⚠️ Estes valores devem ser mantidos idênticos aos de
+// METAS_FORECAST_MENSAL_PADRAO em scripts/forecast-semanal.mjs — não há
+// compartilhamento de módulo entre o navegador (este arquivo, carregado como
+// <script> clássico) e o script Node (roda fora do navegador via GitHub
+// Actions). Ao mudar uma meta aqui, replique manualmente no outro arquivo.
 const METAS_FORECAST_MENSAL_PADRAO = {
   1: 13650.00, 2: 27300.00, 3: 38500.00, 4: 27300.00, 5: 27300.00, 6: 27300.00,
   7: 27300.00, 8: 34845.70, 9: 40470.70, 10: 40520.70, 11: 34845.70, 12: 21195.70

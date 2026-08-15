@@ -417,12 +417,23 @@ function semanticaDeal(deal, metaStage) {
 
 // v11 — Estágios "Piloto" (Comercial e Financeiro) não entram no pipeline
 // aberto: são fase de teste/adoção do cliente, não previsão de receita.
+//
+// ⚠️ FONTE DA VERDADE deste projeto para regras de forecast (metas, estágios
+// piloto, fallback de probabilidade, buckets). O navegador não compartilha
+// módulo ES com `scripts/forecast-semanal.mjs` (Node, roda fora do navegador
+// via GitHub Actions) — não há bundler neste projeto. Qualquer mudança aqui
+// (novo estágio piloto, nova regra de fallback, novo bucket) precisa ser
+// replicada manualmente em `scripts/forecast-semanal.mjs`, que documenta o
+// mesmo aviso no sentido inverso. Ver também METAS_FORECAST_MENSAL_PADRAO em
+// js/config.js.
 const STAGE_IDS_PILOTO = new Set(["UC_R1YAOS", "UC_JWY0OY", "UC_AM8GK1", "UC_I37148", "UC_EU6LUO", "UC_WBYFT4", "UC_QT3CO8"]);
 function ehEstagioPiloto(stageId, stageLabel) {
   if (stageId != null && STAGE_IDS_PILOTO.has(String(stageId))) return true;
   return normalizarTextoChave(stageLabel || "").includes("piloto");
 }
 
+// ⚠️ Réplica manual desta função em scripts/forecast-semanal.mjs (Node não
+// importa este arquivo). Qualquer mudança de regra precisa ir nos dois lugares.
 function probabilidadeFallbackForecast(label, semantica) {
   if (semantica === "success") return 100;
   if (semantica === "failure") return 0;
