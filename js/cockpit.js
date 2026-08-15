@@ -58,6 +58,65 @@ function iniciarCockpitExecutivo() {
   }
   atualizarRelogioCockpit();
   cockpitRenderEstadoVazio();
+  cockpitAtualizarTicker();
+  cockpitIniciarAutoAtualizacao();
+}
+
+// ---------------------------------------------------------------------------
+// Ticker (faixa "bolsa de valores") — mostrado na primeira tela, junto com os
+// cards. Não recalcula nada: só projeta cockpitState.ultimoCalculo (o mesmo
+// cache usado pela Situação Agora e pelas exportações) como uma lista curta
+// de itens em texto corrido, rolando em loop via CSS.
+// ---------------------------------------------------------------------------
+function cockpitTickerItens() {
+  const cache = cockpitState.ultimoCalculo;
+  if (!cache) return ["Sem dados carregados nesta sessão — abra um relatório abaixo ou configure o webhook para atualizar automaticamente."];
+  const { c, g, alertasInfo } = cache;
+  const itens = [
+    `Meta do mês: ${c.resultadoMes.metaMensal ? moedaRelatorio(c.resultadoMes.metaMensal) : "não informada"}`,
+    `Fechado: ${moedaRelatorio(c.resultadoMes.fechadoMes)} (${cockpitND(c.resultadoMes.pctMeta, (v) => `${v}%`)} da meta)`,
+    `Forecast total: ${moedaRelatorio(c.forecast.forecastTotal)}`,
+    `Commit: ${moedaRelatorio(c.forecast.commit)} · Best Case: ${moedaRelatorio(c.forecast.bestCase)}`,
+    `Pipeline elegível: ${moedaRelatorio(c.saude.pipelineElegivel)}`,
+    `Coverage: ${c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`)}`,
+    `Pipeline criado no período: ${moedaRelatorio(c.saude.pipelineCriadoPeriodo)}`,
+    `Win Rate: ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
+  ];
+  if (g) itens.push(`Ritmo de geração de pipeline: ${cockpitND(g.paceRitmoPct, (v) => `${v}%`)}`);
+  const nAlertas = alertasInfo?.alertas?.length || 0;
+  const nCriticos = alertasInfo?.alertas?.filter((a) => a.nivel === "critico").length || 0;
+  itens.push(nAlertas ? `🔔 ${nAlertas} alerta(s) ativo(s)${nCriticos ? ` (${nCriticos} crítico(s))` : ""}` : "🟢 Nenhum alerta ativo");
+  return itens;
+}
+
+function cockpitAtualizarTicker() {
+  const track = cockpitEl("cockpitTickerTrack");
+  if (!track) return;
+  const itens = cockpitTickerItens();
+  // Duplica a lista para o loop do CSS (translateX -50%) ficar contínuo, sem "salto".
+  const html = itens.map((t) => `<span class="cockpit-ticker-item">${escapeHtmlRelatorio(t)}</span>`).join("");
+  track.innerHTML = html + html;
+  const label = document.querySelector("#cockpitTicker .cockpit-ticker-label");
+  if (label) label.title = cockpitState.ultimaAtualizacao ? `Atualizado às ${cockpitState.ultimaAtualizacao.toLocaleTimeString("pt-BR")}` : "Ainda sem dados nesta sessão";
+}
+
+// Atualização automática: só roda sozinha se o usuário já salvou o webhook no
+// navegador (não faz sentido tentar em silêncio com um campo vazio, e nunca
+// pedimos o webhook de novo sem ação do usuário). A cada 5 minutos — bem
+// abaixo de qualquer limite de taxa do Bitrix, já que é sempre uma única
+// consulta por vez, igual ao clique manual em "Atualizar agora".
+const COCKPIT_AUTO_ATUALIZACAO_MS = 5 * 60 * 1000;
+let cockpitAutoAtualizacaoTimer = null;
+function cockpitIniciarAutoAtualizacao() {
+  if (cockpitAutoAtualizacaoTimer) return;
+  cockpitAutoAtualizacaoTimer = setInterval(() => {
+    if (cockpitState.carregando) return;
+    const salvo = typeof obterWebhookSalvo === "function" ? obterWebhookSalvo() : "";
+    if (!salvo) return;
+    const campo = document.getElementById("webhook");
+    if (campo && !campo.value.trim()) campo.value = salvo;
+    atualizarCockpit();
+  }, COCKPIT_AUTO_ATUALIZACAO_MS);
 }
 
 function atualizarRelogioCockpit() {
@@ -921,6 +980,7 @@ function renderizarCockpit() {
   // Cache do último cálculo completo — usado por "⚡ Situação Comercial
   // Agora" para montar o resumo sem reprocessar nada (nem chamar o Bitrix).
   cockpitState.ultimoCalculo = { c, g, s, q, alertasInfo };
+  cockpitAtualizarTicker();
 }
 
 // ---------------------------------------------------------------------------

@@ -353,7 +353,13 @@ function filtrarAtalhosRelatorios(){
   });
   document.getElementById("atalhosRelatoriosSemResultado")?.classList.toggle("oculto",visiveis>0);
 }
-function selecionarRelatorioRapido(chave){const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});}
+function selecionarRelatorioRapido(chave){revelarFluxoExtracao();const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});}
+
+// Passos 1-8 (Conexão, Escolha, Período, Campos, Executar, Sincronizar, Central
+// de Inteligência, Analisar com IA) ficam escondidos até o usuário escolher um
+// relatório na tela inicial (ou clicar em "Configurar extração manualmente"/
+// "Ver Cockpit completo") -- a primeira tela deve mostrar só os cards.
+function revelarFluxoExtracao(){document.getElementById("fluxo-extracao")?.classList.remove("oculto");}
 
 function atualizarResumoConfiguracaoV7(){
   const relKey=document.getElementById("relatorio")?.value,entKey=document.getElementById("entidade")?.value;

@@ -72,6 +72,31 @@
 
 <main>
 
+  <div class="cockpit-ticker" id="cockpitTicker" aria-live="polite">
+    <div class="cockpit-ticker-label"><span class="cockpit-ticker-dot"></span> Cockpit ao vivo</div>
+    <div class="cockpit-ticker-track-wrap">
+      <div class="cockpit-ticker-track" id="cockpitTickerTrack">
+        <span class="cockpit-ticker-item">Sem dados carregados nesta sessão — abra um relatório abaixo ou configure o webhook para atualizar automaticamente.</span>
+      </div>
+    </div>
+    <a href="#cockpit-executivo" class="cockpit-ticker-link" onclick="revelarFluxoExtracao()">Ver Cockpit completo →</a>
+  </div>
+
+  <section class="workspace-intro" id="inicio">
+    <div class="workspace-title">
+      <div><h2>Comece pelo que você quer descobrir</h2><p>Um card para cada relatório que pode ser gerado. Clique em qualquer um para configurar o relatório e o período automaticamente — você ainda pode ajustar tudo depois.</p></div>
+      <button type="button" class="secundario" onclick="abrirAjuda('visaoGeral')">Como usar esta tela?</button>
+    </div>
+    <label for="buscaAtalhosRelatorios">Buscar relatório (nome, palavra-chave ou grupo)</label>
+    <input type="text" id="buscaAtalhosRelatorios" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarAtalhosRelatorios()">
+    <div id="atalhosRelatoriosGrupos"></div>
+    <p class="rodape-nota oculto" id="atalhosRelatoriosSemResultado">Nenhum relatório encontrado para esta busca.</p>
+    <div class="config-summary" id="resumoConfiguracaoTopo"></div>
+    <div class="row" style="margin-top:14px;">
+      <button type="button" class="secundario" onclick="revelarFluxoExtracao(); document.getElementById('conexao').scrollIntoView({behavior:'smooth',block:'start'});">🛠️ Configurar extração manualmente</button>
+    </div>
+  </section>
+
   <div class="card cockpit-card" id="cockpit-executivo">
     <div class="cockpit-header">
       <div>
@@ -204,18 +229,7 @@
   </div>
 
 
-  <section class="workspace-intro" id="inicio">
-    <div class="workspace-title">
-      <div><h2>Comece pelo que você quer descobrir</h2><p>Um card para cada relatório que pode ser gerado. Clique em qualquer um para configurar o relatório e o período automaticamente — você ainda pode ajustar tudo depois.</p></div>
-      <button type="button" class="secundario" onclick="abrirAjuda('visaoGeral')">Como usar esta tela?</button>
-    </div>
-    <label for="buscaAtalhosRelatorios">Buscar relatório (nome, palavra-chave ou grupo)</label>
-    <input type="text" id="buscaAtalhosRelatorios" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarAtalhosRelatorios()">
-    <div id="atalhosRelatoriosGrupos"></div>
-    <p class="rodape-nota oculto" id="atalhosRelatoriosSemResultado">Nenhum relatório encontrado para esta busca.</p>
-    <div class="config-summary" id="resumoConfiguracaoTopo"></div>
-  </section>
-
+  <div class="oculto" id="fluxo-extracao">
   <div class="card" id="conexao">
     <h2><span class="num">1</span> Conexão com o Bitrix</h2>
     <div class="aviso">
@@ -849,6 +863,8 @@
     </p>
     <pre id="codigoPython"></pre>
     <button type="button" class="secundario" onclick="copiarPython()">Copiar código</button>
+  </div>
+
   </div>
 
 </main>

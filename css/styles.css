@@ -771,6 +771,35 @@
   .cockpit-metas-protecao { flex-wrap: wrap; }
   .cockpit-metas-protecao > div { min-width: 140px; }
 
+  .cockpit-ticker {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--ink); color: #fff; border-radius: var(--radius-control);
+    padding: 0 14px; margin-bottom: 16px; height: 40px; overflow: hidden;
+    position: sticky; top: 6px; z-index: 5;
+  }
+  :root[data-tema="escuro"] .cockpit-ticker { background: var(--surface-2); border: 1px solid var(--line); }
+  .cockpit-ticker-label {
+    flex: 0 0 auto; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+    display: flex; align-items: center; gap: 6px; color: var(--brand-2);
+  }
+  .cockpit-ticker-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+    animation: cockpitTickerPulso 1.6s ease-in-out infinite;
+  }
+  @keyframes cockpitTickerPulso { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+  .cockpit-ticker-track-wrap { flex: 1 1 auto; overflow: hidden; white-space: nowrap; min-width: 0; }
+  .cockpit-ticker-track { display: inline-block; white-space: nowrap; animation: cockpitTickerRolar 40s linear infinite; }
+  .cockpit-ticker:hover .cockpit-ticker-track { animation-play-state: paused; }
+  @keyframes cockpitTickerRolar { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .cockpit-ticker-item { display: inline-block; font-size: 12.5px; padding: 0 26px; position: relative; }
+  .cockpit-ticker-item::after { content: "•"; position: absolute; right: 0; color: var(--brand); }
+  .cockpit-ticker-link {
+    flex: 0 0 auto; font-size: 11.5px; font-weight: 700; color: #fff; text-decoration: none;
+    border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 4px 10px; white-space: nowrap;
+  }
+  .cockpit-ticker-link:hover { border-color: #fff; }
+  @media (prefers-reduced-motion: reduce) { .cockpit-ticker-track { animation: none; } }
+
   .cockpit-placeholder-vazio {
     grid-column: 1 / -1;
     border: 1px dashed var(--line); border-radius: 14px; background: var(--surface-2);
