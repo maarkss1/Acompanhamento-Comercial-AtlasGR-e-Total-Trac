@@ -398,6 +398,15 @@ function selecionarRelatorioRapido(chave){
     const blocoId=RELATORIO_BLOCO_DEDICADO_LOCAL[chave];
     const bloco=blocoId?document.getElementById(blocoId):null;
     if(bloco){
+      // sdr.html tem dois blocos dedicados mutuamente exclusivos (Diário SDR /
+      // Análise SDR) na mesma página — ao selecionar um pelo card, esconde os
+      // outros blocos dedicados presentes nesta página (forecast.html só tem
+      // um, então este passo não muda nada nela).
+      Object.entries(RELATORIO_BLOCO_DEDICADO_LOCAL).forEach(([k,id])=>{
+        if(k===chave)return;
+        document.getElementById(id)?.classList.add("oculto");
+      });
+      bloco.classList.remove("oculto");
       const s=document.getElementById("relatorio");
       if(s){s.value=chave;if(typeof aoTrocarRelatorio==="function")aoTrocarRelatorio();}
       if(typeof atualizarResumoConfiguracaoV7==="function")atualizarResumoConfiguracaoV7();
