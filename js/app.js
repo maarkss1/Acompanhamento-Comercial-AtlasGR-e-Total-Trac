@@ -13,4 +13,7 @@ iniciar(); // seguro em qualquer página: só popula #entidade/#relatorio se amb
 iniciarExperienciaV7(); // seguro em qualquer página: cada passo interno já é protegido por checagem de elemento
 if (document.getElementById("central-inteligencia-v10")) iniciarCentralInteligenciaV10();
 if (document.getElementById("ferramentasFlutuantes")) iniciarFerramentasFlutuantes();
-if (document.getElementById("cockpit-executivo")) iniciarCockpitExecutivo();
+// cockpit.html tem o painel completo (#cockpit-executivo); index.html só tem o
+// ticker ao vivo (#cockpitTicker) — iniciarCockpitExecutivo() é seguro nos dois
+// casos (cada passo interno já é protegido por checagem de elemento).
+if (document.getElementById("cockpit-executivo") || document.getElementById("cockpitTicker")) iniciarCockpitExecutivo();
