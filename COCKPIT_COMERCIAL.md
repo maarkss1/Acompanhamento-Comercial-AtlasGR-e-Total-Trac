@@ -232,6 +232,67 @@ e `_CICLO` — o Cockpit não recalcula essas fórmulas, só as consome.
   sobre o mesmo texto plano montado em `cockpitGerarSituacaoAgora` (guardado
   num `<pre>` oculto, `#cockpitSituacaoTexto`).
 
+## Exportações do Cockpit (`js/cockpit.js`, funções `cockpit*Export*`/`cockpit*RelatorioExecutivo*`)
+
+Botões no cabeçalho do Cockpit, ao lado de "↻ Atualizar agora" e "⚡ Gerar
+Situação Agora": **🌐 Abrir HTML**, **⬇️ Baixar HTML**, **⬇️ CSV**,
+**⬇️ JSON**, **📄 Gerar Relatório Executivo Completo** e **⬇️ Baixar Relatório
+Executivo**. Todas exigem que o Cockpit já tenha sido carregado nesta sessão
+(`cockpitState.ultimoCalculo` preenchido por `renderizarCockpit()`); senão
+mostram erro pedindo para clicar em "↻ Atualizar agora" antes — **nenhuma
+exportação chama o Bitrix de novo nem recalcula fórmula alguma**, só
+serializa o que já está na tela.
+
+- **HTML autônomo do Cockpit** (`cockpitGerarHTMLExport(false)`,
+  `cockpitAbrirHTMLExport`/`cockpitBaixarHTMLExport`) — reaproveita o mesmo
+  CSS/logo/letterhead usados no modelo visual do Forecast
+  (`MODELO_EXECUTIVO_CSS`/`MODELO_EXECUTIVO_LOGO`, `js/forecast.js`) e o
+  padrão `abrirHtmlEmNovaAba`/`baixarArquivo` já existente. Mostra os KPIs de
+  Resultado do Mês, Forecast, Saúde do Pipeline, Eficiência da Máquina,
+  Alertas Gerenciais, Proteção de Receita, Pipeline por Estágio, Geração de
+  Pipeline, SDR e Qualidade dos Dados — todos os blocos com indicadores
+  numéricos do Cockpit. Funciona sozinho após baixado (sem servidor).
+- **CSV** (`cockpitExportarCSV`) — uma linha por indicador, colunas
+  `bloco;indicador;valor;unidade`, reaproveitando `linhasCSVDe`/`baixarArquivo`
+  de `js/exportacoes.js`. A lista de campos vem de
+  `cockpitListaKpisExport(cache)`, a mesma função usada para montar os cards
+  do HTML exportado (uma única fonte de verdade para os dois formatos).
+- **JSON** (`cockpitExportarJSON`) — baixa `cockpitState.ultimoCalculo`
+  completo (`{c, g, s, q, alertasInfo}`, a mesma estrutura interna calculada
+  por `cockpitCalcular`/`cockpitCalcularGeracaoPipeline`/
+  `cockpitCalcularResumoSdr`/`cockpitCalcularQualidadeDados`/
+  `cockpitCalcularAlertas`), envolvida num objeto com `gerado_em` e
+  `periodo_filtro`. Não é uma reextração — é o cache interno já calculado.
+- **Relatório Executivo Completo** (`cockpitGerarHTMLExport(true)`,
+  `cockpitAbrirRelatorioExecutivo`/`cockpitBaixarRelatorioExecutivo`) — HTML
+  mais longo, com os mesmos blocos do export resumido **mais** uma seção
+  final "Outras análises" que **linka para os relatórios que já existem no
+  projeto** (Catálogo de Relatórios para Origem/Produtos/Clientes/aging-SLA,
+  Análise SDR/Diário SDR, Forecast semanal) em vez de fabricar uma seção
+  vazia — o Cockpit não agrega esses dados numa estrutura própria hoje, então
+  não foi inventado nenhum cálculo novo só para preencher o relatório.
+
+### Limitações das exportações
+
+1. **O que NÃO é incluído**: o webhook/credencial do Bitrix nunca é escrito
+   em nenhum HTML/CSV/JSON exportado (as funções de exportação nem leem o
+   campo `#webhook`); nenhuma lista de negócios individuais (drill-down) é
+   exportada — só os KPIs agregados. Para exportar os negócios por trás de um
+   KPI, use o drill-down na tela (clique no card) e, se precisar de um
+   arquivo, use as exportações já existentes do Catálogo/Forecast/SDR.
+2. **Snapshot, não relatório ao vivo**: os arquivos exportados refletem o
+   momento do último "↻ Atualizar agora" — se os dados do Bitrix mudarem
+   depois, é preciso atualizar o Cockpit e exportar de novo.
+3. **Relatório Executivo Completo não inclui Origem/Produtos/Clientes como
+   seção de dados** — decisão deliberada (ver comentário acima) para não
+   fabricar uma seção com dados que o Cockpit não calcula; em vez disso,
+   linka para as telas que já calculam isso na mesma ferramenta.
+4. **CSV cobre só os cards de KPI**, não a tabela completa de Pipeline por
+   Estágio com aging por linha nem a tabela de Proteção de Receita com todas
+   as colunas — os valores principais de cada uma aparecem como linhas do
+   CSV (ex.: uma linha por estágio, uma linha por mês de Proteção de
+   Receita), mas formatação tabular rica fica só no HTML/tela.
+
 ## Drill-down (requisito 9)
 
 Toda métrica numérica relevante tem `data-drill` associado a uma lista de
