@@ -57,6 +57,7 @@ function iniciarCockpitExecutivo() {
     }
   }
   atualizarRelogioCockpit();
+  cockpitRenderEstadoVazio();
 }
 
 function atualizarRelogioCockpit() {
@@ -782,8 +783,39 @@ function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "") {
   return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
 }
 
+// Ids de todos os containers de KPI/lista do Cockpit que ficam vazios até o
+// primeiro carregamento — usados tanto para o estado vazio quanto para não
+// deixar "buracos" em branco embaixo de cada título de bloco.
+const COCKPIT_CONTAINERS_KPI = [
+  "cockpitResultadoMes", "cockpitForecast", "cockpitSaudePipeline",
+  "cockpitEficiencia", "cockpitGeracaoPipeline", "cockpitSdrResumo", "cockpitQualidadeDados",
+];
+const COCKPIT_CONTAINERS_LISTA = ["cockpitAlertas", "cockpitEstagios"];
+
+function cockpitPlaceholderVazio(msg) {
+  return `<p class="rodape-nota cockpit-placeholder-vazio">${escapeHtmlRelatorio(msg)}</p>`;
+}
+
+// Estado inicial da tela: nenhum negócio foi carregado ainda nesta sessão.
+// Sem isso, os grids ficam literalmente vazios (sem nenhum texto) embaixo de
+// cada título e o aviso "Pipeline != Forecast" aparece como uma barra colorida
+// sem conteúdo — visualmente parece quebrado. Preenche com uma mensagem clara.
+function cockpitRenderEstadoVazio() {
+  const msg = "Sem dados carregados nesta sessão. Preencha o webhook (seção 1, abaixo) e clique em \"↻ Atualizar agora\".";
+  COCKPIT_CONTAINERS_KPI.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = cockpitPlaceholderVazio(msg); });
+  COCKPIT_CONTAINERS_LISTA.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = cockpitPlaceholderVazio(msg); });
+  const protecao = cockpitEl("cockpitProtecaoTabela");
+  if (protecao) protecao.innerHTML = cockpitPlaceholderVazio(msg);
+  const aviso = cockpitEl("cockpitAvisoPipelineForecast");
+  if (aviso) { aviso.textContent = ""; aviso.classList.add("oculto"); }
+  const sdrAviso = cockpitEl("cockpitSdrAviso");
+  if (sdrAviso) sdrAviso.textContent = "";
+}
+
 function renderizarCockpit() {
-  if (!cockpitState.deals.length) return;
+  if (!cockpitState.deals.length) { cockpitRenderEstadoVazio(); return; }
+  const aviso = cockpitEl("cockpitAvisoPipelineForecast");
+  if (aviso) aviso.classList.remove("oculto");
   const c = cockpitCalcular();
 
   // A) Resultado do Mês

@@ -135,7 +135,7 @@
   }
   label:first-of-type { margin-top: 0; }
 
-  select, input[type="text"], input[type="password"], input[type="date"], input[type="month"] {
+  select, input[type="text"], input[type="password"], input[type="date"], input[type="month"], input[type="number"], input[type="datetime-local"] {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--line);
@@ -770,6 +770,12 @@
   .cockpit-filtros label { margin-top: 0; }
   .cockpit-metas-protecao { flex-wrap: wrap; }
   .cockpit-metas-protecao > div { min-width: 140px; }
+
+  .cockpit-placeholder-vazio {
+    grid-column: 1 / -1;
+    border: 1px dashed var(--line); border-radius: 14px; background: var(--surface-2);
+    padding: 14px 16px; margin: 4px 0 14px;
+  }
 
   .cockpit-kpi {
     border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; background: var(--surface-2);
