@@ -771,6 +771,26 @@
   .cockpit-metas-protecao { flex-wrap: wrap; }
   .cockpit-metas-protecao > div { min-width: 140px; }
 
+  .cockpit-blocos {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px; margin-top: 18px; align-items: start;
+  }
+  .cockpit-bloco {
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+    box-shadow: var(--shadow-card); padding: 16px 18px;
+  }
+  .cockpit-bloco-full { grid-column: 1 / -1; }
+  .cockpit-bloco h3 {
+    margin: 0 0 10px; font-size: 14px; font-weight: 800; color: var(--ink);
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  }
+  .cockpit-bloco-subtitulo { font-size: 11px; font-weight: 600; color: var(--ink-2); }
+  .cockpit-bloco .relatorio-especial-grid,
+  .cockpit-bloco .cockpit-alertas-lista,
+  .cockpit-bloco .cockpit-estagios-lista { margin-top: 0; }
+  .cockpit-bloco .rodape-nota:first-of-type { margin-top: 0; }
+  @media (max-width: 640px) { .cockpit-blocos { grid-template-columns: 1fr; } }
+
   .cockpit-ticker {
     display: flex; align-items: center; gap: 12px;
     background: var(--ink); color: #fff; border-radius: var(--radius-control);

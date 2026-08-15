@@ -170,59 +170,83 @@
       tudo do zero. Meta: valor local editável desta ferramenta, pré-preenchido a partir da tabela de metas do
       Forecast (js/config.js); o Bitrix não tem um módulo nativo de metas.</p>
 
-    <div class="relatorio-subtitulo">Alertas Gerenciais</div>
-    <p class="rodape-nota">Gerados a partir dos indicadores já calculados abaixo (nenhuma fórmula nova) — clique em
-      um alerta para ver os negócios por trás ou ir direto ao bloco relacionado. Critérios e regra descartada
-      (Win Rate x média histórica, sem dado disponível): ver <code>cockpitCalcularAlertas</code>, js/cockpit.js.</p>
-    <div id="cockpitAlertas" class="cockpit-alertas-lista"></div>
+    <div class="cockpit-blocos">
 
-    <div class="relatorio-subtitulo">Resultado do Mês</div>
-    <div class="relatorio-especial-grid" id="cockpitResultadoMes"></div>
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-alertas">
+        <h3>🔔 Alertas Gerenciais</h3>
+        <p class="rodape-nota">Gerados a partir dos indicadores já calculados abaixo (nenhuma fórmula nova) — clique em
+          um alerta para ver os negócios por trás ou ir direto ao bloco relacionado. Critérios e regra descartada
+          (Win Rate x média histórica, sem dado disponível): ver <code>cockpitCalcularAlertas</code>, js/cockpit.js.</p>
+        <div id="cockpitAlertas" class="cockpit-alertas-lista"></div>
+      </section>
 
-    <div class="relatorio-subtitulo">Forecast (Commit · Best Case · Pipeline ponderado)</div>
-    <div class="relatorio-especial-grid" id="cockpitForecast"></div>
+      <section class="cockpit-bloco" id="cockpit-bloco-resultado">
+        <h3>💰 Resultado do Mês</h3>
+        <div class="relatorio-especial-grid" id="cockpitResultadoMes"></div>
+      </section>
 
-    <div class="relatorio-subtitulo">Saúde do Pipeline</div>
-    <p class="rodape-nota cockpit-aviso-forte" id="cockpitAvisoPipelineForecast"></p>
-    <div class="relatorio-especial-grid" id="cockpitSaudePipeline"></div>
+      <section class="cockpit-bloco" id="cockpit-bloco-forecast">
+        <h3>🔮 Forecast <span class="cockpit-bloco-subtitulo">Commit · Best Case · Pipeline ponderado</span></h3>
+        <div class="relatorio-especial-grid" id="cockpitForecast"></div>
+      </section>
 
-    <div class="relatorio-subtitulo">Proteção de Receita — M / M+1 / M+2 / M+3</div>
-    <div class="row cockpit-metas-protecao">
-      <div><label for="cockpitMetaM0" style="margin-top:0;">Meta M</label><input type="number" id="cockpitMetaM0" min="0" step="0.01" onchange="renderizarCockpit()"></div>
-      <div><label for="cockpitMetaM1" style="margin-top:0;">Meta M+1</label><input type="number" id="cockpitMetaM1" min="0" step="0.01" onchange="renderizarCockpit()"></div>
-      <div><label for="cockpitMetaM2" style="margin-top:0;">Meta M+2</label><input type="number" id="cockpitMetaM2" min="0" step="0.01" onchange="renderizarCockpit()"></div>
-      <div><label for="cockpitMetaM3" style="margin-top:0;">Meta M+3</label><input type="number" id="cockpitMetaM3" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+      <section class="cockpit-bloco" id="cockpit-bloco-saude">
+        <h3>🩺 Saúde do Pipeline</h3>
+        <p class="rodape-nota cockpit-aviso-forte" id="cockpitAvisoPipelineForecast"></p>
+        <div class="relatorio-especial-grid" id="cockpitSaudePipeline"></div>
+      </section>
+
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-protecao">
+        <h3>🛡️ Proteção de Receita <span class="cockpit-bloco-subtitulo">M · M+1 · M+2 · M+3</span></h3>
+        <div class="row cockpit-metas-protecao">
+          <div><label for="cockpitMetaM0" style="margin-top:0;">Meta M</label><input type="number" id="cockpitMetaM0" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+          <div><label for="cockpitMetaM1" style="margin-top:0;">Meta M+1</label><input type="number" id="cockpitMetaM1" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+          <div><label for="cockpitMetaM2" style="margin-top:0;">Meta M+2</label><input type="number" id="cockpitMetaM2" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+          <div><label for="cockpitMetaM3" style="margin-top:0;">Meta M+3</label><input type="number" id="cockpitMetaM3" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+        </div>
+        <div class="relatorio-scroll" id="cockpitProtecaoTabela"></div>
+        <p class="rodape-nota">Status: crítico &lt;2x cobertura, atenção 2x–3x, saudável ≥3x. Critério inicial e
+          configurável (ver comentário em <code>cockpitStatusProtecao</code>, js/cockpit.js) — não é uma regra
+          fixa acordada com a diretoria.</p>
+      </section>
+
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-estagios">
+        <h3>📶 Pipeline por Estágio</h3>
+        <div id="cockpitEstagios" class="cockpit-estagios-lista"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="cockpit-bloco-eficiencia">
+        <h3>⚙️ Eficiência da Máquina</h3>
+        <div class="relatorio-especial-grid" id="cockpitEficiencia"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="cockpit-bloco-geracao">
+        <h3>🌱 Geração de Pipeline</h3>
+        <p class="rodape-nota">Pipeline necessário = Meta futura ÷ Win Rate (hipótese matemática, ver comentário em
+          <code>cockpitCalcularGeracaoPipeline</code>, js/cockpit.js) — não é uma fórmula validada pela diretoria,
+          é um ponto de partida para dimensionar quanto pipeline novo precisa ser criado.</p>
+        <div class="relatorio-especial-grid" id="cockpitGeracaoPipeline"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="cockpit-bloco-sdr">
+        <h3>📞 SDR <span class="cockpit-bloco-subtitulo">resumo</span></h3>
+        <p class="rodape-nota" id="cockpitSdrAviso"></p>
+        <div class="relatorio-especial-grid" id="cockpitSdrResumo"></div>
+        <p class="rodape-nota">Análise completa de SDR (leads trabalhados, atividades, reuniões): veja
+          <a href="#bloco-analise-sdr">Análise SDR</a> e <a href="#bloco-diario-sdr">Diário SDR</a> — este bloco não
+          duplica aquela lógica, só resume o que já está nos negócios do Comercial carregados aqui.</p>
+      </section>
+
+      <section class="cockpit-bloco" id="cockpit-bloco-qualidade">
+        <h3>🧹 Qualidade dos Dados <span class="cockpit-bloco-subtitulo">CRM</span></h3>
+        <p class="rodape-nota">"Data Quality Score" = média simples de completude de campos-chave nos negócios do
+          filtro atual. <strong>Não é confiança de forecast nem probabilidade de venda</strong> — é só uma medida de
+          quão bem preenchido está o CRM (ver comentário em <code>cockpitCalcularQualidadeDados</code>,
+          js/cockpit.js).</p>
+        <div class="relatorio-especial-grid" id="cockpitQualidadeDados"></div>
+      </section>
+
     </div>
-    <div class="relatorio-scroll" id="cockpitProtecaoTabela"></div>
-    <p class="rodape-nota">Status: crítico &lt;2x cobertura, atenção 2x–3x, saudável ≥3x. Critério inicial e
-      configurável (ver comentário em <code>cockpitStatusProtecao</code>, js/cockpit.js) — não é uma regra
-      fixa acordada com a diretoria.</p>
-
-    <div class="relatorio-subtitulo">Pipeline por Estágio</div>
-    <div id="cockpitEstagios" class="cockpit-estagios-lista"></div>
-
-    <div class="relatorio-subtitulo">Eficiência da Máquina</div>
-    <div class="relatorio-especial-grid" id="cockpitEficiencia"></div>
-
-    <div class="relatorio-subtitulo">Geração de Pipeline</div>
-    <p class="rodape-nota">Pipeline necessário = Meta futura ÷ Win Rate (hipótese matemática, ver comentário em
-      <code>cockpitCalcularGeracaoPipeline</code>, js/cockpit.js) — não é uma fórmula validada pela diretoria,
-      é um ponto de partida para dimensionar quanto pipeline novo precisa ser criado.</p>
-    <div class="relatorio-especial-grid" id="cockpitGeracaoPipeline"></div>
-
-    <div class="relatorio-subtitulo">SDR (resumo)</div>
-    <p class="rodape-nota" id="cockpitSdrAviso"></p>
-    <div class="relatorio-especial-grid" id="cockpitSdrResumo"></div>
-    <p class="rodape-nota">Análise completa de SDR (leads trabalhados, atividades, reuniões): veja
-      <a href="#bloco-analise-sdr">Análise SDR</a> e <a href="#bloco-diario-sdr">Diário SDR</a> — este bloco não
-      duplica aquela lógica, só resume o que já está nos negócios do Comercial carregados aqui.</p>
-
-    <div class="relatorio-subtitulo">Qualidade dos Dados (CRM)</div>
-    <p class="rodape-nota">"Data Quality Score" = média simples de completude de campos-chave nos negócios do
-      filtro atual. <strong>Não é confiança de forecast nem probabilidade de venda</strong> — é só uma medida de
-      quão bem preenchido está o CRM (ver comentário em <code>cockpitCalcularQualidadeDados</code>,
-      js/cockpit.js).</p>
-    <div class="relatorio-especial-grid" id="cockpitQualidadeDados"></div>
 
     <p class="rodape-nota">Clique em qualquer indicador acima para ver a lista de negócios que o compõe
       (empresa, valor, etapa, vendedor e CLOSEDATE).</p>
