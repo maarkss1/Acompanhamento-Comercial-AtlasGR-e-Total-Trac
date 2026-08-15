@@ -28,6 +28,7 @@ jobs:
         run: |
           mkdir -p _site
           cp *.html _site/
+          cp -r css js _site/
 
       - name: Configurar Pages
         uses: actions/configure-pages@v5
