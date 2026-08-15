@@ -535,6 +535,131 @@ function cockpitStatusProtecao(coverage) {
 }
 
 // ---------------------------------------------------------------------------
+// Alertas Gerenciais (seção 28 do prompt mestre)
+// ---------------------------------------------------------------------------
+// Gera alertas acionáveis a partir dos indicadores JÁ CALCULADOS por
+// cockpitCalcular() e cockpitCalcularGeracaoPipeline() — nenhuma fórmula de
+// negócio é redefinida aqui, só thresholds/leitura sobre o que já existe.
+//
+// Regras implementadas (com a origem do dado reaproveitado):
+// 1. Coverage do mês corrente crítico/atenção — reaproveita c.saude.coverage
+//    e o MESMO threshold de Proteção de Receita (cockpitStatusProtecao).
+// 2. Oportunidades abertas com CLOSEDATE vencida — deriva de c.deals
+//    (_SEMANTICA/_VALOR já calculados), comparando CLOSEDATE com hoje.
+// 3. Aging alto por estágio — reaproveita c.estagios (agingMedio já
+//    calculado no bloco Pipeline por Estágio), com o threshold
+//    ALERTA_AGING_ALTO_DIAS abaixo (critério inicial/configurável, mesmo
+//    espírito do threshold 2x/3x de Proteção de Receita — não é uma regra
+//    fixa acordada com a diretoria).
+// 4. Pipeline criado abaixo do necessário / ritmo de criação atrasado —
+//    reaproveita g.creationCoverage e g.paceRitmoPct (bloco Geração de
+//    Pipeline), sem recalcular.
+// 5. Coverage de M+1 em risco — reaproveita c.protecao[1] (Proteção de
+//    Receita), mesmo status/threshold já calculado para a tabela M/M+1/M+2/M+3.
+//
+// Regra DESCARTADA (não implementada) e o motivo:
+// - "Win Rate acima ou abaixo da média histórica": o Cockpit (e o restante
+//   do projeto — js/forecast.js, js/catalogo-relatorios.js) não armazena
+//   nenhum histórico de Win Rate entre sessões/períodos anteriores; cada
+//   carregamento recalcula o Win Rate só do período filtrado atual. Sem uma
+//   série histórica real para comparar, qualquer "média" seria inventada —
+//   por isso este alerta não foi implementado.
+const ALERTA_AGING_ALTO_DIAS = 45; // critério inicial/configurável, ver comentário acima
+
+function cockpitCalcularAlertas(c, g) {
+  const hojeISO = c.mes.hojeISO;
+  const lista = [];
+
+  // 1) Coverage do mês corrente (Saúde do Pipeline) — mesmo threshold 2x/3x
+  //    de Proteção de Receita.
+  if (c.resultadoMes.gapMeta === 0 && c.resultadoMes.metaMensal > 0) {
+    lista.push({ nivel: "positivo", motivo: "Meta do mês já foi batida", valor: moedaRelatorio(c.resultadoMes.fechadoMes), acao: "Nenhuma ação necessária para bater a meta deste mês — considere reforçar M+1/M+2.", tipo: "scroll", alvo: "cockpitResultadoMes" });
+  } else if (typeof c.saude.coverage === "number") {
+    const status = cockpitStatusProtecao(c.saude.coverage);
+    if (status.rotulo === "crítico") {
+      lista.push({ nivel: "critico", motivo: "Coverage do pipeline elegível para a meta do mês está crítico", valor: `${c.saude.coverage.toFixed(2)}x (limite crítico <2x)`, acao: "Acelerar geração/qualificação de pipeline elegível para o mês ou revisar a meta.", tipo: "scroll", alvo: "cockpitSaudePipeline" });
+    } else if (status.rotulo === "atenção") {
+      lista.push({ nivel: "atencao", motivo: "Coverage do pipeline elegível para a meta do mês está em atenção", valor: `${c.saude.coverage.toFixed(2)}x`, acao: "Monitorar de perto; reforçar geração de pipeline elegível se não melhorar.", tipo: "scroll", alvo: "cockpitSaudePipeline" });
+    }
+  }
+
+  // 2) Oportunidades abertas com CLOSEDATE vencida.
+  const vencidas = (c.deals || []).filter((d) => {
+    if (d._SEMANTICA !== "process") return false;
+    const cd = parteDataISO(d.CLOSEDATE);
+    return !!cd && cd < hojeISO;
+  });
+  const valorVencidas = vencidas.reduce((a, d) => a + d._VALOR, 0);
+  if (vencidas.length) {
+    cockpitDrill.alertaVencidas = vencidas;
+    lista.push({ nivel: "critico", motivo: "Oportunidades abertas com CLOSEDATE vencida (data de fechamento no passado)", valor: `${vencidas.length} negócio(s) · ${moedaRelatorio(valorVencidas)}`, acao: "Atualizar a data de fechamento ou mover o negócio para ganho/perda.", tipo: "drill", alvo: "alertaVencidas", titulo: "Oportunidades com CLOSEDATE vencida" });
+  }
+
+  // 3) Aging alto por estágio (mesmo aging médio do bloco Pipeline por Estágio).
+  const estagiosAltos = [];
+  (c.estagios || []).forEach((eg, idx) => {
+    if (eg.agingMedio != null && eg.agingMedio > ALERTA_AGING_ALTO_DIAS) {
+      estagiosAltos.push(eg);
+      lista.push({ nivel: "atencao", motivo: `Estágio "${eg.estagio}" com aging médio acima de ${ALERTA_AGING_ALTO_DIAS} dias`, valor: `${eg.agingMedio}d de aging médio · ${eg.qtd} negócio(s) sem movimento recente`, acao: "Revisar as oportunidades paradas nesse estágio — follow-up ou reclassificação.", tipo: "drill", alvo: `estagio_${idx}`, titulo: `Negócios em ${eg.estagio}` });
+    }
+  });
+
+  // 4) Geração de Pipeline abaixo do necessário / ritmo atrasado.
+  if (g && g.pipelineNecessario != null) {
+    if (g.creationCoverage != null && g.creationCoverage < 1) {
+      lista.push({ nivel: g.creationCoverage < 0.5 ? "critico" : "atencao", motivo: "Pipeline criado no período está abaixo do necessário para sustentar a Meta M+1", valor: `Criado ${moedaRelatorio(g.pipelineCriado)} de ${moedaRelatorio(g.pipelineNecessario)} necessário (${(g.creationCoverage * 100).toFixed(1)}%)`, acao: "Intensificar prospecção/geração de pipeline neste período.", tipo: "scroll", alvo: "cockpitGeracaoPipeline" });
+    } else if (g.paceRitmoPct != null && g.paceRitmoPct < 80) {
+      lista.push({ nivel: "atencao", motivo: "Ritmo de criação de pipeline abaixo do esperado para os dias úteis já decorridos no mês", valor: `${g.paceRitmoPct}% do ritmo esperado até hoje`, acao: "Acompanhar diariamente; ritmo abaixo de 100% indica atraso frente ao necessário.", tipo: "scroll", alvo: "cockpitGeracaoPipeline" });
+    }
+  }
+
+  // 5) Coverage de M+1 em risco (Proteção de Receita).
+  const m1 = c.protecao && c.protecao[1];
+  if (m1 && m1.meta > 0 && m1.status) {
+    if (m1.status.rotulo === "crítico") {
+      lista.push({ nivel: "critico", motivo: "Coverage de M+1 (Proteção de Receita) está crítico", valor: m1.coverage != null ? `${m1.coverage.toFixed(2)}x` : "não disponível", acao: "Priorizar geração de pipeline elegível para o mês seguinte.", tipo: "scroll", alvo: "cockpitProtecaoTabela" });
+    } else if (m1.status.rotulo === "atenção") {
+      lista.push({ nivel: "atencao", motivo: "Coverage de M+1 (Proteção de Receita) está em atenção — risco de virar crítico", valor: m1.coverage != null ? `${m1.coverage.toFixed(2)}x` : "não disponível", acao: "Monitorar de perto nas próximas semanas.", tipo: "scroll", alvo: "cockpitProtecaoTabela" });
+    }
+  }
+
+  if (!lista.some((a) => a.nivel === "critico" || a.nivel === "atencao")) {
+    lista.push({ nivel: "positivo", motivo: "Nenhum alerta crítico ou de atenção identificado nos indicadores monitorados agora", valor: "", acao: "Manter o ritmo atual e seguir acompanhando os blocos abaixo.", tipo: "scroll", alvo: "cockpit-executivo" });
+  }
+
+  // Ordena: crítico primeiro, depois atenção, depois positivo.
+  const ordem = { critico: 0, atencao: 1, positivo: 2 };
+  lista.sort((a, b) => ordem[a.nivel] - ordem[b.nivel]);
+
+  return { lista, vencidas, valorVencidas, estagiosAltos };
+}
+
+function cockpitAlertaClique(tipo, alvo, titulo) {
+  if (tipo === "drill") { cockpitAbrirDrill(alvo, titulo); return; }
+  const el = cockpitEl(alvo);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cockpitRenderAlertas(info) {
+  const el = cockpitEl("cockpitAlertas");
+  if (!el) return;
+  const icone = { critico: "🔴", atencao: "🟡", positivo: "🟢" };
+  const classe = { critico: "cockpit-alerta-critico", atencao: "cockpit-alerta-atencao", positivo: "cockpit-alerta-positivo" };
+  el.innerHTML = info.lista.map((a) => {
+    const tituloJs = escapeHtmlRelatorio(a.titulo || a.motivo).replace(/'/g, "\\'");
+    return `<div class="cockpit-alerta ${classe[a.nivel]}" onclick="cockpitAlertaClique('${a.tipo}','${a.alvo}','${tituloJs}')">
+      <span class="cockpit-alerta-icone">${icone[a.nivel]}</span>
+      <div class="cockpit-alerta-corpo">
+        <div class="cockpit-alerta-motivo">${escapeHtmlRelatorio(a.motivo)}</div>
+        ${a.valor ? `<div class="cockpit-alerta-valor">${escapeHtmlRelatorio(a.valor)}</div>` : ""}
+        <div class="cockpit-alerta-acao">Ação sugerida: ${escapeHtmlRelatorio(a.acao)}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+
+// ---------------------------------------------------------------------------
 // Renderização
 // ---------------------------------------------------------------------------
 function cockpitND(valor, formato) {
@@ -646,6 +771,12 @@ function renderizarCockpit() {
     cockpitKpiCard("Motivo de perda informado", q.perdidosQtd ? "0% (campo não existe no projeto)" : "sem negócios perdidos no período", "qualidadeMotivoPerda"),
     cockpitKpiCard("Data Quality Score", cockpitND(q.dataQualityScore, (v) => `${v}%`), null, "cockpit-kpi-destaque"),
   ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Base: ${q.baseTotal} negócio(s) (aberto(s), quando houver; senão todos os filtrados). Data Quality Score = completude de cadastro no CRM, não é confiança de forecast.</p>`;
+
+  // K) Alertas Gerenciais — reaproveita c e g já calculados acima, nenhuma
+  // fórmula nova de negócio, só thresholds/leitura (ver cockpitCalcularAlertas).
+  const alertasInfo = cockpitCalcularAlertas(c, g);
+  cockpitRenderAlertas(alertasInfo);
+
 }
 
 // ---------------------------------------------------------------------------
