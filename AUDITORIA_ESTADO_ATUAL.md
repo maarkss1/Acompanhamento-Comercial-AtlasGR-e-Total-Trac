@@ -271,13 +271,28 @@ Cockpit (ver seção 15/16).
 
 ## 11. Código duplicado ou morto
 
-- **Lógica de forecast duplicada**: `probabilidadeFallbackForecast`/`STAGE_IDS_PILOTO`/
-  `METAS_FORECAST_MENSAL_PADRAO`/cálculo de meta semanal existem **tanto** no HTML
-  (`Relatorios AtlasGR.html`) **quanto** em `scripts/forecast-semanal.mjs`, mantidos
-  manualmente em sincronia (o comentário no topo do script até avisa isso). Qualquer mudança de
-  regra de negócio (nova meta, novo estágio piloto, novo fallback de probabilidade) precisa ser
-  replicada nos dois lugares — fonte real de bugs de divergência já reconhecida pelos próprios
-  comentários do código.
+- **Lógica de forecast duplicada** — **mitigado parcialmente em 2026-08-15**:
+  `probabilidadeFallbackForecast`/`STAGE_IDS_PILOTO`/`METAS_FORECAST_MENSAL_PADRAO`/cálculo de
+  meta semanal existem **tanto** nos módulos JS do navegador (`js/jornada.js`, `js/config.js`,
+  carregados por `Relatorios AtlasGR.html`) **quanto** em `scripts/forecast-semanal.mjs` — não há
+  compartilhamento de módulo entre browser (scripts clássicos, sem bundler) e Node, então a
+  duplicação de arquivo continua existindo estruturalmente. Nesta revisão foi encontrada e
+  corrigida uma divergência real: `STAGE_IDS_PILOTO` no script Node só excluía 1 dos 7 estágios
+  piloto do navegador, e o fallback de probabilidade usava uma tabela fixa por `STAGE_ID` em vez
+  da mesma regra por texto do label. O script Node agora busca os labels de estágio via
+  `crm.status.list` e replica exatamente a lógica de `js/jornada.js` (fonte da verdade). As metas
+  mensais já tinham os mesmos valores nos dois lados; foi adicionado um aviso `⚠️` bem visível em
+  `js/config.js`, `js/jornada.js` e `scripts/forecast-semanal.mjs` apontando um para o outro.
+  **Limitação estrutural que continua não resolvida**: os valores/regras ainda vivem em dois
+  arquivos fisicamente separados — uma mudança futura de meta ou regra de estágio ainda depende de
+  alguém lembrar de editar os dois lugares; só os comentários e o processo de review protegem
+  contra nova divergência silenciosa. Extrair para um `config/metas.json` compartilhado (lido via
+  `fetch` no navegador e `fs.readFileSync` no Node) foi avaliado e descartado por ora: o HTML pode
+  ser aberto localmente via `file://` (não só via GitHub Pages), onde `fetch` de arquivo local é
+  bloqueado por CORS em navegadores modernos — a solução de arquivo compartilhado quebraria esse
+  modo de uso sem uma reestruturação maior (ex. embutir o JSON como `<script>` que define uma
+  variável global, o que reintroduz a necessidade de manter dois pontos de entrada sincronizados
+  de qualquer forma). Ver item P0.3/P0.1 na seção 17.
 - **Padrão repetitivo em `extrairRelatorioCatalogo`**: cada um dos ~20 relatórios repete o
   padrão `baseDealsCatalogo` → `enriquecerDealCatalogo` → `filter/reduce` → `criarResultadoCatalogo`
   quase sempre em uma única linha densa (código extremamente compactado, sem quebras de linha,
@@ -319,9 +334,22 @@ Cockpit (ver seção 15/16).
 
 ## 13. Riscos de segurança
 
-- **Credencial de CRM em `localStorage` do navegador**, sem hashing/criptografia — acessível a
-  qualquer extensão de navegador ou script no mesmo domínio; sobrevive a fechamento de aba;
-  não expira. É o maior risco de segurança do projeto hoje.
+- **Credencial de CRM em `localStorage` do navegador** — **mitigado parcialmente em 2026-08-15**:
+  o webhook salvo agora é ofuscado (XOR + base64 com chave fixa no código, `js/bitrix-api.js`,
+  funções `ofuscarWebhook`/`desofuscarWebhook`) em vez de gravado em texto puro, e a UI (card
+  "Conexão com o Bitrix" e ajuda contextual "Webhook e segurança") explica o risco real de forma
+  explícita. **Isto NÃO é segurança real** — é uma cifra reversível cuja chave está no próprio
+  código público; qualquer pessoa com acesso de fato ao navegador (DevTools, extensão capaz de
+  rodar JS, backup do perfil) recupera o webhook original em segundos. O ganho é só evitar
+  exposição *trivial* do texto puro (inspeção casual do Local Storage, backups automáticos,
+  extensões que fazem apenas grep simples). **Limitação estrutural que continua não resolvida**:
+  não é possível eliminar esse risco de verdade numa aplicação 100% client-side sem backend —
+  isso exigiria um servidor próprio para custodiar a credencial (proxy com token de sessão),
+  fora do escopo desta mitigação. Confirmado nesta revisão que o webhook nunca vaza para HTML
+  exportado, CSV/JSON, código Python gerado ou para o payload do chat com IA
+  (`coletarDadosParaPrompt()` em `js/exportacoes.js` só inclui dados já calculados, nunca a
+  credencial; `gerarCodigoPython()` gera código que lê `BITRIX_WEBHOOK_URL` de variável de
+  ambiente, nunca embute o valor).
 - **Sem controle de acesso na aplicação**: qualquer pessoa que abra o link do GitHub Pages e
   tenha (ou obtenha) o webhook consegue ler e potencialmente escrever no CRM inteiro
   (a função de sincronização usa `crm.*.update`). Não há autenticação própria da ferramenta,
