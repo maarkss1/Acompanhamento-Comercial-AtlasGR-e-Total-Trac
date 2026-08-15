@@ -37,20 +37,52 @@ const DESTINATARIOS_PADRAO = [
 // ENTIDADES.negocios.categorias em Relatorios AtlasGR.html).
 const CATEGORIA_COMERCIAL = "0";
 
-// Estagios "Piloto" da categoria Comercial: nunca entram no pipeline aberto.
-const STAGE_IDS_PILOTO = new Set(["UC_R1YAOS"]);
+// ⚠️ Estagios "Piloto": nunca entram no pipeline aberto. FONTE DA VERDADE =
+// STAGE_IDS_PILOTO em js/jornada.js (Relatorios AtlasGR.html) — este script
+// Node roda fora do navegador (GitHub Actions) e nao compartilha modulo com o
+// HTML (sem bundler neste projeto), entao a lista precisa ser copiada
+// manualmente sempre que mudar no navegador.
+const STAGE_IDS_PILOTO = new Set(["UC_R1YAOS", "UC_JWY0OY", "UC_AM8GK1", "UC_I37148", "UC_EU6LUO", "UC_WBYFT4", "UC_QT3CO8"]);
 
-// Fallback de probabilidade por estagio da categoria Comercial (mesma regra de
-// probabilidadeFallbackForecast() do extrator, aplicada por STAGE_ID em vez de
-// por texto do label, ja que os STAGE_ID desta categoria sao fixos e conhecidos).
-const FALLBACK_PROBABILIDADE_POR_ESTAGIO = {
-  UC_A0VPC5: 20, // Nova Oportunidade
-  NEW: 60,       // Proposta Enviada
-  UC_5X3WZN: 40, // Call/Visita Agendada
-  UC_R1YAOS: 80, // Piloto (excluido do pipeline aberto; mantido so por completude)
-};
+// Normaliza texto (remove acentos, minusculas, colapsa espacos) - identico a
+// normalizarTextoChave() em js/jornada.js.
+function normalizarTextoChave(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
 
-// Metas mensais padrao do forecast Comercial (R$) - mesma tabela do extrator.
+// ⚠️ Réplica manual de ehEstagioPiloto() em js/jornada.js.
+function ehEstagioPiloto(stageId, stageLabel) {
+  if (stageId != null && STAGE_IDS_PILOTO.has(String(stageId))) return true;
+  return normalizarTextoChave(stageLabel || "").includes("piloto");
+}
+
+// ⚠️ Réplica manual de probabilidadeFallbackForecast() em js/jornada.js —
+// mesma regra baseada em texto do label do estagio (nao mais por STAGE_ID
+// fixo, para nao divergir quando o Bitrix ganhar/renomear estagios). Os
+// labels sao buscados em tempo de execucao via crm.status.list (ver
+// buscarLabelsEstagiosComercial()).
+function probabilidadeFallbackForecast(label, semantica) {
+  if (semantica === "success") return 100;
+  if (semantica === "failure") return 0;
+  const n = normalizarTextoChave(label);
+  if (/assinatura|contrato assinado|piloto|termo aceito/.test(n)) return 80;
+  if (/proposta|negociacao|negociação/.test(n)) return 60;
+  if (/call|visita|reuniao|reunião|diagnostico|diagnóstico/.test(n)) return 40;
+  if (/nova oportunidade|novo|entrada/.test(n)) return 20;
+  return 30;
+}
+
+// ⚠️ Estes valores devem ser mantidos idênticos a METAS_FORECAST_MENSAL_PADRAO
+// em js/config.js — não há compartilhamento de módulo entre o navegador
+// (Relatorios AtlasGR.html, scripts classicos) e este script Node (roda fora
+// do navegador via GitHub Actions). Ao mudar uma meta aqui, replique
+// manualmente no outro arquivo.
 const METAS_FORECAST_MENSAL_PADRAO = {
   1: 13650.0, 2: 27300.0, 3: 38500.0, 4: 27300.0, 5: 27300.0, 6: 27300.0,
   7: 27300.0, 8: 34845.7, 9: 40470.7, 10: 40520.7, 11: 34845.7, 12: 21195.7,
@@ -139,6 +171,22 @@ function pctAtingimento(realizado, meta) {
   return Math.round((realizado / meta) * 1000) / 10;
 }
 
+// Busca os labels dos estagios da categoria Comercial (CATEGORY_ID=0) via
+// crm.status.list (ENTITY_ID="DEAL_STAGE"), para alimentar
+// probabilidadeFallbackForecast() com o mesmo texto que o navegador usa —
+// mesmo padrao de buscarMetadadosFunisEEstagios() em js/jornada.js.
+async function buscarLabelsEstagiosComercial() {
+  try {
+    const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } });
+    const labels = {};
+    (corpo.result || []).forEach((st) => { labels[String(st.STATUS_ID)] = st.NAME || st.STATUS_ID; });
+    return labels;
+  } catch (e) {
+    console.warn(`Nao foi possivel buscar os labels dos estagios (crm.status.list): ${e.message}. Fallback de probabilidade usara "" como label (equivale ao default de 30%).`);
+    return {};
+  }
+}
+
 async function main() {
   const hojeISO = dataISOemSaoPaulo();
   const inicioSemana = segundaDaSemana(hojeISO);
@@ -167,6 +215,8 @@ async function main() {
     nomeUsuario[String(u.ID)] = `${u.NAME || ""} ${u.LAST_NAME || ""}`.trim() || `ID ${u.ID}`;
   });
 
+  const labelsEstagio = await buscarLabelsEstagiosComercial();
+
   let fechadoSemana = 0, fechadoMes = 0;
   let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
   let pipelinePonderadoMes = 0;
@@ -185,7 +235,8 @@ async function main() {
       continue;
     }
     if (semantica !== "process") continue;
-    if (STAGE_IDS_PILOTO.has(String(d.STAGE_ID))) continue; // sem pilotos no pipeline aberto
+    const stageLabel = labelsEstagio[String(d.STAGE_ID)] || "";
+    if (ehEstagioPiloto(d.STAGE_ID, stageLabel)) continue; // sem pilotos no pipeline aberto
 
     const closeDate = parteDataISO(d.CLOSEDATE);
     if (!closeDate) continue;
@@ -193,7 +244,7 @@ async function main() {
     const probInformada = Number(d.PROBABILITY);
     const prob = Number.isFinite(probInformada) && probInformada > 0 && probInformada <= 100
       ? probInformada
-      : (FALLBACK_PROBABILIDADE_POR_ESTAGIO[String(d.STAGE_ID)] ?? 30);
+      : probabilidadeFallbackForecast(stageLabel, semantica);
     const ponderado = valor * prob / 100;
 
     if (dentroFaixa(closeDate, mesInicio, mesFim)) {
