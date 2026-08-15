@@ -768,6 +768,12 @@
       var chave = params.get("relatorio");
       if (chave && typeof RELATORIOS === "object" && RELATORIOS[chave] && typeof selecionarRelatorioRapido === "function") {
         selecionarRelatorioRapido(chave);
+        // "&ia=1": usado pelo botão "🤖 Perguntar à IA" dos blocos dedicados de
+        // forecast.html/sdr.html, que não têm a Central de Inteligência v10
+        // embutida — leva pra cá e já abre a aba de IA com o relatório em foco.
+        if (params.get("ia") === "1" && typeof abrirIAParaRelatorio === "function") {
+          abrirIAParaRelatorio(RELATORIOS[chave].label);
+        }
       }
     } catch (e) {
       // parâmetro inválido/ausente — a página funciona normalmente sem pré-seleção.
