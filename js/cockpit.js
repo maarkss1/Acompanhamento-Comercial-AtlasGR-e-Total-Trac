@@ -34,6 +34,22 @@ let cockpitDrill = {};
 
 function cockpitEl(id) { return document.getElementById(id); }
 
+// O painel completo do Cockpit (todos os blocos, filtros, exportações) começa
+// recolhido -- a primeira tela deve mostrar só o ticker e os cards de
+// relatório. Ver <botão "Ver painel completo"> ou o link do ticker abrem.
+function alternarCockpitCompleto() {
+  const card = cockpitEl("cockpit-executivo");
+  if (!card) return;
+  const recolhido = card.classList.toggle("cockpit-recolhido");
+  const btn = cockpitEl("cockpitBtnExpandir");
+  if (btn) btn.textContent = recolhido ? "▾ Ver painel completo" : "▴ Recolher painel";
+}
+function expandirCockpitCompleto() {
+  const card = cockpitEl("cockpit-executivo");
+  if (card && card.classList.contains("cockpit-recolhido")) alternarCockpitCompleto();
+  if (typeof revelarFluxoExtracao === "function") revelarFluxoExtracao();
+}
+
 // ---------------------------------------------------------------------------
 // Inicialização (chamada por js/app.js)
 // ---------------------------------------------------------------------------

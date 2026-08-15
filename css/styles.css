@@ -760,6 +760,7 @@
   .quick-nav-grupo:first-child { padding-left: 4px; }
 
   .cockpit-card { border-top: 4px solid var(--brand); }
+  .cockpit-card.cockpit-recolhido > *:not(.cockpit-header) { display: none !important; }
   .cockpit-header {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   }

@@ -358,8 +358,22 @@ function selecionarRelatorioRapido(chave){revelarFluxoExtracao();const s=documen
 // Passos 1-8 (Conexão, Escolha, Período, Campos, Executar, Sincronizar, Central
 // de Inteligência, Analisar com IA) ficam escondidos até o usuário escolher um
 // relatório na tela inicial (ou clicar em "Configurar extração manualmente"/
-// "Ver Cockpit completo") -- a primeira tela deve mostrar só os cards.
-function revelarFluxoExtracao(){document.getElementById("fluxo-extracao")?.classList.remove("oculto");}
+// "Ver Cockpit completo") -- a primeira tela deve mostrar só os cards. Na
+// primeira vez que aparecem, cada passo começa recolhido (só o título) --
+// evita despejar as 8 seções abertas de uma vez; o usuário abre só o que
+// precisa (a "segunda tela" de cada card). Escolhas já feitas nos passos
+// anteriores (relatório, período, campos) continuam aplicadas mesmo
+// recolhidas -- collapse é só visual.
+let fluxoExtracaoJaRevelado = false;
+function revelarFluxoExtracao(){
+  const wrap = document.getElementById("fluxo-extracao");
+  if (!wrap) return;
+  wrap.classList.remove("oculto");
+  if (!fluxoExtracaoJaRevelado) {
+    fluxoExtracaoJaRevelado = true;
+    wrap.querySelectorAll(":scope > .card").forEach((card) => card.classList.add("card-collapsed"));
+  }
+}
 
 function atualizarResumoConfiguracaoV7(){
   const relKey=document.getElementById("relatorio")?.value,entKey=document.getElementById("entidade")?.value;

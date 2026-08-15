@@ -63,7 +63,7 @@
 
 <nav class="quick-nav" aria-label="Navegação rápida">
   <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <span class="quick-nav-grupo">📊 Cockpit Executivo</span><a href="#cockpit-executivo">Cockpit</a>
+    <span class="quick-nav-grupo">📊 Cockpit Executivo</span><a href="#cockpit-executivo" onclick="expandirCockpitCompleto()">Cockpit</a>
     <span class="quick-nav-grupo">📈 Relatórios Comerciais</span><a href="#bloco-forecast-semanal">Forecast semanal</a><a href="#central-inteligencia-v10">Central v10 ✨</a><a href="#bloco-relatorio-catalogo">Catálogo</a>
     <span class="quick-nav-grupo">📞 SDR &amp; Operação</span><a href="#bloco-diario-sdr">Diário SDR</a><a href="#bloco-analise-sdr">Análise SDR</a><a href="#bloco-auditoria-jornada">Jornada</a>
     <span class="quick-nav-grupo">🛠️ Extração &amp; Diagnóstico</span><a href="#inicio">Início</a><a href="#configuracao">Escolher</a><a href="#bloco-periodo">Período</a><a href="#card-campos">Campos</a><a href="#execucao">Executar</a><a href="#card-sincronizacao">Sincronizar</a><a href="#bloco-resultado">Resultados</a><a href="#analise-ia">IA</a>
@@ -79,7 +79,7 @@
         <span class="cockpit-ticker-item">Sem dados carregados nesta sessão — abra um relatório abaixo ou configure o webhook para atualizar automaticamente.</span>
       </div>
     </div>
-    <a href="#cockpit-executivo" class="cockpit-ticker-link" onclick="revelarFluxoExtracao()">Ver Cockpit completo →</a>
+    <a href="#cockpit-executivo" class="cockpit-ticker-link" onclick="expandirCockpitCompleto()">Ver Cockpit completo →</a>
   </div>
 
   <section class="workspace-intro" id="inicio">
@@ -97,13 +97,14 @@
     </div>
   </section>
 
-  <div class="card cockpit-card" id="cockpit-executivo">
+  <div class="card cockpit-card cockpit-recolhido" id="cockpit-executivo">
     <div class="cockpit-header">
       <div>
         <div class="hero-eyebrow" style="color:var(--brand);">ATLAS GR | COCKPIT COMERCIAL</div>
         <p class="rodape-nota" style="margin-top:2px;" id="cockpitUltimaAtualizacao">Última atualização: ainda não carregado nesta sessão.</p>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <button type="button" class="secundario" onclick="alternarCockpitCompleto()" id="cockpitBtnExpandir">▾ Ver painel completo</button>
         <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
         <button type="button" class="secundario" onclick="cockpitGerarSituacaoAgora()">⚡ Gerar Situação Agora</button>
         <button type="button" class="secundario" onclick="cockpitAbrirHTMLExport()" title="Abre o snapshot do Cockpit em uma aba nova (HTML autônomo, sem webhook)">🌐 Abrir HTML</button>
