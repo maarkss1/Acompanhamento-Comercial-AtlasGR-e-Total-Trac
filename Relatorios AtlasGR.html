@@ -78,7 +78,10 @@
         <div class="hero-eyebrow" style="color:var(--brand);">ATLAS GR | COCKPIT COMERCIAL</div>
         <p class="rodape-nota" style="margin-top:2px;" id="cockpitUltimaAtualizacao">Última atualização: ainda não carregado nesta sessão.</p>
       </div>
-      <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
+        <button type="button" class="secundario" onclick="cockpitGerarSituacaoAgora()">⚡ Gerar Situação Agora</button>
+      </div>
     </div>
 
     <div class="aviso" style="margin-top:10px;">
@@ -846,6 +849,23 @@
       <button type="button" class="help-close" onclick="fecharDrillCockpit()">×</button>
     </div>
     <div class="help-body"><div class="relatorio-scroll" id="cockpitDrillConteudo"></div></div>
+  </div>
+</div>
+
+<div class="help-modal" id="cockpitSituacaoModal" onclick="fecharSituacaoCockpitPorFundo(event)">
+  <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="cockpitSituacaoTitulo">
+    <div class="help-head">
+      <div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">⚡ Cockpit Comercial</div><h3 id="cockpitSituacaoTitulo">Situação Comercial Agora</h3><p class="rodape-nota" id="cockpitSituacaoCarimbo" style="margin:2px 0 0;"></p></div>
+      <button type="button" class="help-close" onclick="fecharSituacaoCockpit()">×</button>
+    </div>
+    <div class="help-body">
+      <div id="cockpitSituacaoConteudo"></div>
+      <pre id="cockpitSituacaoTexto" class="oculto"></pre>
+      <div class="row" style="gap:8px;margin-top:14px;">
+        <button type="button" class="secundario" onclick="cockpitCopiarSituacao()">Copiar como texto</button>
+        <button type="button" class="secundario" onclick="cockpitBaixarSituacao()">Baixar .txt</button>
+      </div>
+    </div>
   </div>
 </div>
 

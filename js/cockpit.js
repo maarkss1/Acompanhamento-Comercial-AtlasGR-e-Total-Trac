@@ -658,6 +658,115 @@ function cockpitRenderAlertas(info) {
   }).join("");
 }
 
+// ---------------------------------------------------------------------------
+// "⚡ Situação Comercial Agora" — resumo executivo compacto, montado só com
+// dados já calculados em renderizarCockpit() (cockpitState.ultimoCalculo),
+// sem reprocessar nada nem chamar o Bitrix de novo.
+// ---------------------------------------------------------------------------
+function cockpitGerarSituacaoAgora() {
+  const cache = cockpitState.ultimoCalculo;
+  if (!cache) { mostrarErro('Clique em "↻ Atualizar agora" no Cockpit antes de gerar a Situação Comercial Agora.'); return; }
+  const { c, g, alertasInfo } = cache;
+
+  const idsVencidas = alertasInfo.vencidas.map((d) => d.ID);
+  const idsAgingAlto = alertasInfo.estagiosAltos.flatMap((eg) => eg.deals.map((d) => d.ID));
+  const emRiscoQtd = new Set([...idsVencidas, ...idsAgingAlto]).size;
+
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2, "0"), mm = String(agora.getMonth() + 1).padStart(2, "0");
+  const hh = String(agora.getHours()).padStart(2, "0"), mi = String(agora.getMinutes()).padStart(2, "0");
+  const carimbo = `${dd}/${mm}/${agora.getFullYear()} ${hh}:${mi}`;
+
+  const fmtMoeda = (v) => (v == null ? "não disponível" : moedaRelatorio(v));
+  const fmtPct = (v) => (v == null ? "não disponível" : `${v}%`);
+
+  const campos = [
+    ["Meta do mês", fmtMoeda(c.resultadoMes.metaMensal || null)],
+    ["Fechado", fmtMoeda(c.resultadoMes.fechadoMes)],
+    ["% da Meta", fmtPct(c.resultadoMes.pctMeta)],
+    ["Forecast total do mês", fmtMoeda(c.forecast.forecastTotal)],
+    ["Gap do Forecast", fmtMoeda(c.forecast.gapForecast)],
+    ["Commit", fmtMoeda(c.forecast.commit)],
+    ["Best Case", fmtMoeda(c.forecast.bestCase)],
+    ["Pipeline Total", fmtMoeda(c.saude.pipelineTotal)],
+    ["Pipeline Elegível", fmtMoeda(c.saude.pipelineElegivel)],
+    ["Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
+    ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
+    ["Win Rate", fmtPct(c.eficiencia.winRate)],
+    ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
+    ["Oportunidades abertas", c.saude.qtdAberto],
+    ["Oportunidades em risco (vencidas/aging alto)", `${emRiscoQtd}`],
+  ];
+
+  const linhasTexto = [];
+  linhasTexto.push("=== SITUAÇÃO COMERCIAL AGORA — AtlasGR ===");
+  linhasTexto.push(`Gerado em: ${carimbo} · Fonte: Bitrix24 (último "Atualizar agora" do Cockpit)`);
+  linhasTexto.push("");
+  campos.forEach(([label, valor]) => linhasTexto.push(`${label}: ${valor}`));
+  linhasTexto.push("");
+  linhasTexto.push("ALERTAS PRINCIPAIS");
+  if (alertasInfo.lista.length) {
+    alertasInfo.lista.forEach((a) => {
+      const icone = a.nivel === "critico" ? "🔴" : a.nivel === "atencao" ? "🟡" : "🟢";
+      linhasTexto.push(`${icone} ${a.motivo}${a.valor ? ` — ${a.valor}` : ""} | Ação: ${a.acao}`);
+    });
+  } else {
+    linhasTexto.push("Nenhum alerta no momento.");
+  }
+  const texto = linhasTexto.join("\n");
+
+  const html = [
+    `<div class="cockpit-situacao-grid">` +
+    campos.map(([label, valor]) => `<div class="cockpit-situacao-item"><span class="cockpit-situacao-label">${escapeHtmlRelatorio(label)}</span><span class="cockpit-situacao-valor">${escapeHtmlRelatorio(String(valor))}</span></div>`).join("") +
+    `</div>`,
+    `<div class="relatorio-subtitulo" style="margin-top:14px;">Alertas principais</div>`,
+    `<div id="cockpitSituacaoAlertas"></div>`,
+  ].join("");
+
+  cockpitEl("cockpitSituacaoConteudo").innerHTML = html;
+  cockpitRenderAlertasEm("cockpitSituacaoAlertas", alertasInfo);
+  cockpitEl("cockpitSituacaoTexto").textContent = texto;
+  cockpitEl("cockpitSituacaoCarimbo").textContent = `Gerado em ${carimbo}`;
+  cockpitEl("cockpitSituacaoModal")?.classList.add("aberto");
+}
+
+// Variante de cockpitRenderAlertas que escreve em qualquer container (usada
+// dentro do modal de Situação Comercial Agora, sem duplicar a lógica de alerta).
+function cockpitRenderAlertasEm(idContainer, info) {
+  const el = cockpitEl(idContainer);
+  if (!el) return;
+  const icone = { critico: "🔴", atencao: "🟡", positivo: "🟢" };
+  const classe = { critico: "cockpit-alerta-critico", atencao: "cockpit-alerta-atencao", positivo: "cockpit-alerta-positivo" };
+  el.innerHTML = info.lista.map((a) => `<div class="cockpit-alerta ${classe[a.nivel]}">
+      <span class="cockpit-alerta-icone">${icone[a.nivel]}</span>
+      <div class="cockpit-alerta-corpo">
+        <div class="cockpit-alerta-motivo">${escapeHtmlRelatorio(a.motivo)}</div>
+        ${a.valor ? `<div class="cockpit-alerta-valor">${escapeHtmlRelatorio(a.valor)}</div>` : ""}
+        <div class="cockpit-alerta-acao">Ação sugerida: ${escapeHtmlRelatorio(a.acao)}</div>
+      </div>
+    </div>`).join("");
+}
+
+function cockpitCopiarSituacao() {
+  const texto = cockpitEl("cockpitSituacaoTexto")?.textContent || "";
+  if (!texto) return;
+  navigator.clipboard.writeText(texto).then(() => {
+    atualizarStatus("Situação Comercial Agora copiada para a área de transferência.");
+  });
+}
+
+function cockpitBaixarSituacao() {
+  const texto = cockpitEl("cockpitSituacaoTexto")?.textContent || "";
+  if (!texto) return;
+  baixarArquivo(texto, `situacao_comercial_${dataHoje()}.txt`, "text/plain;charset=utf-8;");
+}
+
+function fecharSituacaoCockpit() {
+  cockpitEl("cockpitSituacaoModal")?.classList.remove("aberto");
+}
+function fecharSituacaoCockpitPorFundo(ev) {
+  if (ev.target && ev.target.id === "cockpitSituacaoModal") fecharSituacaoCockpit();
+}
 
 // ---------------------------------------------------------------------------
 // Renderização
@@ -777,6 +886,9 @@ function renderizarCockpit() {
   const alertasInfo = cockpitCalcularAlertas(c, g);
   cockpitRenderAlertas(alertasInfo);
 
+  // Cache do último cálculo completo — usado por "⚡ Situação Comercial
+  // Agora" para montar o resumo sem reprocessar nada (nem chamar o Bitrix).
+  cockpitState.ultimoCalculo = { c, g, s, q, alertasInfo };
 }
 
 // ---------------------------------------------------------------------------
