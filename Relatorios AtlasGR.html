@@ -164,6 +164,26 @@
     <div class="relatorio-subtitulo">Eficiência da Máquina</div>
     <div class="relatorio-especial-grid" id="cockpitEficiencia"></div>
 
+    <div class="relatorio-subtitulo">Geração de Pipeline</div>
+    <p class="rodape-nota">Pipeline necessário = Meta futura ÷ Win Rate (hipótese matemática, ver comentário em
+      <code>cockpitCalcularGeracaoPipeline</code>, js/cockpit.js) — não é uma fórmula validada pela diretoria,
+      é um ponto de partida para dimensionar quanto pipeline novo precisa ser criado.</p>
+    <div class="relatorio-especial-grid" id="cockpitGeracaoPipeline"></div>
+
+    <div class="relatorio-subtitulo">SDR (resumo)</div>
+    <p class="rodape-nota" id="cockpitSdrAviso"></p>
+    <div class="relatorio-especial-grid" id="cockpitSdrResumo"></div>
+    <p class="rodape-nota">Análise completa de SDR (leads trabalhados, atividades, reuniões): veja
+      <a href="#bloco-analise-sdr">Análise SDR</a> e <a href="#bloco-diario-sdr">Diário SDR</a> — este bloco não
+      duplica aquela lógica, só resume o que já está nos negócios do Comercial carregados aqui.</p>
+
+    <div class="relatorio-subtitulo">Qualidade dos Dados (CRM)</div>
+    <p class="rodape-nota">"Data Quality Score" = média simples de completude de campos-chave nos negócios do
+      filtro atual. <strong>Não é confiança de forecast nem probabilidade de venda</strong> — é só uma medida de
+      quão bem preenchido está o CRM (ver comentário em <code>cockpitCalcularQualidadeDados</code>,
+      js/cockpit.js).</p>
+    <div class="relatorio-especial-grid" id="cockpitQualidadeDados"></div>
+
     <p class="rodape-nota">Clique em qualquer indicador acima para ver a lista de negócios que o compõe
       (empresa, valor, etapa, vendedor e CLOSEDATE).</p>
   </div>

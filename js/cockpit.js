@@ -375,6 +375,155 @@ function cockpitCalcular() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Geração de Pipeline (seções 17-19 do prompt mestre)
+// ---------------------------------------------------------------------------
+// Calcula pipeline criado no período, pipeline necessário (hipótese: Meta
+// futura ÷ Win Rate), gap, coverage de criação e ritmo (pace) de criação
+// considerando dias úteis decorridos vs total do mês.
+//
+// FÓRMULA (hipótese matemática, documentada e visível, não escondida):
+//   Pipeline necessário = Meta do mês seguinte (M+1, já editável no bloco
+//   "Proteção de Receita") ÷ (Win Rate / 100)
+//   Ex.: Meta M+1 = R$100.000, Win Rate = 25% → é preciso criar R$400.000 em
+//   pipeline novo para, estatisticamente, converter a meta do mês seguinte.
+//   Usamos a Meta M+1 (não a meta do mês atual) porque pipeline criado hoje
+//   tipicamente fecha em meses futuros (mesmo raciocínio do bloco Proteção
+//   de Receita). Win Rate vem do bloco Eficiência da Máquina (mesmo cálculo,
+//   não uma nova fórmula) — se Win Rate ou Meta M+1 não estiverem
+//   disponíveis, o Pipeline necessário fica "não disponível" (nunca 0).
+function cockpitCalcularGeracaoPipeline(c) {
+  const deals = cockpitState.dealsFiltrados || [];
+  const mes = c.mes;
+  const drill = {};
+
+  // Pipeline criado no período = negócios abertos ou fechados cujo
+  // DATE_CREATE cai no período filtrado (mesmo recorte de "Pipeline criado
+  // no período" já usado no bloco Saúde do Pipeline) — não exclui "Piloto"
+  // porque o objetivo aqui é medir geração bruta de pipeline, não o pipeline
+  // elegível para fechamento.
+  const periodoFiltro = c.saude.periodoFiltro;
+  const criados = deals.filter((d) => dentroPeriodoCatalogo(d.DATE_CREATE, periodoFiltro));
+  const pipelineCriado = criados.reduce((a, d) => a + d._VALOR, 0);
+  drill.geracaoCriado = criados;
+
+  const winRate = c.eficiencia.winRate; // % — reaproveitado do bloco Eficiência da Máquina
+  const metaFutura = Number(cockpitEl("cockpitMetaM1")?.value) || 0;
+  let pipelineNecessario = null;
+  if (metaFutura > 0 && winRate != null && winRate > 0) {
+    pipelineNecessario = metaFutura / (winRate / 100);
+  }
+  const gapGeracao = pipelineNecessario != null ? Math.max(0, pipelineNecessario - pipelineCriado) : null;
+  const creationCoverage = pipelineNecessario != null && pipelineNecessario > 0 ? pipelineCriado / pipelineNecessario : null;
+
+  // Pace de criação: dias úteis decorridos no mês atual vs total de dias
+  // úteis do mês (ehDiaUtilISO, já usado em js/sdr.js). Compara o que seria
+  // esperado até hoje (proporcional) com o que foi criado até agora.
+  const diasDoMes = [];
+  const [anoM, mesM] = mes.inicio.split("-").map(Number);
+  const ultimoDiaMes = new Date(anoM, mesM, 0).getDate();
+  for (let dia = 1; dia <= ultimoDiaMes; dia++) {
+    diasDoMes.push(`${anoM}-${String(mesM).padStart(2, "0")}-${String(dia).padStart(2, "0")}`);
+  }
+  const diasUteisTotal = diasDoMes.filter((iso) => ehDiaUtilISO(iso)).length;
+  const hojeISO = mes.hojeISO;
+  const diasUteisDecorridos = diasDoMes.filter((iso) => iso <= hojeISO && ehDiaUtilISO(iso)).length;
+  let paceEsperadoAteHoje = null, paceGap = null, paceRitmoPct = null;
+  if (pipelineNecessario != null && diasUteisTotal > 0) {
+    paceEsperadoAteHoje = pipelineNecessario * (diasUteisDecorridos / diasUteisTotal);
+    paceGap = pipelineCriado - paceEsperadoAteHoje; // negativo = atrasado
+    paceRitmoPct = paceEsperadoAteHoje > 0 ? Math.round((pipelineCriado / paceEsperadoAteHoje) * 1000) / 10 : null;
+  }
+
+  cockpitDrill = { ...cockpitDrill, ...drill };
+  return {
+    pipelineCriado, pipelineNecessario, gapGeracao, creationCoverage, winRate, metaFutura,
+    diasUteisDecorridos, diasUteisTotal, paceEsperadoAteHoje, paceGap, paceRitmoPct,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SDR — resumo executivo (seções 21-22, versão compacta)
+// ---------------------------------------------------------------------------
+// LIMITAÇÃO CONHECIDA: o Cockpit extrai apenas negócios do funil Comercial
+// (baseDealsCatalogo, CATEGORY_ID=0) — não extrai Leads nem atividades, que
+// são a fonte real de "leads trabalhados", "reuniões agendadas/realizadas" e
+// conversão Lead→Oportunidade completa (essas métricas existem em
+// js/sdr.js: extrairDiarioSDR / extrairAnaliseSDR, que fazem chamadas
+// específicas a crm.lead.list e crm.activity.list por usuário SDR). Refazer
+// essa extração aqui duplicaria a lógica e o custo de chamadas — em vez
+// disso, este bloco mostra só o que é derivável dos negócios já carregados
+// no Cockpit (campo LEAD_ID, presente em baseDealsCatalogo) e aponta para os
+// relatórios completos de SDR para o resto.
+function cockpitCalcularResumoSdr(c) {
+  const deals = cockpitState.dealsFiltrados || [];
+  const periodoFiltro = c.saude.periodoFiltro;
+  const criadosPeriodo = deals.filter((d) => dentroPeriodoCatalogo(d.DATE_CREATE, periodoFiltro));
+  // Negócios originados de um Lead (LEAD_ID válido) = proxy de "pipeline
+  // qualificado" que passou pela etapa de qualificação SDR antes de virar
+  // oportunidade. Não identifica QUAL SDR qualificou (isso exigiria buscar
+  // o Lead original e seu ASSIGNED_BY_ID, um custo N+1 fora de escopo aqui).
+  const viaLead = criadosPeriodo.filter((d) => idBitrixValido(d.LEAD_ID));
+  const semLead = criadosPeriodo.filter((d) => !idBitrixValido(d.LEAD_ID));
+  const valorViaLead = viaLead.reduce((a, d) => a + d._VALOR, 0);
+  const pctViaLead = criadosPeriodo.length ? Math.round((viaLead.length / criadosPeriodo.length) * 1000) / 10 : null;
+  cockpitDrill.sdrViaLead = viaLead;
+  cockpitDrill.sdrSemLead = semLead;
+  return {
+    totalCriados: criadosPeriodo.length, viaLeadQtd: viaLead.length, viaLeadValor: valorViaLead, pctViaLead,
+    leadsTrabalhados: null, reunioes: null, conversaoLeadOportunidade: null, // não disponível nesta extração — ver Análise SDR completa
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Qualidade dos Dados (CRM) — Data Quality Score (seções 26-27)
+// ---------------------------------------------------------------------------
+// IMPORTANTE: "Data Quality Score" mede só COMPLETUDE de campos no CRM — é a
+// média simples das % de preenchimento dos campos abaixo. NUNCA deve ser
+// interpretado como "Forecast Confidence" ou probabilidade de venda; não tem
+// nenhuma relação com PROBABILITY/bucket de forecast.
+//
+// LIMITAÇÃO: não existe, em nenhum lugar do projeto (config.js,
+// catalogo-relatorios.js, forecast.js), um campo mapeado para "motivo de
+// perda" (UF_CRM_* ou nativo) — não há relatório nem extração que use esse
+// dado hoje. Por isso o campo "Motivo de perda" abaixo é sempre contado como
+// "não informado" para 100% dos negócios perdidos, e isso é documentado
+// explicitamente na UI (não inventamos um campo que não existe no Bitrix
+// configurado para este cliente).
+function cockpitCalcularQualidadeDados(c) {
+  const deals = cockpitState.dealsFiltrados || [];
+  const abertos = deals.filter((d) => d._SEMANTICA === "process");
+  const perdidos = deals.filter((d) => d._SEMANTICA === "failure");
+  const baseCompletude = abertos.length ? abertos : deals; // preferimos negócios abertos (é o que a operação trabalha agora)
+
+  const pct = (n, total) => (total ? Math.round((n / total) * 1000) / 10 : null);
+
+  const comValor = baseCompletude.filter((d) => Number(d.OPPORTUNITY) > 0);
+  const comResponsavel = baseCompletude.filter((d) => idBitrixValido(d.ASSIGNED_BY_ID));
+  const comEstagio = baseCompletude.filter((d) => !!d.STAGE_ID);
+  const comCloseDate = baseCompletude.filter((d) => !!parteDataISO(d.CLOSEDATE));
+  const comOrigem = baseCompletude.filter((d) => !!d.SOURCE_ID);
+
+  const camposCompletude = [
+    { label: "Valor (OPPORTUNITY)", pct: pct(comValor.length, baseCompletude.length), lista: comValor },
+    { label: "Responsável", pct: pct(comResponsavel.length, baseCompletude.length), lista: comResponsavel },
+    { label: "Estágio", pct: pct(comEstagio.length, baseCompletude.length), lista: comEstagio },
+    { label: "CLOSEDATE", pct: pct(comCloseDate.length, baseCompletude.length), lista: comCloseDate },
+    { label: "Origem", pct: pct(comOrigem.length, baseCompletude.length), lista: comOrigem },
+  ];
+  camposCompletude.forEach((f, i) => { cockpitDrill[`qualidade_${i}`] = f.lista; });
+
+  // Motivo de perda: campo inexistente no projeto hoje (ver comentário
+  // acima) — sempre 0% de completude para negócios perdidos, não é um bug.
+  const motivoPerdaPct = perdidos.length ? 0 : null;
+  cockpitDrill.qualidadeMotivoPerda = perdidos;
+
+  const valoresValidos = camposCompletude.map((f) => f.pct).filter((v) => v != null);
+  const dataQualityScore = valoresValidos.length ? Math.round((valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length) * 10) / 10 : null;
+
+  return { baseTotal: baseCompletude.length, campos: camposCompletude, motivoPerdaPct, perdidosQtd: perdidos.length, dataQualityScore };
+}
+
 // Threshold de proteção de receita — critério inicial e configurável (não é
 // regra fixa acordada com a diretoria): <2x cobertura = crítico, 2x a <3x =
 // atenção, ≥3x = saudável. Ajuste aqui se o critério mudar.
@@ -463,6 +612,40 @@ function renderizarCockpit() {
     cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
     cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
   ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
+
+  // H) Geração de Pipeline
+  const g = cockpitCalcularGeracaoPipeline(c);
+  cockpitEl("cockpitGeracaoPipeline").innerHTML = [
+    cockpitKpiCard("Pipeline criado no período", moedaRelatorio(g.pipelineCriado), "geracaoCriado"),
+    cockpitKpiCard("Pipeline necessário (Meta M+1 ÷ Win Rate)", cockpitND(g.pipelineNecessario, moedaRelatorio), null),
+    cockpitKpiCard("Gap de geração", cockpitND(g.gapGeracao, moedaRelatorio), null),
+    cockpitKpiCard("Creation Coverage", cockpitND(g.creationCoverage, (v) => `${(v * 100).toFixed(1)}%`), null),
+    cockpitKpiCard("Dias úteis decorridos / total do mês", `${g.diasUteisDecorridos} / ${g.diasUteisTotal}`, null),
+    cockpitKpiCard("Esperado até hoje (pace)", cockpitND(g.paceEsperadoAteHoje, moedaRelatorio), null),
+    cockpitKpiCard("Gap de ritmo", g.paceGap != null ? moedaRelatorio(g.paceGap) : "não disponível", null),
+    cockpitKpiCard("Ritmo de criação", cockpitND(g.paceRitmoPct, (v) => `${v}%`), null, g.paceRitmoPct != null && g.paceRitmoPct < 100 ? "cockpit-status-atencao" : ""),
+  ].join("");
+
+  // I) SDR — resumo executivo
+  const s = cockpitCalcularResumoSdr(c);
+  cockpitEl("cockpitSdrAviso").textContent =
+    "Este resumo usa só os negócios do Comercial já carregados (não busca Leads/atividades). Leads trabalhados, reuniões e conversão Lead→Oportunidade completa: ver Análise SDR / Diário SDR (links abaixo).";
+  cockpitEl("cockpitSdrResumo").innerHTML = [
+    cockpitKpiCard("Negócios criados no período", s.totalCriados, null),
+    cockpitKpiCard("Originados de Lead (proxy SDR)", s.viaLeadQtd, "sdrViaLead"),
+    cockpitKpiCard("Valor originado de Lead", moedaRelatorio(s.viaLeadValor), "sdrViaLead"),
+    cockpitKpiCard("% originado de Lead", cockpitND(s.pctViaLead, (v) => `${v}%`), "sdrViaLead"),
+    cockpitKpiCard("Leads trabalhados", "não disponível", null),
+    cockpitKpiCard("Reuniões agendadas/realizadas", "não disponível", null),
+  ].join("");
+
+  // J) Qualidade dos Dados (CRM) — Data Quality Score
+  const q = cockpitCalcularQualidadeDados(c);
+  cockpitEl("cockpitQualidadeDados").innerHTML = [
+    ...q.campos.map((f, i) => cockpitKpiCard(`Completude — ${f.label}`, cockpitND(f.pct, (v) => `${v}%`), `qualidade_${i}`)),
+    cockpitKpiCard("Motivo de perda informado", q.perdidosQtd ? "0% (campo não existe no projeto)" : "sem negócios perdidos no período", "qualidadeMotivoPerda"),
+    cockpitKpiCard("Data Quality Score", cockpitND(q.dataQualityScore, (v) => `${v}%`), null, "cockpit-kpi-destaque"),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Base: ${q.baseTotal} negócio(s) (aberto(s), quando houver; senão todos os filtrados). Data Quality Score = completude de cadastro no CRM, não é confiança de forecast.</p>`;
 }
 
 // ---------------------------------------------------------------------------
