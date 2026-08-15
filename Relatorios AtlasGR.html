@@ -81,6 +81,12 @@
       <div class="row" style="gap:8px;flex-wrap:wrap;">
         <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
         <button type="button" class="secundario" onclick="cockpitGerarSituacaoAgora()">⚡ Gerar Situação Agora</button>
+        <button type="button" class="secundario" onclick="cockpitAbrirHTMLExport()" title="Abre o snapshot do Cockpit em uma aba nova (HTML autônomo, sem webhook)">🌐 Abrir HTML</button>
+        <button type="button" class="secundario" onclick="cockpitBaixarHTMLExport()" title="Baixa o snapshot do Cockpit como HTML autônomo">⬇️ Baixar HTML</button>
+        <button type="button" class="secundario" onclick="cockpitExportarCSV()" title="Baixa os KPIs do Cockpit em CSV (bloco/indicador/valor/unidade)">⬇️ CSV</button>
+        <button type="button" class="secundario" onclick="cockpitExportarJSON()" title="Baixa o snapshot completo calculado do Cockpit em JSON">⬇️ JSON</button>
+        <button type="button" class="secundario" onclick="cockpitAbrirRelatorioExecutivo()" title="Abre o Relatório Executivo Completo (mais seções) em uma aba nova">📄 Gerar Relatório Executivo Completo</button>
+        <button type="button" class="secundario" onclick="cockpitBaixarRelatorioExecutivo()" title="Baixa o Relatório Executivo Completo como HTML autônomo">⬇️ Baixar Relatório Executivo</button>
       </div>
     </div>
 
@@ -215,9 +221,15 @@
     <div class="aviso">
       O webhook <strong>nunca vem embutido neste HTML</strong>. Por padrão ele existe somente
       nesta aba. Se este computador for pessoal e confiável, você pode clicar em
-      <strong>Salvar webhook</strong>: a URL ficará no <code>localStorage</code> deste navegador
-      e será carregada automaticamente nas próximas aberturas. Em computador compartilhado,
-      prefira não salvar e use <strong>Esquecer webhook</strong> ao terminar.
+      <strong>Salvar webhook</strong>: a URL fica no <code>localStorage</code> deste navegador
+      (com uma ofuscação leve, não uma criptografia real) e será carregada automaticamente nas
+      próximas aberturas.
+      <strong>Risco real:</strong> qualquer pessoa com acesso a este navegador — DevTools, uma
+      extensão instalada, ou um backup do perfil do navegador — consegue extrair o webhook salvo.
+      Como esta ferramenta não tem servidor próprio, não existe forma de eliminar esse risco por
+      completo dentro do navegador. <strong>Não salve o webhook em computador compartilhado</strong>;
+      nessas máquinas, cole a URL a cada sessão e clique em <strong>Esquecer webhook</strong> ao
+      terminar.
     </div>
     <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
     <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/450/xxxxxxxxxxxx/" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">

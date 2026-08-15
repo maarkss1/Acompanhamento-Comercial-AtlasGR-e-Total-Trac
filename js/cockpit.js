@@ -915,3 +915,204 @@ function fecharDrillCockpit() {
 function fecharDrillCockpitPorFundo(ev) {
   if (ev.target && ev.target.id === "cockpitDrillModal") fecharDrillCockpit();
 }
+
+// ---------------------------------------------------------------------------
+// Exportações do Cockpit (HTML autônomo, CSV, JSON, Relatório Executivo)
+// ---------------------------------------------------------------------------
+// Todas as exportações abaixo SÓ SERIALIZAM o que já está calculado em
+// cockpitState.ultimoCalculo (preenchido ao final de renderizarCockpit()) —
+// nenhuma chamada nova ao Bitrix, nenhum recálculo de fórmula, e NUNCA o
+// webhook é incluído em nenhum HTML/CSV/JSON gerado aqui (o webhook nem é
+// lido por essas funções).
+//
+// Limitações documentadas (ver também COCKPIT_COMERCIAL.md):
+// - Não existe seção de "Origem"/"Produtos"/"Clientes" agregada no Cockpit —
+//   o Relatório Executivo Completo linka para os relatórios do Catálogo que
+//   já cobrem isso, em vez de fabricar uma seção vazia.
+// - O CSV cobre apenas os KPIs de topo (cards); as listas de negócios por
+//   trás de cada KPI (drill-down) continuam disponíveis via clique na tela,
+//   não duplicadas aqui para não confundir "resumo" com "extração completa".
+
+function cockpitExigirCache() {
+  const cache = cockpitState.ultimoCalculo;
+  if (!cache) { mostrarErro('Clique em "↻ Atualizar agora" no Cockpit antes de exportar (nada foi calculado ainda nesta sessão).'); return null; }
+  return cache;
+}
+
+// Monta a lista plana [bloco, indicador, valor, unidade] usada tanto pelo
+// CSV quanto pelos KPIs do HTML exportado — um único lugar formata os números.
+function cockpitListaKpisExport(cache) {
+  const { c, g, s, q } = cache;
+  const moeda = (v) => (v == null ? "" : String(Math.round(v * 100) / 100));
+  const num = (v) => (v == null ? "" : String(v));
+  const pct = (v) => (v == null ? "" : String(v));
+  const linhas = [];
+  const add = (bloco, indicador, valor, unidade) => linhas.push({ bloco, indicador, valor: valor == null ? "não disponível" : valor, unidade });
+
+  add("Resultado do Mês", "Meta New MRR (mês)", moeda(c.resultadoMes.metaMensal || null), "R$");
+  add("Resultado do Mês", "Fechado no mês", moeda(c.resultadoMes.fechadoMes), "R$");
+  add("Resultado do Mês", "% da Meta", pct(c.resultadoMes.pctMeta), "%");
+  add("Resultado do Mês", "Gap para a meta", moeda(c.resultadoMes.gapMeta), "R$");
+  add("Resultado do Mês", "Negócios ganhos", num(c.resultadoMes.qtd), "qtd");
+  add("Resultado do Mês", "Ticket médio (mês)", moeda(c.resultadoMes.ticketMedioMes), "R$");
+
+  add("Forecast", "Commit", moeda(c.forecast.commit), "R$");
+  add("Forecast", "Best Case", moeda(c.forecast.bestCase), "R$");
+  add("Forecast", "Pipeline (forecast)", moeda(c.forecast.pipelineForecast), "R$");
+  add("Forecast", "Forecast ponderado", moeda(c.forecast.ponderado), "R$");
+  add("Forecast", "Forecast total do mês", moeda(c.forecast.forecastTotal), "R$");
+  add("Forecast", "Gap do Forecast", moeda(c.forecast.gapForecast), "R$");
+
+  add("Saúde do Pipeline", "Pipeline Total", moeda(c.saude.pipelineTotal), "R$");
+  add("Saúde do Pipeline", "Pipeline Elegível (filtro)", moeda(c.saude.pipelineElegivel), "R$");
+  add("Saúde do Pipeline", "Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta batida" : (c.saude.coverage != null ? String(Math.round(c.saude.coverage * 100) / 100) : null), "x");
+  add("Saúde do Pipeline", "Pipeline criado no período", moeda(c.saude.pipelineCriadoPeriodo), "R$");
+  add("Saúde do Pipeline", "Ticket médio do pipeline", moeda(c.saude.ticketMedioPipeline), "R$");
+  add("Saúde do Pipeline", "Oportunidades abertas", num(c.saude.qtdAberto), "qtd");
+
+  (c.protecao || []).forEach((p) => {
+    add("Proteção de Receita", `Meta — ${p.label}`, p.meta ? moeda(p.meta) : null, "R$");
+    add("Proteção de Receita", `Pipeline Elegível — ${p.label}`, moeda(p.pipeline), "R$");
+    add("Proteção de Receita", `Coverage — ${p.label}`, p.coverage != null ? String(Math.round(p.coverage * 100) / 100) : null, "x");
+    add("Proteção de Receita", `Status — ${p.label}`, p.status?.rotulo || null, "");
+  });
+
+  add("Eficiência da Máquina", "Win Rate", pct(c.eficiencia.winRate), "%");
+  add("Eficiência da Máquina", "Ganhos no período", num(c.eficiencia.ganhos), "qtd");
+  add("Eficiência da Máquina", "Perdidos no período", num(c.eficiencia.perdidos), "qtd");
+  add("Eficiência da Máquina", "Ticket médio vendido", moeda(c.eficiencia.ticketMedioVendido), "R$");
+  add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
+  add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
+
+  (c.estagios || []).forEach((eg) => {
+    add("Pipeline por Estágio", eg.estagio, moeda(eg.valor), "R$");
+  });
+
+  if (g) {
+    add("Geração de Pipeline", "Pipeline criado no período", moeda(g.pipelineCriado), "R$");
+    add("Geração de Pipeline", "Pipeline necessário (Meta M+1 ÷ Win Rate)", moeda(g.pipelineNecessario), "R$");
+    add("Geração de Pipeline", "Gap de geração", moeda(g.gapGeracao), "R$");
+    add("Geração de Pipeline", "Creation Coverage", g.creationCoverage != null ? String(Math.round(g.creationCoverage * 1000) / 10) : null, "%");
+    add("Geração de Pipeline", "Ritmo de criação (pace)", num(g.paceRitmoPct), "%");
+  }
+
+  if (s) {
+    add("SDR (resumo)", "Negócios criados no período", num(s.totalCriados), "qtd");
+    add("SDR (resumo)", "Originados de Lead (proxy SDR)", num(s.viaLeadQtd), "qtd");
+    add("SDR (resumo)", "Valor originado de Lead", moeda(s.viaLeadValor), "R$");
+    add("SDR (resumo)", "% originado de Lead", pct(s.pctViaLead), "%");
+  }
+
+  if (q) {
+    (q.campos || []).forEach((f) => add("Qualidade dos Dados", `Completude — ${f.label}`, pct(f.pct), "%"));
+    add("Qualidade dos Dados", "Data Quality Score", pct(q.dataQualityScore), "%");
+  }
+
+  return linhas;
+}
+
+function cockpitExportarCSV() {
+  const cache = cockpitExigirCache();
+  if (!cache) return;
+  const linhas = cockpitListaKpisExport(cache);
+  const campos = ["bloco", "indicador", "valor", "unidade"];
+  baixarArquivo("﻿" + linhasCSVDe(campos, linhas), `cockpit_comercial_kpis_${dataHoje()}.csv`, "text/csv;charset=utf-8;");
+}
+
+function cockpitExportarJSON() {
+  const cache = cockpitExigirCache();
+  if (!cache) return;
+  const payload = {
+    gerado_em: new Date().toISOString(),
+    fonte: "Cockpit Comercial Executivo — AtlasGR (snapshot já calculado, sem novo acesso ao Bitrix)",
+    periodo_filtro: cache.c?.saude?.periodoFiltro || null,
+    dados: cache,
+  };
+  baixarArquivo(JSON.stringify(payload, null, 2), `cockpit_comercial_${dataHoje()}.json`, "application/json;charset=utf-8;");
+}
+
+// Constrói os cards de KPI (grid simples) reaproveitando cockpitListaKpisExport,
+// agrupados por bloco — usado tanto no export "resumo" quanto no "completo".
+function cockpitHtmlKpiBlocos(cache, blocosIncluir) {
+  const linhas = cockpitListaKpisExport(cache);
+  const porBloco = {};
+  linhas.forEach((l) => {
+    if (blocosIncluir && !blocosIncluir.includes(l.bloco)) return;
+    (porBloco[l.bloco] ||= []).push(l);
+  });
+  return Object.entries(porBloco).map(([bloco, itens]) => {
+    const cards = itens.map((it) => `<div class="kpi"><div class="label">${escapeHtmlRelatorio(it.indicador)}</div><div class="value">${escapeHtmlRelatorio(String(it.valor))}${it.unidade && it.valor !== "não disponível" ? ` <span style="font-size:.6em;color:var(--muted)">${escapeHtmlRelatorio(it.unidade)}</span>` : ""}</div></div>`).join("");
+    return `<h2 class="section">${escapeHtmlRelatorio(bloco)}</h2><div class="kpis">${cards}</div>`;
+  }).join("");
+}
+
+function cockpitHtmlAlertas(cache) {
+  const info = cache.alertasInfo;
+  if (!info?.lista?.length) return `<p class="small-note">Sem alertas neste snapshot.</p>`;
+  const icone = { critico: "🔴", atencao: "🟡", positivo: "🟢" };
+  return `<div class="month-list">` + info.lista.map((a) =>
+    `<div class="vcard" style="padding:12px 16px;"><div class="vcard-name">${icone[a.nivel] || ""} ${escapeHtmlRelatorio(a.motivo)}</div>` +
+    (a.valor ? `<div class="vcard-stats">${escapeHtmlRelatorio(a.valor)}</div>` : "") +
+    `<div class="small-note">Ação sugerida: ${escapeHtmlRelatorio(a.acao)}</div></div>`
+  ).join("") + `</div>`;
+}
+
+// Gera o HTML autônomo do Cockpit (snapshot resumido) ou do Relatório
+// Executivo Completo (mais seções + alertas + links para o Catálogo).
+// completo=false → só os KPIs de topo, igual ao Cockpit na tela.
+// completo=true  → adiciona Alertas Gerenciais e Pipeline por Estágio por
+// extenso, e uma seção final com links para os relatórios que já existem no
+// projeto para Origem/Produtos/Clientes (não recalculados aqui).
+function cockpitGerarHTMLExport(completo) {
+  const cache = cockpitExigirCache();
+  if (!cache) return "";
+  const agora = new Date();
+  const carimbo = formatarDataBR(formatarDataISO(agora)) + " " + String(agora.getHours()).padStart(2, "0") + ":" + String(agora.getMinutes()).padStart(2, "0");
+  const titulo = completo ? "Relatório Executivo Completo" : "Cockpit Comercial";
+  const cabecalhoInfo = completo
+    ? `Resumo Executivo (= Situação Comercial Agora), Resultado do Mês, Forecast, Saúde do Pipeline, Proteção de Receita M/M+1/M+2/M+3, Pipeline por Estágio, Eficiência da Máquina, Geração de Pipeline, SDR, Qualidade dos Dados e Alertas Gerenciais — tudo a partir do snapshot já calculado nesta sessão do Cockpit.`
+    : `Snapshot dos KPIs do Cockpit Comercial no momento da exportação — mesmos números já calculados na tela, sem novo acesso ao Bitrix.`;
+
+  let corpo = `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">${escapeHtmlRelatorio(titulo)}</h2><p class="section-sub">${cabecalhoInfo}</p></div>`;
+
+  corpo += cockpitHtmlKpiBlocos(cache, ["Resultado do Mês", "Forecast", "Saúde do Pipeline", "Eficiência da Máquina"]);
+
+  corpo += `<h2 class="section">Alertas Gerenciais</h2>${cockpitHtmlAlertas(cache)}`;
+
+  corpo += cockpitHtmlKpiBlocos(cache, ["Proteção de Receita", "Pipeline por Estágio", "Geração de Pipeline", "SDR (resumo)", "Qualidade dos Dados"]);
+
+  if (completo) {
+    corpo += `<h2 class="section">Outras análises (relatórios completos do projeto)</h2>` +
+      `<p class="section-sub">O Cockpit não agrega dados de Origem, Produtos ou Clientes numa seção própria (essas fórmulas já existem no Catálogo de Relatórios e não foram duplicadas aqui). Abra a ferramenta e use, na mesma página:</p>` +
+      `<ul><li><strong>Catálogo de Relatórios</strong> — origem, produtos, clientes, aging/SLA, ganhos e perdas por ciclo.</li>` +
+      `<li><strong>Análise SDR / Diário SDR</strong> — leads trabalhados, reuniões, conversão Lead → Oportunidade.</li>` +
+      `<li><strong>Forecast semanal</strong> — visão semana a semana com o mesmo detalhamento de fechados/pendentes/pipeline.</li></ul>` +
+      `<p class="small-note">Este HTML é estático (baixado do navegador) e não tem link direto de volta à ferramenta — reabra "Relatórios AtlasGR.html" e navegue pelos menus para essas telas.</p>`;
+  }
+
+  corpo += `</div>`;
+
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(titulo)} — Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>` +
+    `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>${escapeHtmlRelatorio(titulo)}</strong><br>Gerado em ${carimbo}</div></div></div>` +
+    `<header class="hero"><div class="hero-inner"><p class="eyebrow">Cockpit Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(titulo)}</h1><p class="subtitle">${cabecalhoInfo}</p></div></header>` +
+    corpo +
+    `<footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · ${escapeHtmlRelatorio(titulo)} · gerado em ${carimbo} · nenhum webhook/credencial incluído neste arquivo.</footer>` +
+    `</body></html>`;
+}
+
+function cockpitAbrirHTMLExport() {
+  const h = cockpitGerarHTMLExport(false);
+  if (h) abrirHtmlEmNovaAba(h);
+}
+function cockpitBaixarHTMLExport() {
+  const h = cockpitGerarHTMLExport(false);
+  if (h) baixarArquivo(h, `cockpit_comercial_${dataHoje()}.html`, "text/html;charset=utf-8;");
+}
+function cockpitAbrirRelatorioExecutivo() {
+  const h = cockpitGerarHTMLExport(true);
+  if (h) abrirHtmlEmNovaAba(h);
+}
+function cockpitBaixarRelatorioExecutivo() {
+  const h = cockpitGerarHTMLExport(true);
+  if (h) baixarArquivo(h, `relatorio_executivo_completo_${dataHoje()}.html`, "text/html;charset=utf-8;");
+}
