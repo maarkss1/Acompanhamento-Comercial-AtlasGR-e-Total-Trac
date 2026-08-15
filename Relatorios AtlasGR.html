@@ -63,11 +63,111 @@
 
 <nav class="quick-nav" aria-label="Navegação rápida">
   <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <a href="#inicio">Início</a><a href="#configuracao">Escolher</a><a href="#bloco-periodo">Período</a><a href="#card-campos">Campos</a><a href="#execucao">Executar</a><a href="#card-sincronizacao">Sincronizar</a><a href="#bloco-resultado">Resultados</a><a href="#central-inteligencia-v10">Central v10 ✨</a><a href="#analise-ia">IA</a>
+    <span class="quick-nav-grupo">📊 Cockpit Executivo</span><a href="#cockpit-executivo">Cockpit</a>
+    <span class="quick-nav-grupo">📈 Relatórios Comerciais</span><a href="#bloco-forecast-semanal">Forecast semanal</a><a href="#central-inteligencia-v10">Central v10 ✨</a><a href="#bloco-relatorio-catalogo">Catálogo</a>
+    <span class="quick-nav-grupo">📞 SDR &amp; Operação</span><a href="#bloco-diario-sdr">Diário SDR</a><a href="#bloco-analise-sdr">Análise SDR</a><a href="#bloco-auditoria-jornada">Jornada</a>
+    <span class="quick-nav-grupo">🛠️ Extração &amp; Diagnóstico</span><a href="#inicio">Início</a><a href="#configuracao">Escolher</a><a href="#bloco-periodo">Período</a><a href="#card-campos">Campos</a><a href="#execucao">Executar</a><a href="#card-sincronizacao">Sincronizar</a><a href="#bloco-resultado">Resultados</a><a href="#analise-ia">IA</a>
   </div></div>
 </nav>
 
 <main>
+
+  <div class="card cockpit-card" id="cockpit-executivo">
+    <div class="cockpit-header">
+      <div>
+        <div class="hero-eyebrow" style="color:var(--brand);">ATLAS GR | COCKPIT COMERCIAL</div>
+        <p class="rodape-nota" style="margin-top:2px;" id="cockpitUltimaAtualizacao">Última atualização: ainda não carregado nesta sessão.</p>
+      </div>
+      <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
+    </div>
+
+    <div class="aviso" style="margin-top:10px;">
+      Este painel é a nova tela de entrada da ferramenta. Ele usa o mesmo webhook do passo 1 (seção
+      <strong>Extração &amp; Diagnóstico</strong> abaixo) e as mesmas fórmulas do Forecast e do Catálogo de
+      relatórios — nada aqui é recalculado com uma regra diferente. Números que não podem ser calculados com
+      confiança aparecem como <strong>"não disponível"</strong>, nunca como zero.
+    </div>
+
+    <div class="cockpit-filtros">
+      <div>
+        <label for="cockpitPeriodoPreset">Período (Saúde do Pipeline / Eficiência)</label>
+        <select id="cockpitPeriodoPreset" onchange="aoTrocarPeriodoCockpit(); renderizarCockpit();">
+          <option value="mensal" selected>Mensal (mês atual)</option>
+          <option value="semana_atual">Semana atual</option>
+          <option value="trimestral">Trimestral</option>
+          <option value="todas">Todas as datas</option>
+          <option value="personalizado">Personalizado</option>
+        </select>
+      </div>
+      <div class="cockpit-periodo-custom oculto">
+        <label for="cockpitDataInicio">De</label>
+        <input type="date" id="cockpitDataInicio" onchange="renderizarCockpit()">
+      </div>
+      <div class="cockpit-periodo-custom oculto">
+        <label for="cockpitDataFim">Até</label>
+        <input type="date" id="cockpitDataFim" onchange="renderizarCockpit()">
+      </div>
+      <div>
+        <label for="cockpitVendedor">Vendedor</label>
+        <div class="row" style="gap:6px;flex-wrap:nowrap;">
+          <select id="cockpitVendedor" style="flex:1;" onchange="cockpitReaplicarFiltros()"><option value="">Todos</option></select>
+          <button type="button" class="secundario" onclick="carregarVendedoresCockpit()" title="Carregar lista">↻</button>
+        </div>
+      </div>
+      <div>
+        <label for="cockpitOrigem">Origem</label>
+        <div class="row" style="gap:6px;flex-wrap:nowrap;">
+          <select id="cockpitOrigem" style="flex:1;" onchange="cockpitReaplicarFiltros()"><option value="">Todas</option></select>
+          <button type="button" class="secundario" onclick="carregarOrigensCockpit()" title="Carregar lista">↻</button>
+        </div>
+      </div>
+      <div>
+        <label for="cockpitProduto">Produto (texto no nome do produto)</label>
+        <input type="text" id="cockpitProduto" placeholder="Ex: Profile, GR..." onchange="aplicarFiltroProdutoCockpit()">
+        <p class="rodape-nota" id="cockpitProdutoStatus"></p>
+      </div>
+      <div>
+        <label for="cockpitMetaMensal">Meta New MRR do mês (R$)</label>
+        <input type="number" id="cockpitMetaMensal" min="0" step="0.01" onchange="renderizarCockpit()">
+      </div>
+    </div>
+    <p class="rodape-nota">Filtro de produto: como o Bitrix só expõe produtos por negócio individualmente
+      (uma chamada por negócio), o filtro busca sob demanda apenas nos negócios já carregados — não recarrega
+      tudo do zero. Meta: valor local editável desta ferramenta, pré-preenchido a partir da tabela de metas do
+      Forecast (js/config.js); o Bitrix não tem um módulo nativo de metas.</p>
+
+    <div class="relatorio-subtitulo">Resultado do Mês</div>
+    <div class="relatorio-especial-grid" id="cockpitResultadoMes"></div>
+
+    <div class="relatorio-subtitulo">Forecast (Commit · Best Case · Pipeline ponderado)</div>
+    <div class="relatorio-especial-grid" id="cockpitForecast"></div>
+
+    <div class="relatorio-subtitulo">Saúde do Pipeline</div>
+    <p class="rodape-nota cockpit-aviso-forte" id="cockpitAvisoPipelineForecast"></p>
+    <div class="relatorio-especial-grid" id="cockpitSaudePipeline"></div>
+
+    <div class="relatorio-subtitulo">Proteção de Receita — M / M+1 / M+2 / M+3</div>
+    <div class="row cockpit-metas-protecao">
+      <div><label for="cockpitMetaM0" style="margin-top:0;">Meta M</label><input type="number" id="cockpitMetaM0" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+      <div><label for="cockpitMetaM1" style="margin-top:0;">Meta M+1</label><input type="number" id="cockpitMetaM1" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+      <div><label for="cockpitMetaM2" style="margin-top:0;">Meta M+2</label><input type="number" id="cockpitMetaM2" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+      <div><label for="cockpitMetaM3" style="margin-top:0;">Meta M+3</label><input type="number" id="cockpitMetaM3" min="0" step="0.01" onchange="renderizarCockpit()"></div>
+    </div>
+    <div class="relatorio-scroll" id="cockpitProtecaoTabela"></div>
+    <p class="rodape-nota">Status: crítico &lt;2x cobertura, atenção 2x–3x, saudável ≥3x. Critério inicial e
+      configurável (ver comentário em <code>cockpitStatusProtecao</code>, js/cockpit.js) — não é uma regra
+      fixa acordada com a diretoria.</p>
+
+    <div class="relatorio-subtitulo">Pipeline por Estágio</div>
+    <div id="cockpitEstagios" class="cockpit-estagios-lista"></div>
+
+    <div class="relatorio-subtitulo">Eficiência da Máquina</div>
+    <div class="relatorio-especial-grid" id="cockpitEficiencia"></div>
+
+    <p class="rodape-nota">Clique em qualquer indicador acima para ver a lista de negócios que o compõe
+      (empresa, valor, etapa, vendedor e CLOSEDATE).</p>
+  </div>
+
 
   <section class="workspace-intro" id="inicio">
     <div class="workspace-title">
@@ -713,6 +813,16 @@
 </main>
 
 
+<div class="help-modal" id="cockpitDrillModal" onclick="fecharDrillCockpitPorFundo(event)">
+  <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="cockpitDrillTitulo">
+    <div class="help-head">
+      <div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">Cockpit Comercial · detalhamento</div><h3 id="cockpitDrillTitulo">Negócios</h3><p class="rodape-nota" id="cockpitDrillContagem" style="margin:2px 0 0;"></p></div>
+      <button type="button" class="help-close" onclick="fecharDrillCockpit()">×</button>
+    </div>
+    <div class="help-body"><div class="relatorio-scroll" id="cockpitDrillConteudo"></div></div>
+  </div>
+</div>
+
 <div class="help-modal" id="helpModal" onclick="fecharAjudaPorFundo(event)">
   <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitulo">
     <div class="help-head"><div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">Ajuda contextual</div><h3 id="helpTitulo">Como funciona</h3></div><button type="button" class="help-close" onclick="fecharAjuda()">×</button></div>
@@ -741,6 +851,7 @@
 <script src="js/jornada.js"></script>
 <script src="js/catalogo-relatorios.js"></script>
 <script src="js/exportacoes.js"></script>
+<script src="js/cockpit.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 

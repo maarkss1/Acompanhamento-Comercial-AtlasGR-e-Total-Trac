@@ -749,3 +749,68 @@
   @keyframes v10pulsar { 0%, 60%, 100% { opacity: .3; transform: scale(.8); } 30% { opacity: 1; transform: scale(1); } }
   .v10-modelo-select { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
+  /* ------------------------------------------------------------------- */
+  /* Cockpit Comercial Executivo                                          */
+  /* ------------------------------------------------------------------- */
+  .quick-nav-grupo {
+    display: inline-flex; align-items: center; padding: 8px 6px 8px 12px;
+    font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--ink-2); white-space: nowrap; opacity: .85;
+  }
+  .quick-nav-grupo:first-child { padding-left: 4px; }
+
+  .cockpit-card { border-top: 4px solid var(--brand); }
+  .cockpit-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  }
+  .cockpit-filtros {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 14px;
+    margin: 14px 0 4px;
+  }
+  .cockpit-filtros label { margin-top: 0; }
+  .cockpit-metas-protecao { flex-wrap: wrap; }
+  .cockpit-metas-protecao > div { min-width: 140px; }
+
+  .cockpit-kpi {
+    border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; background: var(--surface-2);
+    cursor: default;
+  }
+  .cockpit-kpi .valor { display: block; font-size: 20px; font-weight: 800; color: var(--brand); letter-spacing: -0.03em; }
+  .cockpit-kpi .rotulo { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-2); line-height: 1.35; }
+  .cockpit-kpi-clicavel { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+  .cockpit-kpi-clicavel:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--brand); }
+  .cockpit-kpi-destaque { background: var(--soft); border-color: var(--brand); }
+  .cockpit-kpi-destaque .valor { color: var(--brand-2); }
+
+  .cockpit-aviso-forte {
+    background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+    border-left: 3px solid var(--brand);
+    padding: 8px 12px; border-radius: 0 10px 10px 0; margin: 4px 0 10px;
+  }
+
+  .cockpit-status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
+    background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line);
+  }
+  .cockpit-status-critico { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+  .cockpit-status-atencao { background: color-mix(in srgb, var(--gold) 22%, var(--surface)); color: #8a6400; border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+  :root[data-tema="escuro"] .cockpit-status-atencao { color: var(--gold); }
+  .cockpit-status-saudavel { background: color-mix(in srgb, var(--ok) 16%, var(--surface)); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  .cockpit-linha-clicavel { cursor: pointer; }
+  .cockpit-linha-clicavel:hover { background: var(--soft); }
+
+  .cockpit-estagios-lista { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+  .cockpit-estagio-linha {
+    display: grid; grid-template-columns: 160px 1fr; gap: 4px 14px; align-items: center;
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; cursor: pointer; background: var(--surface);
+  }
+  .cockpit-estagio-linha:hover { border-color: var(--brand); background: var(--soft); }
+  .cockpit-estagio-nome { font-weight: 700; font-size: 12.5px; grid-row: 1 / 3; }
+  .cockpit-estagio-barra { height: 9px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .cockpit-estagio-barra-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--brand), var(--brand-2)); }
+  .cockpit-estagio-stats { font-size: 11px; color: var(--ink-2); }
+  @media (max-width: 560px) {
+    .cockpit-estagio-linha { grid-template-columns: 1fr; }
+    .cockpit-estagio-nome { grid-row: auto; }
+  }
+
