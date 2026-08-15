@@ -110,6 +110,63 @@ e `_CICLO` — o Cockpit não recalcula essas fórmulas, só as consome.
   com as duas datas preenchidas. O tamanho da amostra é mostrado
   explicitamente na nota abaixo do bloco.
 
+### 7. Geração de Pipeline (bloco H, `cockpitCalcularGeracaoPipeline`, `js/cockpit.js`)
+- **Pipeline criado no período** = soma de `_VALOR` dos negócios (do funil Comercial,
+  filtrados por vendedor/origem) cujo `DATE_CREATE` cai no período selecionado
+  (mesmo período usado em "Pipeline criado no período" da Saúde do Pipeline).
+  Inclui estágios "Piloto" (mede geração bruta, não elegibilidade de fechamento).
+- **Pipeline necessário** — **hipótese matemática documentada, não uma regra
+  validada com a diretoria**: `Meta M+1 ÷ (Win Rate / 100)`. Usa a Meta M+1
+  (campo `#cockpitMetaM1`, já existente no bloco Proteção de Receita) porque
+  pipeline criado hoje tipicamente fecha em meses futuros, e reaproveita o
+  Win Rate calculado no bloco Eficiência da Máquina (não recalcula). Se Meta
+  M+1 ou Win Rate não estiverem disponíveis, o valor é "não disponível".
+- **Gap de geração** = `max(0, necessário − criado)`.
+- **Creation Coverage** = `criado ÷ necessário` (%).
+- **Pipeline Creation Pace**: compara dias úteis decorridos no mês atual
+  contra o total de dias úteis do mês (`ehDiaUtilISO`, reaproveitado de
+  `js/sdr.js`) para calcular quanto de pipeline necessário já deveria ter
+  sido criado até hoje (`esperado até hoje = necessário × decorridos/total`),
+  o gap contra o que foi realmente criado, e o ritmo em % (`criado ÷
+  esperado × 100`).
+
+### 8. SDR — resumo executivo (bloco I, `cockpitCalcularResumoSdr`, `js/cockpit.js`)
+- Bloco compacto, **não substitui** os relatórios completos de SDR
+  (`js/sdr.js`: Diário SDR e Análise SDR), que continuam acessíveis por
+  links diretos no próprio bloco do Cockpit.
+- **Negócios originados de Lead** (proxy de "pipeline qualificado por SDR")
+  = negócios criados no período com `LEAD_ID` válido (campo já presente em
+  `baseDealsCatalogo`, `js/catalogo-relatorios.js:13`) — indica que o
+  negócio passou pela etapa de qualificação de Lead antes de virar
+  oportunidade, mas **não identifica qual SDR fez a qualificação** (isso
+  exigiria buscar o Lead original e seu `ASSIGNED_BY_ID`, uma chamada N+1
+  fora do escopo deste resumo).
+- **Limitação documentada explicitamente na UI**: "Leads trabalhados" e
+  "Reuniões agendadas/realizadas" mostram **"não disponível"** porque o
+  Cockpit só extrai negócios (`CATEGORY_ID=0`), não Leads nem atividades —
+  esses dados só existem na extração específica de `js/sdr.js`
+  (`extrairDiarioSDR`/`extrairAnaliseSDR`), que faz chamadas dedicadas a
+  `crm.lead.list` e `crm.activity.list` por usuário SDR configurado.
+
+### 9. Qualidade dos Dados (CRM) — Data Quality Score (bloco J, `cockpitCalcularQualidadeDados`, `js/cockpit.js`)
+- **Nunca chamar de "Forecast Confidence" ou similar** — é só completude de
+  cadastro no CRM, sem nenhuma relação com `PROBABILITY`/bucket de forecast.
+  Documentado em comentário no código, acima da função.
+- Base: negócios abertos do filtro atual (se não houver nenhum aberto, cai
+  para todos os filtrados).
+- Completude calculada por campo (% de negócios com o campo preenchido):
+  **Valor** (`OPPORTUNITY > 0`), **Responsável** (`ASSIGNED_BY_ID` válido),
+  **Estágio** (`STAGE_ID` preenchido), **CLOSEDATE** (data válida), **Origem**
+  (`SOURCE_ID` preenchido).
+- **Motivo de perda** — **limitação conhecida**: não existe, em nenhum lugar
+  do projeto (`js/config.js`, `js/catalogo-relatorios.js`, `js/forecast.js`),
+  um campo mapeado para motivo de perda (nem `UF_CRM_*` customizado, nem
+  nativo do Bitrix). Por isso este indicador é sempre **"0% informado"**
+  para negócios perdidos no período — não foi inventado nenhum campo novo.
+- **Data Quality Score** = média simples das % de completude dos campos
+  acima (motivo de perda **não entra** nessa média, porque não é um campo
+  disponível para calcular — entraria só se um campo real existisse).
+
 ## Drill-down (requisito 9)
 
 Toda métrica numérica relevante tem `data-drill` associado a uma lista de
@@ -175,3 +232,14 @@ Vendedor, CLOSEDATE.
    (mesma limitação de "sem cache de sessão" já registrada na auditoria,
    seção 14, item P1.5). Cada clique em "↻ Atualizar agora" refaz a busca
    completa.
+8. **Pipeline necessário (Geração de Pipeline) é uma hipótese matemática**
+   (`Meta M+1 ÷ Win Rate`), não uma fórmula validada com a diretoria — ver
+   comentário em `cockpitCalcularGeracaoPipeline`, `js/cockpit.js`.
+9. **Resumo de SDR não identifica qual SDR qualificou cada negócio** e não
+   mostra "Leads trabalhados" nem "Reuniões" — o Cockpit não extrai Leads
+   nem atividades; essas métricas exigem os relatórios completos de
+   `js/sdr.js` (Diário SDR / Análise SDR), linkados no próprio bloco.
+10. **Não existe campo de "motivo de perda" mapeado em nenhum lugar do
+    projeto** — o bloco Qualidade dos Dados sempre mostra 0% de completude
+    para esse campo nos negócios perdidos; não foi inventado nenhum
+    `UF_CRM_*` novo para simular esse dado.
