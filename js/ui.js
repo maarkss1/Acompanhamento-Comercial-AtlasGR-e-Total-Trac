@@ -1,28 +1,36 @@
+// Portal multi-página: nem toda página tem o motor genérico de extração (ex:
+// index.html, cockpit.html não têm #entidade/#relatorio; forecast.html/sdr.html
+// têm os selects, mas escondidos, e nunca a busca de produtos). iniciar() é
+// chamado em todas as páginas (ver js/app.js) — cada bloco abaixo só roda se os
+// elementos de que depende existem nesta página, pra não quebrar em nenhuma.
 function iniciar() {
   const selEntidade = document.getElementById("entidade");
-  ["negocios","leads","empresas","contatos","atividades","usuarios","tudo"].forEach((chave) => {
-    const opt = document.createElement("option");
-    opt.value = chave;
-    opt.textContent = ENTIDADES[chave].label;
-    selEntidade.appendChild(opt);
-  });
-
   const selRelatorio = document.getElementById("relatorio");
-  const grupos = {};
-  Object.entries(RELATORIOS).forEach(([chave, rel]) => {
-    if (!grupos[rel.grupo]) {
-      grupos[rel.grupo] = document.createElement("optgroup");
-      grupos[rel.grupo].label = rel.grupo;
-      selRelatorio.appendChild(grupos[rel.grupo]);
-    }
-    const opt = document.createElement("option");
-    opt.value = chave;
-    opt.textContent = rel.label;
-    grupos[rel.grupo].appendChild(opt);
-  });
+  if (selEntidade && selRelatorio) {
+    ["negocios","leads","empresas","contatos","atividades","usuarios","tudo"].forEach((chave) => {
+      const opt = document.createElement("option");
+      opt.value = chave;
+      opt.textContent = ENTIDADES[chave].label;
+      selEntidade.appendChild(opt);
+    });
 
-  aoTrocarEntidade(false);
-  construirCamposProdutosUI();
+    const grupos = {};
+    Object.entries(RELATORIOS).forEach(([chave, rel]) => {
+      if (!grupos[rel.grupo]) {
+        grupos[rel.grupo] = document.createElement("optgroup");
+        grupos[rel.grupo].label = rel.grupo;
+        selRelatorio.appendChild(grupos[rel.grupo]);
+      }
+      const opt = document.createElement("option");
+      opt.value = chave;
+      opt.textContent = rel.label;
+      grupos[rel.grupo].appendChild(opt);
+    });
+
+    aoTrocarEntidade(false);
+  }
+
+  if (document.getElementById("campos-produtos-contexto")) construirCamposProdutosUI();
   atualizarIconeTema();
 }
 
@@ -325,18 +333,32 @@ function ativarAcordeoesExtrator(){
 // v11 — um card por item do catálogo RELATORIOS (todas as possibilidades de
 // relatório cruzadas, não só os 4 atalhos originais), agrupados por "grupo" e
 // com busca por palavra-chave em nome/descrição/grupo.
+function cardRelatorioRapidoHTML(chave,rel){
+  const {label,descricao,grupo}=rel;
+  const m=label.match(/^(\S+)\s*(.*)$/),icone=m?m[1]:"📄",titulo=m?m[2]:label;
+  const textoBusca=escapeHtmlRelatorio(`${label} ${descricao} ${grupo}`.toLowerCase());
+  return `<button type="button" class="quick-report-card" data-busca="${textoBusca}" onclick="selecionarRelatorioRapido('${chave}')"><span class="report-icon">${icone}</span><strong>${escapeHtmlRelatorio(titulo)}</strong><span>${escapeHtmlRelatorio(descricao)}</span></button>`;
+}
+
 function renderizarAtalhosRelatorios(){
   const c=document.getElementById("atalhosRelatoriosGrupos");if(!c)return;
   const grupos={};
   Object.entries(RELATORIOS).forEach(([chave,rel])=>{(grupos[rel.grupo]||=[]).push({chave,...rel})});
   c.innerHTML=Object.entries(grupos).map(([grupo,itens])=>{
-    const cards=itens.map(({chave,label,descricao})=>{
-      const m=label.match(/^(\S+)\s*(.*)$/),icone=m?m[1]:"📄",titulo=m?m[2]:label;
-      const textoBusca=escapeHtmlRelatorio(`${label} ${descricao} ${grupo}`.toLowerCase());
-      return `<button type="button" class="quick-report-card" data-busca="${textoBusca}" onclick="selecionarRelatorioRapido('${chave}')"><span class="report-icon">${icone}</span><strong>${escapeHtmlRelatorio(titulo)}</strong><span>${escapeHtmlRelatorio(descricao)}</span></button>`;
-    }).join("");
+    const cards=itens.map(({chave,...rel})=>cardRelatorioRapidoHTML(chave,rel)).join("");
     return `<div class="quick-report-grupo"><h3>${escapeHtmlRelatorio(grupo)}</h3><div class="quick-report-grid">${cards}</div></div>`;
   }).join("");
+}
+
+// Mini-portal: renderiza só os cards de UM grupo do catálogo (sem cabeçalho de
+// grupo repetido, sem busca) — usado por forecast.html ("Comercial & Receita")
+// e sdr.html ("SDR & Leads") para mostrar apenas os relatórios do seu próprio
+// grupo. Reaproveita exatamente o mesmo template de card de
+// renderizarAtalhosRelatorios (cardRelatorioRapidoHTML) — não duplica a lógica.
+function renderizarAtalhosRelatoriosGrupo(nomeGrupo, containerId){
+  const c=document.getElementById(containerId);if(!c)return;
+  const itens=Object.entries(RELATORIOS).filter(([,rel])=>rel.grupo===nomeGrupo);
+  c.innerHTML=`<div class="quick-report-grid">${itens.map(([chave,rel])=>cardRelatorioRapidoHTML(chave,rel)).join("")}</div>`;
 }
 function filtrarAtalhosRelatorios(){
   const termo=(document.getElementById("buscaAtalhosRelatorios")?.value||"").trim().toLowerCase();
@@ -353,7 +375,40 @@ function filtrarAtalhosRelatorios(){
   });
   document.getElementById("atalhosRelatoriosSemResultado")?.classList.toggle("oculto",visiveis>0);
 }
-function selecionarRelatorioRapido(chave){revelarFluxoExtracao();const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});}
+// Mapa das (poucas) chaves de RELATORIOS que têm um bloco de resultado
+// dedicado e "self-contido" (função de extração própria, fora do motor
+// genérico do Catálogo) que também pode estar embutido em uma página mini-
+// portal (forecast.html, sdr.html). Se o card dessa chave for clicado numa
+// página que já tem esse bloco no DOM, a ação é rolar até ele em vez de
+// navegar para extracao.html.
+const RELATORIO_BLOCO_DEDICADO_LOCAL = {
+  forecast_semanal: "bloco-forecast-semanal",
+  diario_sdr: "bloco-diario-sdr",
+  analise_sdr: "bloco-analise-sdr",
+};
+
+// Portal multi-página: só as páginas que têm o motor genérico de extração
+// (hoje, só extracao.html) têm o wrapper #fluxo-extracao. Em qualquer outra
+// página (index.html, forecast.html, sdr.html) clicar num card de relatório
+// deve levar para extracao.html?relatorio=chave — a menos que a própria
+// página já tenha o bloco dedicado daquele relatório (ver mapa acima), caso em
+// que só rolamos até ele e pré-selecionamos o relatório/período localmente.
+function selecionarRelatorioRapido(chave){
+  if(!document.getElementById("fluxo-extracao")){
+    const blocoId=RELATORIO_BLOCO_DEDICADO_LOCAL[chave];
+    const bloco=blocoId?document.getElementById(blocoId):null;
+    if(bloco){
+      const s=document.getElementById("relatorio");
+      if(s){s.value=chave;if(typeof aoTrocarRelatorio==="function")aoTrocarRelatorio();}
+      if(typeof atualizarResumoConfiguracaoV7==="function")atualizarResumoConfiguracaoV7();
+      bloco.scrollIntoView({behavior:"smooth",block:"start"});
+      return;
+    }
+    window.location.href=`extracao.html?relatorio=${encodeURIComponent(chave)}`;
+    return;
+  }
+  revelarFluxoExtracao();const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});
+}
 
 // Passos 1-8 (Conexão, Escolha, Período, Campos, Executar, Sincronizar, Central
 // de Inteligência, Analisar com IA) ficam escondidos até o usuário escolher um
