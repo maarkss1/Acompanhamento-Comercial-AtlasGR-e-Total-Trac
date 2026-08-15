@@ -167,6 +167,71 @@ e `_CICLO` — o Cockpit não recalcula essas fórmulas, só as consome.
   acima (motivo de perda **não entra** nessa média, porque não é um campo
   disponível para calcular — entraria só se um campo real existisse).
 
+### 10. Alertas Gerenciais (seção 28, `cockpitCalcularAlertas`, `js/cockpit.js`)
+- Renderizado no topo do Cockpit, logo abaixo do cabeçalho/filtros, em
+  `#cockpitAlertas` (`cockpitRenderAlertas`). Cada alerta tem nível (🔴
+  crítico / 🟡 atenção / 🟢 positivo), motivo, valor/quantidade e uma ação
+  sugerida em texto; alertas ordenados crítico → atenção → positivo.
+- **Não recalcula nenhuma fórmula de negócio** — só lê thresholds sobre o que
+  `cockpitCalcular()` e `cockpitCalcularGeracaoPipeline()` já calcularam.
+- Clique em um alerta abre o drill-down (`cockpitAbrirDrill`) quando há uma
+  lista de negócios associada, ou rola a tela até o bloco relacionado
+  (`cockpitAlertaClique`) — implementado como `data`/`onclick` gerados em
+  `cockpitRenderAlertas`.
+- **Regras implementadas**:
+  1. Coverage do mês corrente crítico/atenção — reaproveita
+     `c.saude.coverage` e o **mesmo threshold 2x/3x** de Proteção de Receita
+     (`cockpitStatusProtecao`).
+  2. Oportunidades abertas com `CLOSEDATE` vencida (no passado) — soma valor
+     e conta quantidade, a partir de `c.deals` (`_SEMANTICA`/`_VALOR` já
+     calculados).
+  3. Aging alto por estágio — reaproveita `agingMedio` já calculado no bloco
+     Pipeline por Estágio; dispara quando `agingMedio > ALERTA_AGING_ALTO_DIAS`
+     (constante = 45 dias, **critério inicial/configurável, não é uma meta
+     validada com a diretoria** — mesmo espírito do threshold 2x/3x).
+  4. Pipeline criado abaixo do necessário / ritmo de criação atrasado —
+     reaproveita `g.creationCoverage` e `g.paceRitmoPct` do bloco Geração de
+     Pipeline, sem recalcular.
+  5. Coverage de M+1 em risco — reaproveita `c.protecao[1]` (mesmo status já
+     calculado na tabela de Proteção de Receita).
+- **Regra descartada (não implementada) e o motivo**: "Win Rate acima ou
+  abaixo da média histórica" — o Cockpit e o restante do projeto
+  (`js/forecast.js`, `js/catalogo-relatorios.js`) **não armazenam nenhum
+  histórico de Win Rate** entre sessões ou períodos anteriores; cada
+  carregamento recalcula o Win Rate só do período filtrado atual. Sem uma
+  série histórica real para comparar, qualquer "média" seria inventada — por
+  isso esse alerta não foi implementado.
+
+### 11. "⚡ Situação Comercial Agora" (`cockpitGerarSituacaoAgora`, `js/cockpit.js`)
+- Botão no cabeçalho do Cockpit ("⚡ Gerar Situação Agora"), ao lado de
+  "↻ Atualizar agora". Abre um modal compacto (reaproveita a mesma estrutura
+  visual `.help-modal`/`.help-dialog` do modal de ajuda e do drill-down) com
+  um resumo de uma tela só.
+- **Não reprocessa nada nem chama o Bitrix de novo**: lê de
+  `cockpitState.ultimoCalculo`, um cache preenchido ao final de
+  `renderizarCockpit()` com o resultado já calculado de `cockpitCalcular()`
+  (`c`), `cockpitCalcularGeracaoPipeline()` (`g`), resumo de SDR (`s`),
+  qualidade de dados (`q`) e os alertas (`alertasInfo`) daquele render. Se o
+  Cockpit ainda não foi carregado nesta sessão (`↻ Atualizar agora` nunca
+  clicado), mostra erro pedindo para atualizar antes.
+- Campos exibidos: Meta do mês, Fechado, % da Meta, Forecast total do mês,
+  Gap do Forecast, Commit, Best Case, Pipeline Total, Pipeline Elegível,
+  Coverage, Pipeline criado no período, Win Rate, Sales Cycle (média),
+  Oportunidades abertas (`c.saude.qtdAberto`) e Oportunidades em risco —
+  união (sem duplicar) dos negócios com `CLOSEDATE` vencida e dos negócios em
+  estágios com aging alto (as duas listas usadas pelos Alertas Gerenciais).
+  Cada campo ausente mostra "não disponível", nunca zero.
+- Logo abaixo, a lista completa de Alertas Gerenciais daquele momento
+  (mesma renderização visual do bloco principal, via
+  `cockpitRenderAlertasEm`).
+- **Copiar/baixar**: reaproveita o mesmo padrão já usado em
+  `js/exportacoes.js` (`copiarPromptIA`/`baixarPromptIA` — `navigator.clipboard.writeText`
+  e o helper genérico `baixarArquivo`, `js/config.js:379`) — não foi criado
+  nenhum mecanismo novo de exportação. Botões "Copiar como texto"
+  (`cockpitCopiarSituacao`) e "Baixar .txt" (`cockpitBaixarSituacao`) atuam
+  sobre o mesmo texto plano montado em `cockpitGerarSituacaoAgora` (guardado
+  num `<pre>` oculto, `#cockpitSituacaoTexto`).
+
 ## Drill-down (requisito 9)
 
 Toda métrica numérica relevante tem `data-drill` associado a uma lista de
@@ -243,3 +308,10 @@ Vendedor, CLOSEDATE.
     projeto** — o bloco Qualidade dos Dados sempre mostra 0% de completude
     para esse campo nos negócios perdidos; não foi inventado nenhum
     `UF_CRM_*` novo para simular esse dado.
+11. **Threshold de aging alto dos Alertas Gerenciais (45 dias) é um ponto de
+    partida, não uma meta corporativa validada** — mesma ressalva do
+    threshold 2x/3x de Proteção de Receita, ver `ALERTA_AGING_ALTO_DIAS`,
+    `js/cockpit.js`.
+12. **Alerta de Win Rate x média histórica não foi implementado** — nenhum
+    lugar do projeto armazena histórico de Win Rate entre períodos/sessões
+    anteriores; ver seção "Alertas Gerenciais" acima para o detalhe.
