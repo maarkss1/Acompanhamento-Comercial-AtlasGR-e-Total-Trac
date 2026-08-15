@@ -6,9 +6,62 @@ function alternarVisibilidadeWebhook() {
 
 const CHAVE_WEBHOOK_LOCAL = "atlas-extrator-bitrix-webhook";
 
+// ---------------------------------------------------------------------------
+// Ofuscação leve do webhook salvo no localStorage.
+//
+// IMPORTANTE — isto NÃO é segurança real: é uma cifra XOR reversível com chave
+// fixa embutida no próprio código-fonte público. Qualquer pessoa que leia este
+// arquivo (ou o próprio DevTools, já que a função de desofuscar está aqui do
+// lado) consegue recuperar o webhook original em segundos. O único ganho real
+// é evitar exposição *trivial* do texto puro da credencial ao abrir
+// Application > Local Storage no DevTools, em backups automáticos do perfil do
+// navegador, ou a extensões maliciosas que fazem apenas um grep simples por
+// padrões como "/rest/" no localStorage. Contra alguém com acesso de fato ao
+// navegador (DevTools, extensão capaz de rodar JS, backup do perfil lido por
+// outra ferramenta), a proteção é nula — não existe forma de esconder de
+// verdade uma credencial usada por uma aplicação 100% client-side sem
+// backend/servidor próprio para custodiá-la. Ver aviso equivalente na UI, no
+// card "Conexão com o Bitrix", e em AUDITORIA_ESTADO_ATUAL.md.
+const CHAVE_OFUSCACAO_WEBHOOK = "AtlasGR-Comercial-v13-nao-e-seguranca-real";
+
+function ofuscarWebhook(texto) {
+  const s = String(texto || "");
+  let saida = "";
+  for (let i = 0; i < s.length; i++) {
+    const codigo = s.charCodeAt(i) ^ CHAVE_OFUSCACAO_WEBHOOK.charCodeAt(i % CHAVE_OFUSCACAO_WEBHOOK.length);
+    saida += String.fromCharCode(codigo);
+  }
+  try {
+    return "xor1:" + btoa(unescape(encodeURIComponent(saida)));
+  } catch (e) {
+    return "";
+  }
+}
+
+function desofuscarWebhook(valorArmazenado) {
+  const bruto = String(valorArmazenado || "");
+  if (!bruto) return "";
+  if (!bruto.startsWith("xor1:")) {
+    // Compatibilidade retroativa: valor salvo em texto puro por uma versão
+    // anterior desta ferramenta. Continua sendo lido normalmente.
+    return bruto;
+  }
+  try {
+    const decodificado = decodeURIComponent(escape(atob(bruto.slice(5))));
+    let saida = "";
+    for (let i = 0; i < decodificado.length; i++) {
+      const codigo = decodificado.charCodeAt(i) ^ CHAVE_OFUSCACAO_WEBHOOK.charCodeAt(i % CHAVE_OFUSCACAO_WEBHOOK.length);
+      saida += String.fromCharCode(codigo);
+    }
+    return saida;
+  } catch (e) {
+    return "";
+  }
+}
+
 function obterWebhookSalvo() {
   try {
-    return String(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
+    return desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
   } catch (e) {
     return "";
   }
@@ -64,15 +117,17 @@ function salvarWebhookNoNavegador() {
 
   const confirmar = window.confirm(
     "Salvar o webhook neste navegador?\n\n" +
-    "A URL contém uma credencial de acesso ao Bitrix24 e ficará armazenada no localStorage deste navegador. " +
-    "Faça isso apenas em um computador pessoal ou confiável."
+    "A URL contém uma credencial de acesso total ao Bitrix24 e ficará armazenada (ofuscada, não " +
+    "criptografada de verdade) no localStorage deste navegador. Qualquer pessoa com acesso a este " +
+    "navegador (DevTools, extensões, backup do perfil) pode extraí-la. Não salve em computador " +
+    "compartilhado — nessas máquinas, digite o webhook a cada sessão e use \"Esquecer webhook\" ao terminar."
   );
   if (!confirmar) return;
 
   try {
-    localStorage.setItem(CHAVE_WEBHOOK_LOCAL, webhook);
+    localStorage.setItem(CHAVE_WEBHOOK_LOCAL, ofuscarWebhook(webhook));
     atualizarStatusWebhookSalvo();
-    atualizarStatus("Webhook salvo somente neste navegador. Ele será carregado automaticamente na próxima abertura.");
+    atualizarStatus("Webhook salvo somente neste navegador (ofuscado, não é criptografia real). Ele será carregado automaticamente na próxima abertura.");
   } catch (e) {
     mostrarErro("Não foi possível salvar o webhook. O modo privado ou uma política do navegador pode estar bloqueando o armazenamento local.");
   }
