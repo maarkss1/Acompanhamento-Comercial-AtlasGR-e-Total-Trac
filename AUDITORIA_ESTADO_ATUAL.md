@@ -2,9 +2,19 @@
 
 Data da auditoria: 2026-08-15. Base: commit `fc6a55f` (branch `main`).
 
+> **Atualização (mesmo dia, depois desta auditoria):** a aplicação foi
+> reestruturada de página única para um **portal com páginas separadas**
+> (`index.html`, `cockpit.html`, `extracao.html`, `forecast.html`,
+> `sdr.html`) — ver `PORTAL.md` para a estrutura atual, o que cada página
+> contém e como a navegação funciona entre elas. A descrição abaixo (seção 1,
+> "arquivo único de ~8.510 linhas") descreve o estado **anterior** a essa
+> reestruturação; o restante deste documento (fórmulas, riscos, gargalos,
+> limitações do Bitrix) continua válido, já que a lógica de negócio em
+> `js/*.js` não mudou — só a organização do HTML entre páginas.
+
 ---
 
-## 1. Arquitetura atual
+## 1. Arquitetura atual (histórica — ver nota acima)
 
 Ferramenta 100% client-side, sem backend próprio: um único arquivo `Relatorios AtlasGR.html`
 (~8.510 linhas, ~465 KB) contendo HTML + CSS + JavaScript inline. Não há bundler, não há
