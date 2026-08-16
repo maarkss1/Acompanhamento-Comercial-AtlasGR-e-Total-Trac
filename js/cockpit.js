@@ -355,6 +355,60 @@ function cockpitClassificarBucketForecast(prob) {
   return "Upside";
 }
 
+// ---------------------------------------------------------------------------
+// Pipeline Elegível — critérios convergidos com pipelineEligibility.ts da
+// Central de Inteligência Comercial (divergência #2 da auditoria).
+// ---------------------------------------------------------------------------
+// A Central exige, para um negócio ser "elegível" (condição real de
+// fechar), que TODOS os critérios sejam verdadeiros:
+//   1. Aberto (não ganho/perdido)             → já garantido por _SEMANTICA
+//   2. Valor > 0                              → d._VALOR > 0
+//   3. Data prevista de fechamento preenchida → CLOSEDATE
+//   4. Responsável preenchido                 → ASSIGNED_BY_ID
+//   5. "Próxima ação" preenchida              → NÃO IMPLEMENTADO AQUI (ver nota abaixo)
+//   6. Aging na etapa atual ≤ 45 dias         → MOVED_TIME
+//
+// LIMITAÇÃO CONHECIDA (documentar sempre que este cálculo for citado): este
+// projeto não extrai nenhum campo de "próxima ação"/"próxima atividade
+// agendada" para negócios — crm.deal.list (ver ENTIDADES em js/config.js e
+// enriquecerDealCatalogo em js/catalogo-relatorios.js) não busca esse dado
+// hoje, e não há infraestrutura de N+1 para buscar atividades futuras por
+// negócio no Cockpit. Por isso o critério 5 NÃO é aplicado — inventar esse
+// dado violaria a regra do projeto de nunca fabricar informação que não
+// existe no Bitrix configurado para este cliente. Consequência prática:
+// o Pipeline Elegível deste projeto é mais PERMISSIVO que o da Central
+// nesse ponto específico (um negócio sem nenhuma próxima ação registrada
+// ainda pode contar como elegível aqui, desde que passe nos outros 5
+// critérios). Os outros 5 critérios são implementados fielmente, incluindo
+// o mesmo threshold de aging crítico (45 dias) usado pela Central
+// (STAGE_AGING_CRITICAL_DAYS em pipelineEligibility.ts).
+const COCKPIT_AGING_CRITICO_ELEGIBILIDADE_DIAS = 45;
+
+// Aging na etapa atual, em dias — mesma base (MOVED_TIME) já usada pelo
+// bloco "Pipeline por Estágio" (G) e pelo alerta de aging alto. `null`
+// quando MOVED_TIME não está preenchido (nunca estimamos um valor aqui).
+function cockpitAgingAtualDias(d, refISO) {
+  const mt = parteDataISO(d.MOVED_TIME);
+  if (!mt) return null;
+  return Math.max(0, Math.floor((new Date(`${refISO}T12:00:00`) - new Date(`${mt}T12:00:00`)) / 86400000));
+}
+
+// Verifica os 5 critérios de elegibilidade aplicáveis (ver nota da
+// limitação acima) e devolve os motivos de reprovação — usado no
+// drill-down de "Pipeline inelegível" para explicar cada negócio de fora.
+function cockpitVerificarElegibilidade(d, refISO) {
+  const motivos = [];
+  if (ehEstagioPiloto(d.STAGE_ID, d._ESTAGIO)) motivos.push("Estágio Piloto (fora do critério de elegibilidade)");
+  if (!(Number(d._VALOR) > 0)) motivos.push("Sem valor válido");
+  if (!parteDataISO(d.CLOSEDATE)) motivos.push("Sem data prevista de fechamento (CLOSEDATE)");
+  if (!idBitrixValido(d.ASSIGNED_BY_ID)) motivos.push("Sem responsável");
+  const aging = cockpitAgingAtualDias(d, refISO);
+  if (aging != null && aging > COCKPIT_AGING_CRITICO_ELEGIBILIDADE_DIAS) {
+    motivos.push(`Aging acima do crítico (${aging}d > ${COCKPIT_AGING_CRITICO_ELEGIBILIDADE_DIAS}d)`);
+  }
+  return { elegivel: motivos.length === 0, motivos };
+}
+
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = cockpitMesAtual();
@@ -410,7 +464,23 @@ function cockpitCalcular() {
   const pipelineTotal = abertosTodos.reduce((a, d) => a + d._VALOR, 0);
   const periodoSelecionado = cockpitPeriodoFiltro();
   const periodoFiltro = (periodoSelecionado.inicio || periodoSelecionado.fim) ? periodoSelecionado : mes;
-  const abertosElegiveis = abertosTodos.filter((d) => !ehEstagioPiloto(d.STAGE_ID, d._ESTAGIO) && dentroPeriodoCatalogo(d.CLOSEDATE, periodoFiltro));
+  // Pipeline Elegível — CRITÉRIOS CONVERGIDOS COM A CENTRAL (divergência #2,
+  // ver cockpitVerificarElegibilidade acima: aberto/não-piloto, valor>0,
+  // CLOSEDATE preenchida, responsável preenchido, aging ≤45d na etapa atual
+  // — critério de "próxima ação preenchida" da Central NÃO é aplicado aqui,
+  // ver limitação documentada em cockpitVerificarElegibilidade), MAIS o
+  // filtro de período que já existia neste projeto (CLOSEDATE dentro do
+  // período selecionado no Cockpit) — esse recorte por período é uma decisão
+  // de arquitetura própria deste Cockpit (Coverage = elegível ÷ gap DO
+  // PERÍODO escolhido), não algo definido pela Central, e foi mantido para
+  // não quebrar a leitura de Coverage/Proteção de Receita já em uso.
+  const elegibilidadeTodos = abertosTodos.map((d) => ({ deal: d, check: cockpitVerificarElegibilidade(d, mes.hojeISO) }));
+  const abertosElegiveis = elegibilidadeTodos
+    .filter(({ deal, check }) => check.elegivel && dentroPeriodoCatalogo(deal.CLOSEDATE, periodoFiltro))
+    .map(({ deal }) => deal);
+  const inelegiveisComMotivo = elegibilidadeTodos
+    .filter(({ check }) => !check.elegivel)
+    .map(({ deal, check }) => ({ ...deal, _MOTIVOS_INELEGIBILIDADE: check.motivos.join("; ") }));
   const pipelineElegivel = abertosElegiveis.reduce((a, d) => a + d._VALOR, 0);
   // Coverage = Pipeline Elegível ÷ Gap da Meta (não ÷ meta cheia) — mostra se o
   // que falta para bater a meta do mês está coberto pelo pipeline compatível
@@ -423,6 +493,7 @@ function cockpitCalcular() {
   const ticketMedioPipeline = abertosTodos.length ? pipelineTotal / abertosTodos.length : null;
   drill.pipelineTotal = abertosTodos;
   drill.pipelineElegivel = abertosElegiveis;
+  drill.pipelineInelegivel = inelegiveisComMotivo;
   drill.pipelineCriado = criadosPeriodo;
 
   // -------------------- D) Proteção de Receita M / M+1 / M+2 / M+3 ---------
@@ -486,7 +557,7 @@ function cockpitCalcular() {
     mes, deals,
     resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes },
     forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
-    saude: { pipelineTotal, pipelineElegivel, coverage, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
+    saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
     eficiencia: { winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length, ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro },
     estagios: estagiosLista, totalEstagios,
@@ -965,6 +1036,7 @@ function renderizarCockpit() {
   cockpitEl("cockpitSaudePipeline").innerHTML = [
     cockpitKpiCard("Pipeline Total", moedaRelatorio(c.saude.pipelineTotal), "pipelineTotal"),
     cockpitKpiCard("Pipeline Elegível (filtro)", moedaRelatorio(c.saude.pipelineElegivel), "pipelineElegivel"),
+    cockpitKpiCard("Pipeline inelegível (com motivo)", c.saude.pipelineInelegivelQtd, "pipelineInelegivel"),
     cockpitKpiCard("Coverage (elegível ÷ gap)", covTxt, "pipelineElegivel"),
     cockpitKpiCard("Pipeline criado no período", moedaRelatorio(c.saude.pipelineCriadoPeriodo), "pipelineCriado"),
     cockpitKpiCard("Ticket médio do pipeline", cockpitND(c.saude.ticketMedioPipeline, moedaRelatorio), "pipelineTotal"),
@@ -1055,13 +1127,18 @@ function cockpitAbrirDrill(chave, titulo) {
   if (!modal) return;
   cockpitEl("cockpitDrillTitulo").textContent = titulo || "Detalhamento";
   cockpitEl("cockpitDrillContagem").textContent = `${linhas.length} negócio(s)`;
-  cockpitEl("cockpitDrillConteudo").innerHTML = tabelaRelatorio([
+  // Drill de "Pipeline inelegível" ganha uma coluna extra com o(s) motivo(s)
+  // de reprovação (ver cockpitVerificarElegibilidade) — os demais drills
+  // seguem as colunas padrão.
+  const colunas = [
     { label: "Empresa / Cliente", valor: "_CLIENTE" },
     { label: "Valor", valor: (x) => moedaRelatorio(x._VALOR), html: true },
     { label: "Etapa", valor: "_ESTAGIO" },
     { label: "Vendedor", valor: "_RESPONSAVEL" },
     { label: "CLOSEDATE", valor: (x) => formatarDataBR(parteDataISO(x.CLOSEDATE)) },
-  ], linhas, 300);
+  ];
+  if (chave === "pipelineInelegivel") colunas.push({ label: "Motivo(s) de inelegibilidade", valor: "_MOTIVOS_INELEGIBILIDADE" });
+  cockpitEl("cockpitDrillConteudo").innerHTML = tabelaRelatorio(colunas, linhas, 300);
   modal.classList.add("aberto");
 }
 function fecharDrillCockpit() {
@@ -1121,6 +1198,7 @@ function cockpitListaKpisExport(cache) {
 
   add("Saúde do Pipeline", "Pipeline Total", moeda(c.saude.pipelineTotal), "R$");
   add("Saúde do Pipeline", "Pipeline Elegível (filtro)", moeda(c.saude.pipelineElegivel), "R$");
+  add("Saúde do Pipeline", "Pipeline inelegível (qtd)", num(c.saude.pipelineInelegivelQtd), "qtd");
   add("Saúde do Pipeline", "Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta batida" : (c.saude.coverage != null ? String(Math.round(c.saude.coverage * 100) / 100) : null), "x");
   add("Saúde do Pipeline", "Pipeline criado no período", moeda(c.saude.pipelineCriadoPeriodo), "R$");
   add("Saúde do Pipeline", "Ticket médio do pipeline", moeda(c.saude.ticketMedioPipeline), "R$");
