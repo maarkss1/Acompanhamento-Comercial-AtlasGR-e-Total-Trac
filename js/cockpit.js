@@ -409,6 +409,16 @@ function cockpitVerificarElegibilidade(d, refISO) {
   return { elegivel: motivos.length === 0, motivos };
 }
 
+// Coverage recomendado — convergido com CommercialIntelligenceUseCases.ts
+// da Central (divergência #3 da auditoria): coverageRecommended = 1 /
+// (winRate/100), derivado do Win Rate histórico REAL do período filtrado
+// (não um threshold fixo). `null` quando o Win Rate não é calculável
+// (winRate null ou 0) — nunca inventa um número.
+function cockpitCoverageRecomendado(winRate) {
+  if (winRate == null || !Number.isFinite(winRate) || winRate <= 0) return null;
+  return 1 / (winRate / 100);
+}
+
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = cockpitMesAtual();
@@ -459,11 +469,31 @@ function cockpitCalcular() {
   drill.forecastUpside = linhasUpside;
   drill.forecastTotal = [...linhasCommit, ...linhasBest, ...linhasPipe]; // Upside não entra no forecast total
 
+  // -------------------- Período do filtro (usado por F, C e D abaixo) ------
+  const periodoSelecionado = cockpitPeriodoFiltro();
+  const periodoFiltro = (periodoSelecionado.inicio || periodoSelecionado.fim) ? periodoSelecionado : mes;
+
+  // -------------------- F) Eficiência da Máquina ----------------------------
+  // (calculado antes de C/D porque o Win Rate daqui alimenta o Coverage
+  // Recomendado — divergência #3, ver cockpitCoverageRecomendado.)
+  const fechadosPeriodo = deals.filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, periodoFiltro));
+  const ganhosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "success");
+  const perdidosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "failure");
+  const winRate = (ganhosPeriodo.length + perdidosPeriodo.length) > 0
+    ? Math.round((ganhosPeriodo.length / (ganhosPeriodo.length + perdidosPeriodo.length)) * 1000) / 10
+    : null;
+  const receitaGanhaPeriodo = ganhosPeriodo.reduce((a, d) => a + d._VALOR, 0);
+  const ticketMedioVendido = ganhosPeriodo.length ? receitaGanhaPeriodo / ganhosPeriodo.length : null;
+  const ciclos = ganhosPeriodo.map((d) => Number(d._CICLO)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const cicloMedia = ciclos.length ? Math.round((ciclos.reduce((a, b) => a + b, 0) / ciclos.length) * 10) / 10 : null;
+  const cicloMediana = ciclos.length ? (ciclos.length % 2 ? ciclos[(ciclos.length - 1) / 2] : Math.round(((ciclos[ciclos.length / 2 - 1] + ciclos[ciclos.length / 2]) / 2) * 10) / 10) : null;
+  drill.winRateGanhos = ganhosPeriodo;
+  drill.winRatePerdidos = perdidosPeriodo;
+  drill.cicloVenda = ganhosPeriodo;
+
   // -------------------- C) Saúde do Pipeline --------------------------------
   const abertosTodos = deals.filter((d) => d._SEMANTICA === "process");
   const pipelineTotal = abertosTodos.reduce((a, d) => a + d._VALOR, 0);
-  const periodoSelecionado = cockpitPeriodoFiltro();
-  const periodoFiltro = (periodoSelecionado.inicio || periodoSelecionado.fim) ? periodoSelecionado : mes;
   // Pipeline Elegível — CRITÉRIOS CONVERGIDOS COM A CENTRAL (divergência #2,
   // ver cockpitVerificarElegibilidade acima: aberto/não-piloto, valor>0,
   // CLOSEDATE preenchida, responsável preenchido, aging ≤45d na etapa atual
@@ -488,6 +518,11 @@ function cockpitCalcular() {
   let coverage = null;
   if (gapMeta === 0) coverage = "meta batida";
   else if (gapMeta != null && gapMeta > 0) coverage = pipelineElegivel / gapMeta;
+  // Coverage Recomendado — divergência #3: derivado do Win Rate histórico
+  // REAL do período filtrado (calculado no bloco F acima), não um threshold
+  // fixo. Exibido AO LADO do semáforo fixo existente (cockpitStatusProtecao),
+  // que continua útil como "chão" mínimo simples — ver COCKPIT_COMERCIAL.md.
+  const coverageRecomendado = cockpitCoverageRecomendado(winRate);
   const criadosPeriodo = deals.filter((d) => dentroPeriodoCatalogo(d.DATE_CREATE, periodoFiltro));
   const pipelineCriadoPeriodo = criadosPeriodo.reduce((a, d) => a + d._VALOR, 0);
   const ticketMedioPipeline = abertosTodos.length ? pipelineTotal / abertosTodos.length : null;
@@ -510,27 +545,13 @@ function cockpitCalcular() {
     const coverageM = metaM > 0 ? pipelineM / metaM : null;
     // Threshold inicial (configurável, não é regra fixa da AtlasGR): <2x
     // crítico, 2x–3x atenção, ≥3x saudável — ver comentário na função
-    // cockpitStatusProtecao().
+    // cockpitStatusProtecao(). Coverage Recomendado (Win Rate) exibido ao
+    // lado — mesmo valor de coverageRecomendado do bloco C (Win Rate é
+    // calculado uma única vez por período filtrado, não por mês M/M+1/M+2/M+3).
     const statusM = cockpitStatusProtecao(coverageM);
-    protecao.push({ label: `${i === 0 ? "M" : `M+${i}`} (${mesAnoBR(inicioM)})`, meta: metaM, pipeline: pipelineM, coverage: coverageM, status: statusM, deals: elegiveisM });
+    protecao.push({ label: `${i === 0 ? "M" : `M+${i}`} (${mesAnoBR(inicioM)})`, meta: metaM, pipeline: pipelineM, coverage: coverageM, coverageRecomendado, status: statusM, deals: elegiveisM });
     drill[`protecao_${i}`] = elegiveisM;
   }
-
-  // -------------------- F) Eficiência da Máquina ----------------------------
-  const fechadosPeriodo = deals.filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, periodoFiltro));
-  const ganhosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "success");
-  const perdidosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "failure");
-  const winRate = (ganhosPeriodo.length + perdidosPeriodo.length) > 0
-    ? Math.round((ganhosPeriodo.length / (ganhosPeriodo.length + perdidosPeriodo.length)) * 1000) / 10
-    : null;
-  const receitaGanhaPeriodo = ganhosPeriodo.reduce((a, d) => a + d._VALOR, 0);
-  const ticketMedioVendido = ganhosPeriodo.length ? receitaGanhaPeriodo / ganhosPeriodo.length : null;
-  const ciclos = ganhosPeriodo.map((d) => Number(d._CICLO)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
-  const cicloMedia = ciclos.length ? Math.round((ciclos.reduce((a, b) => a + b, 0) / ciclos.length) * 10) / 10 : null;
-  const cicloMediana = ciclos.length ? (ciclos.length % 2 ? ciclos[(ciclos.length - 1) / 2] : Math.round(((ciclos[ciclos.length / 2 - 1] + ciclos[ciclos.length / 2]) / 2) * 10) / 10) : null;
-  drill.winRateGanhos = ganhosPeriodo;
-  drill.winRatePerdidos = perdidosPeriodo;
-  drill.cicloVenda = ganhosPeriodo;
 
   // -------------------- G) Pipeline por Estágio -----------------------------
   const refAging = new Date(`${mes.referencia}T12:00:00`);
@@ -557,7 +578,7 @@ function cockpitCalcular() {
     mes, deals,
     resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes },
     forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
-    saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
+    saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, coverageRecomendado, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
     eficiencia: { winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length, ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro },
     estagios: estagiosLista, totalEstagios,
@@ -881,7 +902,8 @@ function cockpitGerarSituacaoAgora() {
     ["Upside (não entra no forecast)", fmtMoeda(c.forecast.upside)],
     ["Pipeline Total", fmtMoeda(c.saude.pipelineTotal)],
     ["Pipeline Elegível", fmtMoeda(c.saude.pipelineElegivel)],
-    ["Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
+    ["Coverage atual (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
+    ["Coverage recomendado (Win Rate histórico)", c.saude.coverageRecomendado != null ? `${c.saude.coverageRecomendado.toFixed(2)}x` : "não disponível"],
     ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
     ["Win Rate", fmtPct(c.eficiencia.winRate)],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
@@ -1033,25 +1055,28 @@ function renderizarCockpit() {
 
   // C) Saúde do Pipeline
   const covTxt = c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`);
+  const covRecTxt = cockpitND(c.saude.coverageRecomendado, (v) => `${v.toFixed(2)}x`);
   cockpitEl("cockpitSaudePipeline").innerHTML = [
     cockpitKpiCard("Pipeline Total", moedaRelatorio(c.saude.pipelineTotal), "pipelineTotal"),
     cockpitKpiCard("Pipeline Elegível (filtro)", moedaRelatorio(c.saude.pipelineElegivel), "pipelineElegivel"),
     cockpitKpiCard("Pipeline inelegível (com motivo)", c.saude.pipelineInelegivelQtd, "pipelineInelegivel"),
-    cockpitKpiCard("Coverage (elegível ÷ gap)", covTxt, "pipelineElegivel"),
+    cockpitKpiCard("Coverage atual (elegível ÷ gap)", covTxt, "pipelineElegivel"),
+    cockpitKpiCard("Coverage recomendado (Win Rate histórico)", covRecTxt, null),
     cockpitKpiCard("Pipeline criado no período", moedaRelatorio(c.saude.pipelineCriadoPeriodo), "pipelineCriado"),
     cockpitKpiCard("Ticket médio do pipeline", cockpitND(c.saude.ticketMedioPipeline, moedaRelatorio), "pipelineTotal"),
   ].join("");
   cockpitEl("cockpitAvisoPipelineForecast").textContent =
-    `Pipeline Total (${moedaRelatorio(c.saude.pipelineTotal)}) é o valor bruto de tudo que está aberto no Comercial — não é previsão de fechamento. A previsão fica nos cards de Forecast acima (Commit/Best Case/Pipeline ponderado).`;
+    `Pipeline Total (${moedaRelatorio(c.saude.pipelineTotal)}) é o valor bruto de tudo que está aberto no Comercial — não é previsão de fechamento. A previsão fica nos cards de Forecast acima (Commit/Best Case/Pipeline ponderado). Coverage atual: ${covTxt} · recomendado (baseado no Win Rate histórico do período): ${covRecTxt}.`;
 
   // D) Proteção de Receita
-  cockpitEl("cockpitProtecaoTabela").innerHTML = `<table><thead><tr><th>Mês</th><th>Meta</th><th>Pipeline Elegível</th><th>Coverage</th><th>Status</th></tr></thead><tbody>` +
+  cockpitEl("cockpitProtecaoTabela").innerHTML = `<table><thead><tr><th>Mês</th><th>Meta</th><th>Pipeline Elegível</th><th>Coverage</th><th>Status (chão fixo)</th><th>Recomendado (Win Rate)</th></tr></thead><tbody>` +
     c.protecao.map((p, i) => `<tr class="cockpit-linha-clicavel" onclick="cockpitAbrirDrill('protecao_${i}','Pipeline elegível — ${escapeHtmlRelatorio(p.label)}')">` +
       `<td>${escapeHtmlRelatorio(p.label)}</td>` +
       `<td>${p.meta ? moedaRelatorio(p.meta) : "não informada"}</td>` +
       `<td>${moedaRelatorio(p.pipeline)}</td>` +
       `<td>${p.coverage != null ? `${p.coverage.toFixed(2)}x` : "não disponível"}</td>` +
       `<td><span class="cockpit-status-badge ${p.status.classe}">${p.status.rotulo}</span></td>` +
+      `<td>${p.coverageRecomendado != null ? `${p.coverageRecomendado.toFixed(2)}x` : "não disponível"}</td>` +
       `</tr>`).join("") + `</tbody></table>`;
 
   // E) Pipeline por Estágio
@@ -1199,7 +1224,8 @@ function cockpitListaKpisExport(cache) {
   add("Saúde do Pipeline", "Pipeline Total", moeda(c.saude.pipelineTotal), "R$");
   add("Saúde do Pipeline", "Pipeline Elegível (filtro)", moeda(c.saude.pipelineElegivel), "R$");
   add("Saúde do Pipeline", "Pipeline inelegível (qtd)", num(c.saude.pipelineInelegivelQtd), "qtd");
-  add("Saúde do Pipeline", "Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta batida" : (c.saude.coverage != null ? String(Math.round(c.saude.coverage * 100) / 100) : null), "x");
+  add("Saúde do Pipeline", "Coverage atual (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta batida" : (c.saude.coverage != null ? String(Math.round(c.saude.coverage * 100) / 100) : null), "x");
+  add("Saúde do Pipeline", "Coverage recomendado (Win Rate histórico)", c.saude.coverageRecomendado != null ? String(Math.round(c.saude.coverageRecomendado * 100) / 100) : null, "x");
   add("Saúde do Pipeline", "Pipeline criado no período", moeda(c.saude.pipelineCriadoPeriodo), "R$");
   add("Saúde do Pipeline", "Ticket médio do pipeline", moeda(c.saude.ticketMedioPipeline), "R$");
   add("Saúde do Pipeline", "Oportunidades abertas", num(c.saude.qtdAberto), "qtd");
@@ -1208,7 +1234,8 @@ function cockpitListaKpisExport(cache) {
     add("Proteção de Receita", `Meta — ${p.label}`, p.meta ? moeda(p.meta) : null, "R$");
     add("Proteção de Receita", `Pipeline Elegível — ${p.label}`, moeda(p.pipeline), "R$");
     add("Proteção de Receita", `Coverage — ${p.label}`, p.coverage != null ? String(Math.round(p.coverage * 100) / 100) : null, "x");
-    add("Proteção de Receita", `Status — ${p.label}`, p.status?.rotulo || null, "");
+    add("Proteção de Receita", `Status (chão fixo) — ${p.label}`, p.status?.rotulo || null, "");
+    add("Proteção de Receita", `Recomendado (Win Rate) — ${p.label}`, p.coverageRecomendado != null ? String(Math.round(p.coverageRecomendado * 100) / 100) : null, "x");
   });
 
   add("Eficiência da Máquina", "Win Rate", pct(c.eficiencia.winRate), "%");
