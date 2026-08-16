@@ -319,15 +319,40 @@ function cockpitMesAtual() {
   return { inicio, fim, referencia: hojeISO, hojeISO };
 }
 
-// Classifica um negócio aberto (não-piloto) usando exatamente a mesma lógica
-// do Forecast semanal/mensal: probabilidade do Bitrix quando existir, senão
-// probabilidadeFallbackForecast; bucket via classificarBucketForecast.
+// Classifica um negócio aberto (não-piloto) usando a mesma probabilidade do
+// Forecast semanal/mensal (Bitrix quando existir, senão
+// probabilidadeFallbackForecast) — mas o BUCKET usa thresholds próprios do
+// Cockpit (ver cockpitClassificarBucketForecast abaixo), não
+// classificarBucketForecast.
 function cockpitClassificarAberto(d) {
   const pr = Number(d.PROBABILITY);
   const usaBitrix = Number.isFinite(pr) && pr > 0 && pr <= 100;
   const prob = usaBitrix ? pr : probabilidadeFallbackForecast(d._ESTAGIO, d._SEMANTICA);
-  const bucket = classificarBucketForecast(prob, d._SEMANTICA);
+  const bucket = cockpitClassificarBucketForecast(prob);
   return { prob, bucket, ponderado: d._VALOR * prob / 100 };
+}
+
+// ---------------------------------------------------------------------------
+// Classificação de bucket do Forecast — ESPECÍFICA DO COCKPIT.
+// ---------------------------------------------------------------------------
+// Convergência com a Central de Inteligência Comercial (auditoria de
+// comparação entre os dois projetos, divergência #1): o motor de forecast
+// testado da Central (CENTRAL-DE-INTELIGENCIA-COMECIAL-ATLASGR,
+// src/features/commercial-intelligence/application/forecastEngine.ts,
+// FORECAST_RULES) usa Commit ≥70%, Best Case ≥40%, Pipeline ≥10%, e abaixo
+// disso é "Upside" (baixíssima probabilidade).
+//
+// NÃO reaproveitamos classificarBucketForecast (js/jornada.js, thresholds
+// 80%/50%, sem tier "Upside") porque essa função é a fonte de verdade do
+// Forecast Semanal (js/forecast.js) e do relatório "Forecast Mensal" do
+// Catálogo (js/catalogo-relatorios.js) — mudar os thresholds ali quebraria os
+// dois relatórios, que não fizeram parte desta convergência com a Central.
+// Por isso o Cockpit ganhou esta função própria, só para si.
+function cockpitClassificarBucketForecast(prob) {
+  if (prob >= 70) return "Commit";
+  if (prob >= 40) return "Best Case";
+  if (prob >= 10) return "Pipeline";
+  return "Upside";
 }
 
 function cockpitCalcular() {
@@ -345,23 +370,40 @@ function cockpitCalcular() {
   drill.resultadoMesFechado = ganhosMes;
   drill.resultadoMesGap = ganhosMes; // mesmo conjunto: o que falta é sobre o que já foi fechado
 
-  // -------------------- B) Forecast (Commit / Best Case / Pipeline / Gap) --
+  // -------------------- B) Forecast (Commit / Best Case / Pipeline / Upside) --
+  // FÓRMULA CONVERGIDA COM A CENTRAL DE INTELIGÊNCIA COMERCIAL (auditoria de
+  // comparação, divergência #1 — ver forecastEngine.ts e
+  // CommercialIntelligenceUseCases.executiveOverview no outro projeto):
+  //   Commit e Best Case entram em VALOR CHEIO (não ponderado) no forecast —
+  //   são tiers de alta probabilidade; ponderar por probabilidade os
+  //   subestimava sem necessidade. Só o tier "Pipeline" (probabilidade
+  //   intermediária) entra PONDERADO (valor × probabilidade/100). O tier
+  //   "Upside" (probabilidade muito baixa, <10%) NÃO entra no forecast total
+  //   — nem cheio, nem ponderado — é mostrado à parte, só como referência.
+  //   ForecastTotal = Fechado + Commit(bruto) + BestCase(bruto) + Pipeline(ponderado).
+  //
+  // FÓRMULA ANTIGA (divergente, corrigida nesta convergência): todo o
+  // pipeline aberto do mês (Commit + Best Case + Pipeline, tudo junto) entrava
+  // ponderado por probabilidade (`ponderado += valor*prob/100` para todos os
+  // buckets) — isso subestimava sistematicamente o forecast em negócios de
+  // alta probabilidade (Commit/Best Case).
   const abertosMes = deals.filter((d) => d._SEMANTICA === "process" && !ehEstagioPiloto(d.STAGE_ID, d._ESTAGIO) && dentroPeriodoCatalogo(d.CLOSEDATE, mes));
-  let commit = 0, bestCase = 0, pipelineForecast = 0, ponderado = 0;
-  const linhasCommit = [], linhasBest = [], linhasPipe = [];
+  let commit = 0, bestCase = 0, pipelineForecast = 0, upside = 0, pipelinePonderado = 0;
+  const linhasCommit = [], linhasBest = [], linhasPipe = [], linhasUpside = [];
   abertosMes.forEach((d) => {
-    const { bucket, ponderado: pond } = cockpitClassificarAberto(d);
-    ponderado += pond;
+    const { bucket, prob } = cockpitClassificarAberto(d);
     if (bucket === "Commit") { commit += d._VALOR; linhasCommit.push(d); }
     else if (bucket === "Best Case") { bestCase += d._VALOR; linhasBest.push(d); }
-    else { pipelineForecast += d._VALOR; linhasPipe.push(d); }
+    else if (bucket === "Pipeline") { pipelineForecast += d._VALOR; pipelinePonderado += d._VALOR * prob / 100; linhasPipe.push(d); }
+    else { upside += d._VALOR; linhasUpside.push(d); }
   });
-  const forecastTotal = fechadoMes + ponderado;
+  const forecastTotal = fechadoMes + commit + bestCase + pipelinePonderado;
   const gapForecast = metaMensal > 0 ? Math.max(0, metaMensal - forecastTotal) : null;
   drill.forecastCommit = linhasCommit;
   drill.forecastBestCase = linhasBest;
   drill.forecastPipeline = linhasPipe;
-  drill.forecastTotal = abertosMes;
+  drill.forecastUpside = linhasUpside;
+  drill.forecastTotal = [...linhasCommit, ...linhasBest, ...linhasPipe]; // Upside não entra no forecast total
 
   // -------------------- C) Saúde do Pipeline --------------------------------
   const abertosTodos = deals.filter((d) => d._SEMANTICA === "process");
@@ -443,7 +485,7 @@ function cockpitCalcular() {
   return {
     mes, deals,
     resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes },
-    forecast: { commit, bestCase, pipelineForecast, ponderado, forecastTotal, metaMensal, gapForecast },
+    forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
     saude: { pipelineTotal, pipelineElegivel, coverage, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
     eficiencia: { winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length, ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro },
@@ -762,8 +804,10 @@ function cockpitGerarSituacaoAgora() {
     ["% da Meta", fmtPct(c.resultadoMes.pctMeta)],
     ["Forecast total do mês", fmtMoeda(c.forecast.forecastTotal)],
     ["Gap do Forecast", fmtMoeda(c.forecast.gapForecast)],
-    ["Commit", fmtMoeda(c.forecast.commit)],
-    ["Best Case", fmtMoeda(c.forecast.bestCase)],
+    ["Commit (valor cheio)", fmtMoeda(c.forecast.commit)],
+    ["Best Case (valor cheio)", fmtMoeda(c.forecast.bestCase)],
+    ["Pipeline ponderado (entra no forecast)", fmtMoeda(c.forecast.pipelinePonderado)],
+    ["Upside (não entra no forecast)", fmtMoeda(c.forecast.upside)],
     ["Pipeline Total", fmtMoeda(c.saude.pipelineTotal)],
     ["Pipeline Elegível", fmtMoeda(c.saude.pipelineElegivel)],
     ["Coverage (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
@@ -903,12 +947,15 @@ function renderizarCockpit() {
     cockpitKpiCard("Ticket médio (mês)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado"),
   ].join("");
 
-  // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes)
+  // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes).
+  // Commit e Best Case = valor cheio; Pipeline entra ponderado; Upside fica
+  // de fora do forecast total (ver cockpitCalcular, bloco B).
   cockpitEl("cockpitForecast").innerHTML = [
-    cockpitKpiCard("Commit", moedaRelatorio(c.forecast.commit), "forecastCommit"),
-    cockpitKpiCard("Best Case", moedaRelatorio(c.forecast.bestCase), "forecastBestCase"),
-    cockpitKpiCard("Pipeline (forecast)", moedaRelatorio(c.forecast.pipelineForecast), "forecastPipeline"),
-    cockpitKpiCard("Forecast ponderado", moedaRelatorio(c.forecast.ponderado), "forecastTotal"),
+    cockpitKpiCard("Commit (valor cheio)", moedaRelatorio(c.forecast.commit), "forecastCommit"),
+    cockpitKpiCard("Best Case (valor cheio)", moedaRelatorio(c.forecast.bestCase), "forecastBestCase"),
+    cockpitKpiCard("Pipeline (bruto)", moedaRelatorio(c.forecast.pipelineForecast), "forecastPipeline"),
+    cockpitKpiCard("Pipeline (ponderado — entra no forecast)", moedaRelatorio(c.forecast.pipelinePonderado), "forecastPipeline"),
+    cockpitKpiCard("Upside (não entra no forecast)", moedaRelatorio(c.forecast.upside), "forecastUpside"),
     cockpitKpiCard("Forecast total do mês", moedaRelatorio(c.forecast.forecastTotal), "forecastTotal", "cockpit-kpi-destaque"),
     cockpitKpiCard("Gap do Forecast", cockpitND(c.forecast.gapForecast, moedaRelatorio), "forecastTotal"),
   ].join("");
@@ -1064,10 +1111,11 @@ function cockpitListaKpisExport(cache) {
   add("Resultado do Mês", "Negócios ganhos", num(c.resultadoMes.qtd), "qtd");
   add("Resultado do Mês", "Ticket médio (mês)", moeda(c.resultadoMes.ticketMedioMes), "R$");
 
-  add("Forecast", "Commit", moeda(c.forecast.commit), "R$");
-  add("Forecast", "Best Case", moeda(c.forecast.bestCase), "R$");
-  add("Forecast", "Pipeline (forecast)", moeda(c.forecast.pipelineForecast), "R$");
-  add("Forecast", "Forecast ponderado", moeda(c.forecast.ponderado), "R$");
+  add("Forecast", "Commit (valor cheio)", moeda(c.forecast.commit), "R$");
+  add("Forecast", "Best Case (valor cheio)", moeda(c.forecast.bestCase), "R$");
+  add("Forecast", "Pipeline (bruto, tier Pipeline)", moeda(c.forecast.pipelineForecast), "R$");
+  add("Forecast", "Pipeline (ponderado — entra no forecast)", moeda(c.forecast.pipelinePonderado), "R$");
+  add("Forecast", "Upside (não entra no forecast)", moeda(c.forecast.upside), "R$");
   add("Forecast", "Forecast total do mês", moeda(c.forecast.forecastTotal), "R$");
   add("Forecast", "Gap do Forecast", moeda(c.forecast.gapForecast), "R$");
 
