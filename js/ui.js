@@ -436,6 +436,12 @@ function revelarFluxoExtracao(){
   if (!fluxoExtracaoJaRevelado) {
     fluxoExtracaoJaRevelado = true;
     wrap.querySelectorAll(":scope > .card").forEach((card) => card.classList.add("card-collapsed"));
+    // Passo 5 (Executar consulta) fica aberto -- é o botão "Extrair dados",
+    // a única ação que falta depois de escolher um relatório/entidade (que já
+    // vem pré-preenchido pelo card clicado). Sem isso, a primeira tela do
+    // fluxo revelado é uma parede de 7 títulos recolhidos sem nenhuma pista
+    // de qual abrir primeiro.
+    document.getElementById("execucao")?.classList.remove("card-collapsed");
   }
 }
 
