@@ -422,27 +422,25 @@ function selecionarRelatorioRapido(chave){
 // Passos 1-8 (Conexão, Escolha, Período, Campos, Executar, Sincronizar, Central
 // de Inteligência, Analisar com IA) ficam escondidos até o usuário escolher um
 // relatório na tela inicial (ou clicar em "Configurar extração manualmente"/
-// "Ver Cockpit completo") -- a primeira tela deve mostrar só os cards. Na
-// primeira vez que aparecem, cada passo começa recolhido (só o título) --
-// evita despejar as 8 seções abertas de uma vez; o usuário abre só o que
-// precisa (a "segunda tela" de cada card). Escolhas já feitas nos passos
-// anteriores (relatório, período, campos) continuam aplicadas mesmo
-// recolhidas -- collapse é só visual.
-let fluxoExtracaoJaRevelado = false;
+// "Ver Cockpit completo") -- troca real de tela, não acordeão: a tela dos
+// cards (#inicio) some e o motor de extração (#fluxo-extracao) ocupa o lugar
+// dela, todo aberto (sem seções recolhidas). "← Voltar para os relatórios"
+// desfaz a troca.
 function revelarFluxoExtracao(){
   const wrap = document.getElementById("fluxo-extracao");
   if (!wrap) return;
   wrap.classList.remove("oculto");
-  if (!fluxoExtracaoJaRevelado) {
-    fluxoExtracaoJaRevelado = true;
-    wrap.querySelectorAll(":scope > .card").forEach((card) => card.classList.add("card-collapsed"));
-    // Passo 5 (Executar consulta) fica aberto -- é o botão "Extrair dados",
-    // a única ação que falta depois de escolher um relatório/entidade (que já
-    // vem pré-preenchido pelo card clicado). Sem isso, a primeira tela do
-    // fluxo revelado é uma parede de 7 títulos recolhidos sem nenhuma pista
-    // de qual abrir primeiro.
-    document.getElementById("execucao")?.classList.remove("card-collapsed");
-  }
+  document.getElementById("inicio")?.classList.add("oculto");
+  // Não rola aqui -- quem chama esta função já rola para o alvo certo depois
+  // (ex.: selecionarRelatorioRapido/revelarFluxoExtracaoManual rolam até
+  // #configuracao); rolar aqui também causaria dois scrolls concorrentes.
+}
+
+function voltarParaRelatorios(){
+  document.getElementById("fluxo-extracao")?.classList.add("oculto");
+  const inicio = document.getElementById("inicio");
+  inicio?.classList.remove("oculto");
+  inicio?.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
 // Botão "Configurar extração manual" da tela inicial de extracao.html: mesmo

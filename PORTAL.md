@@ -55,16 +55,17 @@ abaixo).
   aqui, já que esta página é dedicada só a ele.
 
 ### 3. `extracao.html` — Extração & Diagnóstico
-- O motor genérico completo: passos 1–8 (Conexão, Escolha o que fazer,
-  Período, Campos, Executar consulta, Sincronizar, Central de Inteligência
-  v10, Analisar com IA/Python), dentro do wrapper
-  `<div class="oculto" id="fluxo-extracao">` — fica escondido até o usuário
-  escolher um relatório na grade de cards ou clicar em "⚙️ Configurar
-  extração manual" (`revelarFluxoExtracaoManual()`, `js/ui.js`), igual ao
-  comportamento da antiga página única: a "tela inicial" desta página mostra
-  só a grade de cards, não os 8 passos empilhados. Na primeira revelação,
-  cada passo aparece recolhido (accordion, `card-collapsed`) — o usuário abre
-  só o que precisa.
+- Troca real de tela, não accordion: a seção `#inicio` (busca + grade de
+  cards de relatório) e o wrapper `<div class="oculto" id="fluxo-extracao">`
+  (passos 1–8: Conexão, Escolha o que fazer, Período, Campos, Executar
+  consulta, Sincronizar, Central de Inteligência v10, Analisar com IA/Python)
+  nunca ficam visíveis ao mesmo tempo. `revelarFluxoExtracao()` (`js/ui.js`)
+  esconde `#inicio` e mostra `#fluxo-extracao` já todo aberto (sem seções
+  recolhidas); `voltarParaRelatorios()` desfaz a troca. Disparado ao clicar
+  num card de relatório, em "⚙️ Configurar extração manual"
+  (`revelarFluxoExtracaoManual()`) ou via `?relatorio=chave` na URL. Um botão
+  "← Voltar para os relatórios" no topo do wrapper chama
+  `voltarParaRelatorios()`.
 - Todos os blocos de resultado por relatório especial e do catálogo
   (`bloco-resultado`, `bloco-auditoria-jornada`, `bloco-analise-sdr`,
   `bloco-forecast-semanal`, `bloco-diario-sdr`, `bloco-relatorio-catalogo`,
