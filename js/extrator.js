@@ -274,17 +274,32 @@ function pararExtracao() {
 }
 
 function atualizarStatus(msg) {
-  document.getElementById("statusTexto").textContent = msg;
+  const el = document.getElementById("statusTexto");
+  if (el) el.textContent = msg;
 }
 
+// index.html e cockpit.html não têm o passo 5 (execução/extração) no DOM, então
+// não têm o #areaErro dedicado -- mas testarConexaoBitrix() roda em toda
+// página e usa esta função para mostrar o motivo real de uma falha de conexão.
+// Sem esse fallback, o erro detalhado simplesmente desaparecia nessas páginas
+// (a chamada a document.getElementById("areaErro") retornava null e quebrava
+// silenciosamente), deixando só a pilula "Falha na conexão" sem explicação.
 function mostrarErro(msg) {
-  const area = document.getElementById("areaErro");
+  let area = document.getElementById("areaErro");
+  if (!area) {
+    const ancora = document.getElementById("conexao");
+    if (!ancora) { console.error(msg); return; }
+    area = document.createElement("div");
+    area.id = "areaErro";
+    area.className = "erro oculto";
+    ancora.appendChild(area);
+  }
   area.textContent = msg;
   area.classList.remove("oculto");
 }
 
 function esconderErro() {
-  document.getElementById("areaErro").classList.add("oculto");
+  document.getElementById("areaErro")?.classList.add("oculto");
 }
 
 // ---------------------------------------------------------------------------
