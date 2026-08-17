@@ -57,15 +57,19 @@ abaixo).
 ### 3. `extracao.html` — Extração & Diagnóstico
 - O motor genérico completo: passos 1–8 (Conexão, Escolha o que fazer,
   Período, Campos, Executar consulta, Sincronizar, Central de Inteligência
-  v10, Analisar com IA/Python) **exatamente** como viviam dentro do wrapper
-  `<div class="oculto" id="fluxo-extracao">` da página única — só que agora
-  sem a classe `oculto` (conteúdo sempre visível/normal, é a página dedicada
-  para isso).
+  v10, Analisar com IA/Python), dentro do wrapper
+  `<div class="oculto" id="fluxo-extracao">` — fica escondido até o usuário
+  escolher um relatório na grade de cards ou clicar em "⚙️ Configurar
+  extração manual" (`revelarFluxoExtracaoManual()`, `js/ui.js`), igual ao
+  comportamento da antiga página única: a "tela inicial" desta página mostra
+  só a grade de cards, não os 8 passos empilhados. Na primeira revelação,
+  cada passo aparece recolhido (accordion, `card-collapsed`) — o usuário abre
+  só o que precisa.
 - Todos os blocos de resultado por relatório especial e do catálogo
   (`bloco-resultado`, `bloco-auditoria-jornada`, `bloco-analise-sdr`,
   `bloco-forecast-semanal`, `bloco-diario-sdr`, `bloco-relatorio-catalogo`,
   `bloco-campos-produtos`, `bloco-produtos`, `bloco-resultado-completo`,
-  `bloco-python`).
+  `bloco-python`) também ficam dentro do wrapper, escondidos até lá.
 - Também tem a grade de cards no topo (`renderizarAtalhosRelatorios()`) para
   quem chega direto aqui, ou quer trocar de relatório sem sair da página.
 - Aceita `?relatorio=chave` na URL: ao carregar, se presente, chama

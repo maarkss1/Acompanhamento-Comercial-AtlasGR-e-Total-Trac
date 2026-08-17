@@ -439,6 +439,17 @@ function revelarFluxoExtracao(){
   }
 }
 
+// Botão "Configurar extração manual" da tela inicial de extracao.html: mesmo
+// caminho de selecionarRelatorioRapido, mas sem pré-selecionar nenhum
+// relatório do catálogo (fica no modo "Extração manual" já default do
+// select #relatorio) -- é a única forma de chegar ao motor genérico sem
+// escolher um card pronto, já que o fluxo agora começa escondido.
+function revelarFluxoExtracaoManual(){
+  revelarFluxoExtracao();
+  atualizarResumoConfiguracaoV7();
+  document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
 function atualizarResumoConfiguracaoV7(){
   const relKey=document.getElementById("relatorio")?.value,entKey=document.getElementById("entidade")?.value;
   const titulo=document.getElementById("resumoSelecaoTitulo"),det=document.getElementById("resumoSelecaoDetalhe");

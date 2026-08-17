@@ -79,10 +79,13 @@
     <input type="text" id="buscaAtalhosRelatorios" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarAtalhosRelatorios()">
     <div id="atalhosRelatoriosGrupos"></div>
     <p class="rodape-nota oculto" id="atalhosRelatoriosSemResultado">Nenhum relatório encontrado para esta busca.</p>
+    <div class="row" style="margin-top:14px;">
+      <button type="button" class="secundario" onclick="revelarFluxoExtracaoManual()">⚙️ Configurar extração manual (sem relatório pronto)</button>
+    </div>
     <div class="config-summary" id="resumoConfiguracaoTopo"></div>
   </section>
 
-  <div id="fluxo-extracao">
+  <div class="oculto" id="fluxo-extracao">
   <div class="card" id="conexao">
     <h2><span class="num">1</span> Conexão com o Bitrix</h2>
     <div class="aviso">
