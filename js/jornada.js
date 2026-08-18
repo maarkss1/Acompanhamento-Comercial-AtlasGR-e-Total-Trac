@@ -563,7 +563,9 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   const seta = noCaminho
     ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
     : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
+  const badgeAlerta = noCaminho ? "" : `<span class="badge-ping" title="Projeção não está batendo a meta">!</span>`;
   return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
+    ${badgeAlerta}
     <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
     <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
     <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
