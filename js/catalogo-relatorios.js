@@ -559,7 +559,7 @@ const MODELO_EXECUTIVO_CSS = String.raw`
   .back-to-overview:hover { text-decoration: underline; }
 
   .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 28px; }
-  .barrow { display: grid; grid-template-columns: 190px 1fr 110px; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .barrow { display: grid; grid-template-columns: minmax(0,190px) 1fr minmax(0,110px); align-items: center; gap: 10px; margin-bottom: 9px; }
   .barlabel { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bartrack { background: var(--grid); border-radius: 12px; height: 16px; position: relative; overflow: hidden; }
   .barfill { height: 100%; border-radius: 8px; min-width: 6px; }
@@ -627,7 +627,7 @@ const MODELO_EXECUTIVO_CSS = String.raw`
     padding: 12px 14px 8px; margin-bottom: 14px;
   }
   .mini-chart-title { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 8px; }
-  .mbarrow { display: grid; grid-template-columns: 150px 1fr 90px; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .mbarrow { display: grid; grid-template-columns: minmax(0,150px) 1fr minmax(0,90px); align-items: center; gap: 8px; margin-bottom: 6px; }
   .mbarlabel { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mbartrack { background: var(--grid); border-radius: 10px; height: 11px; overflow: hidden; }
   .mbarfill { height: 100%; border-radius: 6px; min-width: 4px; }
@@ -762,9 +762,10 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .kpi-clickable:hover{transform:translateY(-3px);box-shadow:var(--shadow-card)}
 .badge-ping{position:absolute;top:-8px;right:-8px;min-width:22px;height:22px;padding:0 5px;border-radius:999px;background:var(--critical);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;animation:pingPulse 1.8s ease-out infinite}
 .info-tip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:rgba(51,51,51,.1);color:var(--text-secondary);font-size:9.5px;font-style:normal;font-weight:800;margin-left:5px;cursor:help;vertical-align:middle}
-.info-tip::after{content:attr(data-tip);position:absolute;left:50%;bottom:135%;transform:translateX(-50%) scale(.94);transform-origin:bottom center;background:#262b36;color:#fff;padding:8px 10px;border-radius:8px;font-size:11.5px;font-weight:500;text-transform:none;letter-spacing:normal;line-height:1.35;text-align:left;white-space:normal;width:200px;box-shadow:0 10px 24px rgba(0,0,0,.28);z-index:30;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}
+.info-tip::after{content:attr(data-tip);position:absolute;left:50%;bottom:135%;transform:translateX(-50%) scale(.94);transform-origin:bottom center;background:#262b36;color:#fff;padding:8px 10px;border-radius:8px;font-size:11.5px;font-weight:500;text-transform:none;letter-spacing:normal;line-height:1.35;text-align:left;white-space:normal;width:min(200px,52vw);box-shadow:0 10px 24px rgba(0,0,0,.28);z-index:30;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}
 .info-tip::before{content:"";position:absolute;left:50%;bottom:123%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#262b36;z-index:30;opacity:0;transition:opacity .15s ease}
 .info-tip:hover::after,.info-tip:focus-visible::after,.info-tip:hover::before,.info-tip:focus-visible::before{opacity:1;transform:translateX(-50%) scale(1)}
+@media(max-width:480px){.info-tip::after,.info-tip::before{display:none}}
 .alert-banner{display:flex;align-items:flex-start;gap:10px;padding:13px 16px;border-radius:12px;margin:14px 0 0;font-size:13px;font-weight:600;line-height:1.45;animation:slideDown .4s ease both}
 .alert-banner .icon{font-size:17px;line-height:1.2}
 .alert-banner.good{background:rgba(12,163,12,.08);color:#0ca30c;border:1px solid rgba(12,163,12,.25)}
