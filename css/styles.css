@@ -601,6 +601,8 @@
   .sync-danger-zone { margin-top:12px; padding:12px 14px; border-radius:11px; border:1px dashed color-mix(in srgb,var(--danger) 45%,var(--line)); background:color-mix(in srgb,var(--danger) 4%,var(--surface)); }
   .sync-danger-zone .checkbox-linha { margin:0 0 8px; }
   .sync-log { margin-top:10px;font-size:10.5px;color:var(--ink-2);white-space:pre-wrap;background:var(--surface-2);padding:9px;border-radius:8px;max-height:160px;overflow:auto; }
+  .sync-auditoria { margin-top:18px; }
+  .sync-auditoria .sync-preview { max-height:220px; }
 
   .help-modal { position:fixed;inset:0;background:rgba(24,18,15,.58);z-index:9999;display:none;place-items:center;padding:18px;backdrop-filter:blur(4px); }
   .help-modal.aberto { display:grid; }

@@ -559,15 +559,66 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   const bateu = realizado >= meta;
   const noCaminho = bateu || (projetado != null && projetado >= meta);
   const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
+  const gap = Math.max(0, meta - realizado);
   const seta = noCaminho
     ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
     : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
+  const badgeAlerta = noCaminho ? "" : `<span class="badge-ping" title="Projeção não está batendo a meta">!</span>`;
   return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
+    ${badgeAlerta}
     <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
     <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
     <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
-    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
+    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção final</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
+    <div class="meta-card-linha"><span>Gap para a meta</span><strong>${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
     <div class="meta-card-pct">${pct}% da meta atingido</div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// v20 — histórico local de Meta Mensal: como a ferramenta é 100% client-side
+// (sem backend/banco), cada extração do Forecast (semanal ou catálogo mensal)
+// grava uma "foto" do dia (meta/fechado/projeção) no localStorage deste
+// navegador. Serve para desenhar uma mini tendência no relatório visual —
+// é histórico só deste navegador/dispositivo, não sincroniza entre pessoas.
+// ---------------------------------------------------------------------------
+const CHAVE_HISTORICO_FORECAST_LOCAL = "atlas-extrator-historico-forecast";
+function carregarHistoricoForecastLocal() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_HISTORICO_FORECAST_LOCAL) || "[]"); }
+  catch (e) { return []; }
+}
+function salvarHistoricoForecastLocal(snapshot) {
+  if (!snapshot?.data) return;
+  try {
+    const lista = carregarHistoricoForecastLocal();
+    const idx = lista.findIndex((x) => x.data === snapshot.data);
+    if (idx >= 0) lista[idx] = snapshot; else lista.push(snapshot);
+    lista.sort((a, b) => a.data.localeCompare(b.data));
+    while (lista.length > 60) lista.shift();
+    localStorage.setItem(CHAVE_HISTORICO_FORECAST_LOCAL, JSON.stringify(lista));
+  } catch (e) { /* localStorage indisponível (modo privado, quota) — segue sem histórico */ }
+}
+// v20 — mini gráfico de tendência (SVG puro, sem lib) comparando fechado no mês
+// vs. meta mensal ao longo das últimas extrações registradas neste navegador.
+function sparklineHistoricoForecast(historico) {
+  const pts = (historico || []).slice(-12);
+  if (pts.length < 2) {
+    return `<div class="trend-box trend-vazio"><span>📈 Tendência ainda não disponível — aparece a partir da 2ª extração do Forecast feita neste navegador.</span></div>`;
+  }
+  const w = 320, h = 64, pad = 8;
+  const max = Math.max(1, ...pts.map((p) => p.metaMensal || 0), ...pts.map((p) => p.fechadoMes || 0), ...pts.map((p) => p.projecaoMes || 0));
+  const stepX = (w - 2 * pad) / (pts.length - 1);
+  const coordY = (v) => (h - pad - ((Number(v) || 0) / max) * (h - 2 * pad)).toFixed(1);
+  const linha = (campo) => pts.map((p, i) => `${(pad + i * stepX).toFixed(1)},${coordY(p[campo])}`).join(" ");
+  const ultimo = pts[pts.length - 1];
+  return `<div class="trend-box">
+    <div class="trend-head"><span>📈 Tendência (histórico neste navegador)</span><span class="trend-sub">${pts.length} extração(ões) · última em ${formatarDataBR(ultimo.data)}</span></div>
+    <svg viewBox="0 0 ${w} ${h}" class="trend-svg" preserveAspectRatio="none" role="img" aria-label="Tendência de fechado, projeção e meta mensal">
+      <polyline points="${linha("metaMensal")}" class="trend-line trend-line-meta"/>
+      <polyline points="${linha("projecaoMes")}" class="trend-line trend-line-projecao"/>
+      <polyline points="${linha("fechadoMes")}" class="trend-line trend-line-fechado"/>
+    </svg>
+    <div class="trend-legend"><span><i class="trend-dot trend-dot-fechado"></i>Fechado</span><span><i class="trend-dot trend-dot-projecao"></i>Projeção</span><span><i class="trend-dot trend-dot-meta"></i>Meta</span></div>
   </div>`;
 }
 
