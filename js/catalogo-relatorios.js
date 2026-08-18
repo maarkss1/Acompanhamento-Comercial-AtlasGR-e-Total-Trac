@@ -92,7 +92,7 @@ function gerarHTMLRelatorioVisualGenerico(r){
 function abrirRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
   const h=(r.chave==="forecast_mensal"&&r.modelo_visual)?gerarHTMLForecastModelo(r,"mensal"):gerarHTMLRelatorioVisualGenerico(r);
-  if(h)abrirHtmlEmNovaAba(h);
+  if(h)mostrarRelatorioVisualInline(h);
 }
 function baixarHTMLRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;

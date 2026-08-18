@@ -294,7 +294,7 @@ function montarResultadoVisualJornada() {
     nota: "Amostra limitada às 10 primeiras colunas de cada dataset; baixe o CSV/JSON para o detalhamento completo."
   };
 }
-function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) abrirHtmlEmNovaAba(h); }
+function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) mostrarRelatorioVisualInline(h); }
 function baixarHTMLRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) baixarArquivo(h, `jornada_cliente_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 function baixarCSVJornadaNormalizada() {

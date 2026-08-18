@@ -9,6 +9,34 @@ function abrirHtmlEmNovaAba(html) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// v22 — "Abrir modelo visual" passa a renderizar o relatório dentro da
+// própria página (iframe com srcdoc, isolado do CSS/JS do site — mesma
+// técnica seria "abrir em nova aba", só que sem sair da página), em vez de
+// abrir uma aba/arquivo separado. Toda página com um botão desses tem o
+// container #relatorioVisualInlineCard/#relatorioVisualInlineFrame; se por
+// algum motivo não existir (página nova sem o container), cai de volta no
+// comportamento antigo (nova aba) em vez de quebrar.
+function mostrarRelatorioVisualInline(html) {
+  const card = document.getElementById("relatorioVisualInlineCard");
+  const frame = document.getElementById("relatorioVisualInlineFrame");
+  if (!card || !frame) { abrirHtmlEmNovaAba(html); return; }
+  frame.onload = () => {
+    try {
+      frame.style.height = Math.max(600, frame.contentWindow.document.documentElement.scrollHeight + 40) + "px";
+    } catch (e) {
+      frame.style.height = "85vh";
+    }
+  };
+  frame.srcdoc = html;
+  card.classList.remove("oculto");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function fecharRelatorioVisualInline() {
+  document.getElementById("relatorioVisualInlineCard")?.classList.add("oculto");
+  const frame = document.getElementById("relatorioVisualInlineFrame");
+  if (frame) frame.srcdoc = "";
+}
+
 // -------------------------- Forecast semanal -------------------------------
 
 
@@ -174,7 +202,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   popupMetodologia+
   `<script>function abrirDetalhe(id){var e=document.getElementById(id);if(!e)return;e.open=true;var n=e.querySelectorAll('details');for(var i=0;i<n.length;i++)n[i].open=true;e.scrollIntoView({behavior:'smooth',block:'start'});}function abrirPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.add('aberto');}function fecharPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.remove('aberto');}document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fecharPopupInfo();});function filtrarRelatorioPorVendedor(nome){var cards=document.querySelectorAll('.ccard[data-vendedor]');cards.forEach(function(c){c.style.display=(!nome||c.dataset.vendedor===nome)?'':'none';});var grupos=document.querySelectorAll('.month-card, .stage-card');grupos.forEach(function(g){var visiveis=Array.prototype.slice.call(g.querySelectorAll('.ccard')).some(function(c){return c.style.display!=='none';});g.style.display=visiveis?'':'none';});var aviso=document.getElementById('filtroVendedorAviso');if(aviso)aviso.textContent=nome?('Mostrando apenas negócios de: '+nome):'';}<\/script></body></html>`;
 }
-function abrirRelatorioVisualForecast(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)abrirHtmlEmNovaAba(h);}
+function abrirRelatorioVisualForecast(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)mostrarRelatorioVisualInline(h);}
 function baixarHTMLForecastModelo(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)baixarArquivo(h,`forecast_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
 
 async function extrairForecastSemanal(webhook) {
