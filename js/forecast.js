@@ -112,9 +112,13 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const r=resultado?.modelo_visual;if(!r)return "";
   const periodo=tipo==="mensal"?mesAnoBR(r.periodo_fim):`${formatarDataBR(r.periodo_inicio)} a ${formatarDataBR(r.periodo_fim)}`;
   const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
+  const realizadoMes=tipo==="semanal"?(Number(resultado?.resumo?.FECHADO_MES)||0):(Number(resultado?.resumo?.FECHADO)||0);
+  const projecaoMes=tipo==="semanal"?(Number(resultado?.resumo?.FORECAST_MES_TOTAL)||0):(Number(resultado?.resumo?.FORECAST_TOTAL)||0);
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
-  // v17 — meta mensal como KPI simples ao lado do Pipeline Aberto: só o
-  // número da meta, sem "entregue" e sem seta.
+  // v18 — meta mensal volta a ser o card em destaque (cardMetaDestaque): mostra
+  // % da meta batido, Gap e projeção final (fechado + pipeline aberto ponderado
+  // do mês, recalculados a cada extração/dia), com seta verde/vermelha conforme
+  // a projeção bate ou não a meta.
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
@@ -122,7 +126,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   `<div class="kpi good kpi-clickable" onclick="abrirDetalhe('detail-fechados')"><div class="label">Fechados →</div><div class="value">${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</div><div class="small">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)}</div></div>`+
   `<div class="kpi warn kpi-clickable" onclick="abrirDetalhe('detail-pendentes')"><div class="label">Pendentes Assinatura →</div><div class="value">${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</div><div class="small">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)}</div></div>`+
   `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto →</div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
-  `<div class="kpi"><div class="label">Meta Mensal</div><div class="value ${metaMensal?"":"meta-missing"}">${metaMensal?moedaRelatorio(metaMensal):"A definir"}</div></div></div></div>`+
+  `${cardMetaDestaque("Meta Mensal",metaMensal,realizadoMes,projecaoMes)}</div></div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
   `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p><div class="top3grid">`+
   `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado")).join("")}</div></div></details>`+

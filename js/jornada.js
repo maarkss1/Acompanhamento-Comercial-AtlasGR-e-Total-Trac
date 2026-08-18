@@ -559,6 +559,7 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   const bateu = realizado >= meta;
   const noCaminho = bateu || (projetado != null && projetado >= meta);
   const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
+  const gap = Math.max(0, meta - realizado);
   const seta = noCaminho
     ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
     : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
@@ -566,7 +567,8 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
     <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
     <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
     <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
-    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
+    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção final</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
+    <div class="meta-card-linha"><span>Gap para a meta</span><strong>${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
     <div class="meta-card-pct">${pct}% da meta atingido</div>
   </div>`;
 }
