@@ -294,7 +294,7 @@ function montarResultadoVisualJornada() {
     nota: "Amostra limitada às 10 primeiras colunas de cada dataset; baixe o CSV/JSON para o detalhamento completo."
   };
 }
-function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) abrirHtmlEmNovaAba(h); }
+function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) mostrarRelatorioVisualInline(h); }
 function baixarHTMLRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) baixarArquivo(h, `jornada_cliente_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 function baixarCSVJornadaNormalizada() {
@@ -552,6 +552,19 @@ function barraAtingimentoMeta(rotulo, realizado, meta, projetado) {
 // v15 — card de meta em destaque: meta, entregue e projeção juntos no mesmo
 // card, com a seta de tendência dentro do próprio card (substitui a barra
 // separada na Visão geral do forecast — mais destaque, menos peças soltas).
+// v23 — sem a linha de "Projeção final" (pedido explícito: só meta/entregue/
+// gap ficam visíveis); ganhou um gauge radial (SVG puro) do % da meta e as
+// classes de "pisca" (glow pulsante, ver .valor-pisca no CSS) nos valores.
+function gaugeMetaSvg(pct, noCaminho) {
+  const p = Math.max(0, Math.min(100, pct));
+  const r = 30, c = 2 * Math.PI * r, dash = (p / 100) * c;
+  const cor = noCaminho ? "var(--good)" : "#d03b3b";
+  return `<svg viewBox="0 0 72 72" class="meta-gauge" role="img" aria-label="${p}% da meta atingido">
+    <circle cx="36" cy="36" r="${r}" class="meta-gauge-trilha"/>
+    <circle cx="36" cy="36" r="${r}" class="meta-gauge-progresso valor-pisca" style="stroke:${cor};stroke-dasharray:${dash.toFixed(1)} ${c.toFixed(1)}"/>
+    <text x="36" y="41" text-anchor="middle" class="meta-gauge-texto">${p}%</text>
+  </svg>`;
+}
 function cardMetaDestaque(titulo, meta, realizado, projetado) {
   if (!meta) {
     return `<div class="meta-card-destaque sem-meta"><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor">A definir</div><div class="meta-card-linha"><span>Meta não informada</span></div></div>`;
@@ -566,12 +579,12 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   const badgeAlerta = noCaminho ? "" : `<span class="badge-ping" title="Projeção não está batendo a meta">!</span>`;
   return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
     ${badgeAlerta}
-    <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
-    <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
-    <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
-    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção final</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
-    <div class="meta-card-linha"><span>Gap para a meta</span><strong>${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
-    <div class="meta-card-pct">${pct}% da meta atingido</div>
+    <div class="meta-card-topo">
+      <div><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor valor-pisca">${moedaRelatorio(meta)}</div></div>
+      ${gaugeMetaSvg(pct, noCaminho)}
+    </div>
+    <div class="meta-card-linha"><span>Entregue</span><strong class="valor-pisca">${seta} ${moedaRelatorio(realizado)}</strong></div>
+    <div class="meta-card-linha"><span>Gap para a meta</span><strong class="valor-pisca">${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
   </div>`;
 }
 

@@ -982,7 +982,7 @@ function gerarHTMLRelatorioJoao(){
   `<h2 class="section">Taxas de conversão</h2>${conv}<h2 class="section">Jornadas mais frequentes</h2>${rotas}`+
   `<footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · Análise SDR · ${escapeHtmlRelatorio(r.meta.sdr_nome)}</footer></div></body></html>`;
 }
-function abrirRelatorioVisualJoao(){const h=gerarHTMLRelatorioJoao();if(h)abrirHtmlEmNovaAba(h);}
+function abrirRelatorioVisualJoao(){const h=gerarHTMLRelatorioJoao();if(h)mostrarRelatorioVisualInline(h);}
 function baixarHTMLRelatorioJoao(){const h=gerarHTMLRelatorioJoao();if(h)baixarArquivo(h,`analise_sdr_joao_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
 
 async function extrairDiarioSDR(webhook) {
@@ -1437,7 +1437,7 @@ function montarResultadoVisualDiarioSDR() {
     nota: "Atividade realizada = COMPLETED=Y com END_TIME no período. Lead atendido exige vínculo da atividade ao Lead CRM."
   };
 }
-function abrirRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) abrirHtmlEmNovaAba(h); }
+function abrirRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) mostrarRelatorioVisualInline(h); }
 function baixarHTMLRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) baixarArquivo(h, `diario_sdr_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 

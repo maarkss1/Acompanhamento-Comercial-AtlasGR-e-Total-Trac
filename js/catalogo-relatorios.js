@@ -92,7 +92,7 @@ function gerarHTMLRelatorioVisualGenerico(r){
 function abrirRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
   const h=(r.chave==="forecast_mensal"&&r.modelo_visual)?gerarHTMLForecastModelo(r,"mensal"):gerarHTMLRelatorioVisualGenerico(r);
-  if(h)abrirHtmlEmNovaAba(h);
+  if(h)mostrarRelatorioVisualInline(h);
 }
 function baixarHTMLRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
@@ -128,20 +128,29 @@ async function extrairRelatorioCatalogo(webhook,chave){
         else if(d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)){const cd=parteDataISO(d.CLOSEDATE);if(!cd){semData++;sit="Sem CLOSEDATE"}else if(p.inicio&&cd<p.inicio){vencidas++;sit="CLOSEDATE vencida"}else if(dentroPeriodoCatalogo(cd,p)){sit="Previsto no mês";fp=d._VALOR*prob/100;pond+=fp;if(bucket==="Commit")commit+=d._VALOR;else if(bucket==="Best Case")best+=d._VALOR;else pipe+=d._VALOR}}
         if(sit!=="Fora")rows.push({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ESTAGIO:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,CLOSEDATE:parteDataISO(d.CLOSEDATE),VALOR:d._VALOR,PROBABILIDADE:prob,FONTE_PROBABILIDADE:usa?"Bitrix":"Fallback",BUCKET:bucket,SITUACAO:sit,FORECAST_PONDERADO:fp});
       });
-      const forecast=fechado+pond;
       const modeloVisualMensal=await construirDadosModeloForecast(webhook,b.meta,p.inicio,p.fim,b.deals);
+      // v24 — "Fechado" (e tudo que deriva dele: Forecast total, Gap, barra de
+      // atingimento) usa a MESMA base de modelo_visual.resumo.FECHADOS_VALOR
+      // (negócios no Financeiro em "Contrato assinado") em vez do `fechado`
+      // local (só negócios do funil Comercial marcados como ganho) — mesma
+      // correção já aplicada em gerarHTMLForecastModelo(), pra este preview
+      // (mostrado antes de abrir o modelo visual) não voltar a divergir do
+      // valor que a seção "✅ Fechados" do relatório mostra. `pond` (pipeline
+      // aberto ponderado) já é independente dessa base.
+      const fechadoConsistente=modeloVisualMensal.resumo.FECHADOS_VALOR;
+      const forecast=fechadoConsistente+pond;
       criarResultadoCatalogo(chave,"Forecast mensal • Comercial",`<strong>${escapeHtmlRelatorio(formatarDataBR(p.inicio))} a ${escapeHtmlRelatorio(formatarDataBR(p.fim))}</strong>`,
-        [kpi("Fechado",moedaRelatorio(fechado)),kpi("Forecast total",moedaRelatorio(forecast)),kpi("Commit",moedaRelatorio(commit)),kpi("Best Case",moedaRelatorio(best)),kpi("Pipeline",moedaRelatorio(pipe)),kpi("Sem CLOSEDATE",semData),kpi("CLOSEDATE vencida",vencidas),kpi(meta?"Gap para meta":"Meta",meta?moedaRelatorio(Math.max(0,meta-forecast)):"não informada"),kpi(`Meta semanal (÷${semanasNoMesCatalogo} semanas)`,metaSemanalImplicita?moedaRelatorio(metaSemanalImplicita):"—")],
+        [kpi("Fechado",moedaRelatorio(fechadoConsistente)),kpi("Forecast total",moedaRelatorio(forecast)),kpi("Commit",moedaRelatorio(commit)),kpi("Best Case",moedaRelatorio(best)),kpi("Pipeline",moedaRelatorio(pipe)),kpi("Sem CLOSEDATE",semData),kpi("CLOSEDATE vencida",vencidas),kpi(meta?"Gap para meta":"Meta",meta?moedaRelatorio(Math.max(0,meta-fechadoConsistente)):"não informada"),kpi(`Meta semanal (÷${semanasNoMesCatalogo} semanas)`,metaSemanalImplicita?moedaRelatorio(metaSemanalImplicita):"—")],
         [{titulo:"Negócios do forecast",dados:rows,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Estágio",valor:"ESTAGIO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"CLOSEDATE",valor:"CLOSEDATE"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Prob.",valor:(x)=>`${x.PROBABILIDADE}%`},{label:"Bucket",valor:"BUCKET"},{label:"Situação",valor:"SITUACAO"},{label:"Ponderado",valor:(x)=>moedaRelatorio(x.FORECAST_PONDERADO),html:true}]}],
         "PROBABILITY do Bitrix tem prioridade; quando zerada, usa fallback por estágio.");
       resultadoRelatorioCatalogo.modelo_visual=modeloVisualMensal;
       resultadoRelatorioCatalogo.meta_visual=meta;
       resultadoRelatorioCatalogo.meta_semanal_implicita=metaSemanalImplicita;
-      resultadoRelatorioCatalogo.resumo={FECHADO:fechado,FORECAST_TOTAL:forecast};
-      resultadoRelatorioCatalogo.barra_meta=barraAtingimentoMeta(`Atingimento da meta mensal (${mesAnoBR(p.fim||p.referencia)})`,forecast,meta);
+      resultadoRelatorioCatalogo.resumo={FECHADO:fechadoConsistente,FORECAST_TOTAL:forecast};
+      resultadoRelatorioCatalogo.barra_meta=barraAtingimentoMeta(`Atingimento da meta mensal (${mesAnoBR(p.fim||p.referencia)})`,fechadoConsistente,meta);
       // v20 — mesma "foto" do dia salva pelo Forecast semanal (js/jornada.js), para
       // que a tendência do relatório visual funcione também vindo do catálogo.
-      if(meta>0)salvarHistoricoForecastLocal({data:formatarDataISO(new Date()),metaMensal:meta,fechadoMes:fechado,projecaoMes:forecast});
+      if(meta>0)salvarHistoricoForecastLocal({data:formatarDataISO(new Date()),metaMensal:meta,fechadoMes:fechadoConsistente,projecaoMes:forecast});
       renderizarRelatorioCatalogo();
     }
 
@@ -798,6 +807,52 @@ h2.section{font-size:17px;font-weight:900}
 .vcard{border:2px solid var(--orange)}
 .vcard-name{font-size:15px;font-weight:800}
 .vcard-stats{font-size:12.5px;font-weight:800}
+
+/* ---------- v24: cards mais arredondados, fontes maiores, efeito "pisca" ---------- */
+/* nos valores, melhor distribuição dos cards e a seção "Análise" (composição, */
+/* comparativo ano a ano, pipeline por estágio, estatísticas) ---------- */
+.kpi{border-radius:20px}
+.meta-card-destaque{border-radius:22px}
+.ccard{border-radius:18px}
+.vcard{border-radius:18px}
+.alert-banner{border-radius:16px}
+.popup-box{border-radius:20px}
+.trend-box{border-radius:16px}
+.mini-chart{border-radius:14px}
+h2.section{font-size:18px}
+.kpi .value{font-size:27px}
+.meta-card-valor{font-size:30px}
+.ccard-name{font-size:16.5px}
+.hero h1{font-size:37px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.top3grid{gap:18px}
+.cgrid{gap:16px}
+@keyframes valorPisca{0%,100%{opacity:1;filter:drop-shadow(0 0 0 rgba(255,86,24,0))}50%{opacity:.72;filter:drop-shadow(0 0 6px rgba(255,86,24,.55))}}
+.valor-pisca{animation:valorPisca 1.7s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.valor-pisca{animation:none!important}}
+
+.meta-card-topo{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.meta-gauge{width:64px;height:64px;flex-shrink:0}
+.meta-gauge-trilha{fill:none;stroke:rgba(0,0,0,.08);stroke-width:8}
+.meta-gauge-progresso{fill:none;stroke-width:8;stroke-linecap:round;transform:rotate(-90deg);transform-origin:36px 36px;transition:stroke-dasharray .3s ease}
+.meta-gauge-texto{font-size:15px;font-weight:800;fill:var(--text-primary)}
+
+.donut-box{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.donut-svg{width:120px;height:120px;flex-shrink:0}
+.donut-fatia{fill:none;stroke-width:20;transition:stroke-dasharray .3s ease}
+.donut-total{font-size:13px;font-weight:800;fill:var(--text-primary)}
+.donut-legend{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:var(--text-secondary)}
+
+.analise-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin:16px 0 28px}
+.analise-card{padding:18px 20px;background:var(--white)}
+.analise-card-wide{grid-column:1 / -1}
+.analise-card-titulo{font-size:13px;font-weight:800;color:var(--atlas-dark);margin-bottom:10px;text-transform:uppercase;letter-spacing:.02em}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.stat-item{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--page-plane)}
+.stat-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)}
+.stat-valor{font-size:18px;font-weight:800;color:var(--atlas-dark)}
+.stat-sub{font-size:11px;color:var(--text-secondary);font-weight:600}
+@media(max-width:640px){.donut-box{flex-direction:column;align-items:flex-start}}
 `;
 const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
         <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>
