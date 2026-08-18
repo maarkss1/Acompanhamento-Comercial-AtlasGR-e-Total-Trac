@@ -622,6 +622,95 @@ function sparklineHistoricoForecast(historico) {
   </div>`;
 }
 
+// ---------------------------------------------------------------------------
+// v21 — página Evolução (evolucao.html): combina o histórico local (deste
+// navegador, salvo a cada extração do Forecast) com o histórico "oficial"
+// gravado pelo script automático semanal (relatorios/forecast-semanal/
+// historico.json, versionado no repositório e publicado junto com o site,
+// então visível em qualquer dispositivo). Quando os dois têm uma "foto" do
+// mesmo dia, a automática vence (é a fonte mais confiável).
+// ---------------------------------------------------------------------------
+async function carregarHistoricoCompartilhadoForecast() {
+  try {
+    const resp = await fetch("relatorios/forecast-semanal/historico.json", { cache: "no-store" });
+    if (!resp.ok) return [];
+    const dados = await resp.json();
+    return Array.isArray(dados) ? dados.map((x) => ({ ...x, fonte: "automatico" })) : [];
+  } catch (e) {
+    return []; // arquivo ainda não existe, ou página aberta via file:// (sem fetch de outro arquivo)
+  }
+}
+function mesclarHistoricosForecast(compartilhado, local) {
+  const porData = {};
+  (local || []).forEach((x) => { porData[x.data] = { ...x, fonte: "local" }; });
+  (compartilhado || []).forEach((x) => { porData[x.data] = { ...x, fonte: "automatico" }; });
+  return Object.values(porData).sort((a, b) => a.data.localeCompare(b.data));
+}
+// Gráfico grande (bem maior que o sparkline embutido no relatório) para a
+// página Evolução: eixo com linhas-guia, rótulos de data e círculos com
+// tooltip nativo (title) em cada ponto — tudo em SVG puro, sem lib de gráfico.
+function graficoEvolucaoForecast(pontos) {
+  if (!pontos.length) {
+    return `<p class="rodape-nota">Nenhum dado de evolução ainda. Ele aparece automaticamente a cada extração do Forecast (semanal ou catálogo mensal) feita nesta ferramenta, e toda sexta-feira via automação.</p>`;
+  }
+  if (pontos.length < 2) {
+    return `<p class="rodape-nota">Só há 1 registro até agora (${formatarDataBR(pontos[0].data)}). O gráfico aparece a partir do 2º registro — continue extraindo o Forecast normalmente.</p>`;
+  }
+  const w = 900, h = 320, padL = 92, padR = 24, padT = 20, padB = 40;
+  const max = Math.max(1, ...pontos.map((p) => p.metaMensal || 0), ...pontos.map((p) => p.fechadoMes || 0), ...pontos.map((p) => p.projecaoMes || 0)) * 1.08;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const stepX = pontos.length > 1 ? innerW / (pontos.length - 1) : 0;
+  const coordX = (i) => padL + i * stepX;
+  const coordY = (v) => padT + innerH - ((Number(v) || 0) / max) * innerH;
+  const linha = (campo) => pontos.map((p, i) => `${coordX(i).toFixed(1)},${coordY(p[campo]).toFixed(1)}`).join(" ");
+  const gridN = 4;
+  const grid = Array.from({ length: gridN + 1 }, (_, i) => {
+    const valor = (max / gridN) * i, y = coordY(valor);
+    const rotulo = "R$ " + Math.round(valor).toLocaleString("pt-BR");
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" class="evo-grid-line"/><text x="${padL - 10}" y="${(y + 3).toFixed(1)}" class="evo-grid-label" text-anchor="end">${rotulo}</text>`;
+  }).join("");
+  const maxRotulos = 8;
+  const cadaN = Math.max(1, Math.ceil(pontos.length / maxRotulos));
+  const rotulosX = pontos.map((p, i) => (i % cadaN === 0 || i === pontos.length - 1)
+    ? `<text x="${coordX(i).toFixed(1)}" y="${h - padB + 18}" class="evo-grid-label" text-anchor="middle">${formatarDataBR(p.data).slice(0, 5)}</text>` : "").join("");
+  const pontosFechado = pontos.map((p, i) => `<circle cx="${coordX(i).toFixed(1)}" cy="${coordY(p.fechadoMes).toFixed(1)}" r="3.4" class="evo-point evo-point-fechado"><title>${formatarDataBR(p.data)} (${p.fonte === "automatico" ? "automático" : "local"})\nFechado: ${moedaRelatorio(p.fechadoMes)}\nProjeção: ${moedaRelatorio(p.projecaoMes)}\nMeta: ${moedaRelatorio(p.metaMensal)}</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="evo-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Evolução de fechado, projeção e meta mensal ao longo do tempo">
+    ${grid}
+    <polyline points="${linha("metaMensal")}" class="evo-line evo-line-meta"/>
+    <polyline points="${linha("projecaoMes")}" class="evo-line evo-line-projecao"/>
+    <polyline points="${linha("fechadoMes")}" class="evo-line evo-line-fechado"/>
+    ${pontosFechado}
+    ${rotulosX}
+  </svg>
+  <div class="evo-legend"><span><i class="trend-dot trend-dot-fechado"></i>Fechado no mês</span><span><i class="trend-dot trend-dot-projecao"></i>Projeção final</span><span><i class="trend-dot trend-dot-meta"></i>Meta mensal</span></div>`;
+}
+function tabelaEvolucaoForecast(pontos) {
+  if (!pontos.length) return "";
+  const linhas = [...pontos].reverse().map((p) => {
+    const pct = p.metaMensal > 0 ? `${Math.round((p.fechadoMes / p.metaMensal) * 1000) / 10}%` : "—";
+    const fonteLabel = p.fonte === "automatico" ? "🤖 Automático" : "💻 Local";
+    return `<tr><td>${escapeHtmlRelatorio(formatarDataBR(p.data))}</td><td>${fonteLabel}</td><td>${moedaRelatorio(p.metaMensal)}</td><td>${moedaRelatorio(p.fechadoMes)}</td><td>${moedaRelatorio(p.projecaoMes)}</td><td>${pct}</td></tr>`;
+  }).join("");
+  return `<table><thead><tr><th>Data</th><th>Fonte</th><th>Meta mensal</th><th>Fechado</th><th>Projeção</th><th>Atingimento</th></tr></thead><tbody>${linhas}</tbody></table>`;
+}
+async function iniciarPaginaEvolucao() {
+  const status = document.getElementById("evolucaoStatus");
+  if (status) status.textContent = "Carregando histórico...";
+  const [compartilhado, local] = await Promise.all([
+    carregarHistoricoCompartilhadoForecast(),
+    Promise.resolve(carregarHistoricoForecastLocal()),
+  ]);
+  const pontos = mesclarHistoricosForecast(compartilhado, local);
+  const graficoEl = document.getElementById("evolucaoGrafico");
+  const tabelaEl = document.getElementById("evolucaoTabela");
+  if (graficoEl) graficoEl.innerHTML = graficoEvolucaoForecast(pontos);
+  if (tabelaEl) tabelaEl.innerHTML = pontos.length ? tabelaEvolucaoForecast(pontos) : "";
+  if (status) {
+    status.textContent = pontos.length
+      ? `${pontos.length} registro(s) — ${compartilhado.length ? `${compartilhado.length} automático(s)` : "nenhum automático ainda"}, ${local.length} local(is) neste navegador.`
+      : "Nenhum registro encontrado ainda.";
+  }
+}
 
 async function extrairJornada(webhook) {
   document.getElementById("spinner").style.display = "inline-block";

@@ -116,8 +116,19 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const r=resultado?.modelo_visual;if(!r)return "";
   const periodo=tipo==="mensal"?mesAnoBR(r.periodo_fim):`${formatarDataBR(r.periodo_inicio)} a ${formatarDataBR(r.periodo_fim)}`;
   const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
-  const realizadoMes=tipo==="semanal"?(Number(resultado?.resumo?.FECHADO_MES)||0):(Number(resultado?.resumo?.FECHADO)||0);
-  const projecaoMes=tipo==="semanal"?(Number(resultado?.resumo?.FORECAST_MES_TOTAL)||0):(Number(resultado?.resumo?.FORECAST_TOTAL)||0);
+  // v21 — "Entregue" no card de Meta Mensal usa a MESMA base da seção "✅
+  // Fechados" (r.resumo.FECHADOS_VALOR: negócios no Financeiro na etapa
+  // "Contrato assinado"), em vez de resumo.FECHADO(_MES) — um cálculo mais
+  // simples (só o funil Comercial marcado como ganho) que produzia um valor
+  // bem menor e divergente do que a própria seção "Fechados" já mostrava,
+  // confundindo quem olhava os dois números lado a lado. O pipeline
+  // ponderado (independente dessa base) continua somado por cima para
+  // formar a projeção final.
+  const realizadoMesBase=tipo==="semanal"?(Number(resultado?.resumo?.FECHADO_MES)||0):(Number(resultado?.resumo?.FECHADO)||0);
+  const projecaoMesBase=tipo==="semanal"?(Number(resultado?.resumo?.FORECAST_MES_TOTAL)||0):(Number(resultado?.resumo?.FORECAST_TOTAL)||0);
+  const pipelinePonderadoMesDelta=Math.max(0,projecaoMesBase-realizadoMesBase);
+  const realizadoMes=Number(r.resumo.FECHADOS_VALOR)||0;
+  const projecaoMes=realizadoMes+pipelinePonderadoMesDelta;
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
   // v18 — meta mensal volta a ser o card em destaque (cardMetaDestaque): mostra
   // % da meta batido, Gap e projeção final (fechado + pipeline aberto ponderado
@@ -386,14 +397,20 @@ async function extrairForecastSemanal(webhook) {
     const forecastMesTotal = fechadoMes + pipelinePonderadoMes;
     const gapMensal = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : 0;
 
-    // v20 — grava a "foto" de hoje no histórico local (ver js/jornada.js) para
-    // alimentar o mini gráfico de tendência do relatório visual.
-    if (metaMensal > 0) {
-      salvarHistoricoForecastLocal({ data: hojeISO, metaMensal, fechadoMes, projecaoMes: forecastMesTotal });
-    }
-
     atualizarStatus("Forecast: montando modelo executivo Atlas...");
     const modeloVisualForecast = await construirDadosModeloForecast(webhook, meta, inicio, fim, deals);
+
+    // v21 — grava a "foto" de hoje no histórico local (ver js/jornada.js) já com
+    // o "fechado" recalculado a partir de modeloVisualForecast.resumo.FECHADOS_VALOR
+    // (mesma base da seção "✅ Fechados" do relatório visual: negócios no
+    // Financeiro em "Contrato assinado"), em vez de fechadoMes (só o funil
+    // Comercial marcado como ganho) — pra a tendência não repetir a mesma
+    // divergência corrigida em gerarHTMLForecastModelo().
+    if (metaMensal > 0) {
+      const fechadoConsistente = Number(modeloVisualForecast?.resumo?.FECHADOS_VALOR) || 0;
+      const pipelinePonderadoDelta = Math.max(0, forecastMesTotal - fechadoMes);
+      salvarHistoricoForecastLocal({ data: hojeISO, metaMensal, fechadoMes: fechadoConsistente, projecaoMes: fechadoConsistente + pipelinePonderadoDelta });
+    }
 
     const vendedoresLista = Object.values(vendedores)
       .map((v) => ({ ...v, FORECAST_TOTAL: v.FECHADO_SEMANA + v.FORECAST_PONDERADO_ABERTO }))
