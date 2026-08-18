@@ -294,7 +294,7 @@ function montarResultadoVisualJornada() {
     nota: "Amostra limitada às 10 primeiras colunas de cada dataset; baixe o CSV/JSON para o detalhamento completo."
   };
 }
-function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) mostrarRelatorioVisualInline(h); }
+function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) mostrarRelatorioVisualInline(h,"Jornada do Cliente"); }
 function baixarHTMLRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) baixarArquivo(h, `jornada_cliente_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 function baixarCSVJornadaNormalizada() {
@@ -330,6 +330,24 @@ function escapeHtmlRelatorio(valor) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// v25 — cartão de KPI reutilizado por todos os blocos (Forecast semanal,
+// Diário SDR, Análise SDR, Catálogo, Cockpit). Quando `alvoId` aponta pra um
+// elemento que existe na página, o card fica clicável e rola até lá — dá
+// pra consultar o detalhe sem precisar abrir o modelo visual completo.
+function kpiCardHtml(rotulo, valor, alvoId) {
+  const clique = alvoId ? ` kpi-clicavel" onclick="rolarParaSecao('${alvoId}')` : "";
+  return `<div class="relatorio-especial-kpi${clique}"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
+}
+function rolarParaSecao(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const alvo = el.closest("details") || el;
+  if (alvo.tagName === "DETAILS") alvo.open = true;
+  alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+  alvo.classList.add("secao-realce");
+  setTimeout(() => alvo.classList.remove("secao-realce"), 1300);
 }
 
 function moedaRelatorio(valor) {

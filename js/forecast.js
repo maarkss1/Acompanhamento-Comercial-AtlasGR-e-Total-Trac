@@ -9,32 +9,88 @@ function abrirHtmlEmNovaAba(html) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-// v22 — "Abrir modelo visual" passa a renderizar o relatório dentro da
-// própria página (iframe com srcdoc, isolado do CSS/JS do site — mesma
-// técnica seria "abrir em nova aba", só que sem sair da página), em vez de
-// abrir uma aba/arquivo separado. Toda página com um botão desses tem o
-// container #relatorioVisualInlineCard/#relatorioVisualInlineFrame; se por
-// algum motivo não existir (página nova sem o container), cai de volta no
-// comportamento antigo (nova aba) em vez de quebrar.
-function mostrarRelatorioVisualInline(html) {
+// v22 — "Abrir modelo visual" renderiza o relatório num modal (iframe com
+// srcdoc, isolado do CSS/JS do site) que sobe por cima da página atual, em
+// vez de abrir uma aba/arquivo separado. Fica escondido até o usuário
+// clicar em "Abrir modelo visual" — nunca aparece sozinho. Toda página com
+// um botão desses tem o container #relatorioVisualInlineCard; se por algum
+// motivo não existir, cai de volta no comportamento antigo (nova aba).
+// v25 — vira modal de verdade (overlay fixo, "uma página por cima da
+// outra") com 3 ações no cabeçalho: Salvar (guarda o HTML deste navegador,
+// numa lista revisitável), Baixar (arquivo .html) e Abrir em nova aba.
+let relatorioVisualAtualHtml = "";
+let relatorioVisualAtualNome = "";
+function mostrarRelatorioVisualInline(html, nome) {
   const card = document.getElementById("relatorioVisualInlineCard");
   const frame = document.getElementById("relatorioVisualInlineFrame");
   if (!card || !frame) { abrirHtmlEmNovaAba(html); return; }
-  frame.onload = () => {
-    try {
-      frame.style.height = Math.max(600, frame.contentWindow.document.documentElement.scrollHeight + 40) + "px";
-    } catch (e) {
-      frame.style.height = "85vh";
-    }
-  };
+  relatorioVisualAtualHtml = html;
+  relatorioVisualAtualNome = nome || "Relatório";
+  const titulo = document.getElementById("relatorioModalTitulo");
+  if (titulo) titulo.textContent = "📊 " + relatorioVisualAtualNome;
   frame.srcdoc = html;
   card.classList.remove("oculto");
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function fecharRelatorioVisualInline() {
   document.getElementById("relatorioVisualInlineCard")?.classList.add("oculto");
+  document.getElementById("relatorioSalvosPainel")?.classList.add("oculto");
   const frame = document.getElementById("relatorioVisualInlineFrame");
   if (frame) frame.srcdoc = "";
+}
+function baixarRelatorioVisualAtual() {
+  if (!relatorioVisualAtualHtml) return;
+  const nomeArquivo = normalizarTextoChave(relatorioVisualAtualNome || "relatorio").replace(/ /g, "_") || "relatorio";
+  baixarArquivo(relatorioVisualAtualHtml, `${nomeArquivo}_${dataHoje()}.html`, "text/html;charset=utf-8;");
+}
+function abrirRelatorioVisualEmNovaAba() {
+  if (relatorioVisualAtualHtml) abrirHtmlEmNovaAba(relatorioVisualAtualHtml);
+}
+
+// v25 — "Salvar": guarda o HTML gerado numa lista local (até 15, mais
+// recente primeiro), pra poder reabrir depois sem precisar reextrair do
+// Bitrix. É por navegador (localStorage) — mesma limitação já documentada
+// no histórico do Forecast (js/jornada.js).
+const CHAVE_RELATORIOS_SALVOS_LOCAL = "atlas-extrator-relatorios-salvos";
+function carregarRelatoriosSalvos() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_RELATORIOS_SALVOS_LOCAL) || "[]"); }
+  catch (e) { return []; }
+}
+function salvarRelatorioVisualAtual() {
+  if (!relatorioVisualAtualHtml) return;
+  try {
+    const lista = carregarRelatoriosSalvos();
+    lista.unshift({ id: String(Date.now()), nome: relatorioVisualAtualNome, quando: new Date().toLocaleString("pt-BR"), html: relatorioVisualAtualHtml });
+    localStorage.setItem(CHAVE_RELATORIOS_SALVOS_LOCAL, JSON.stringify(lista.slice(0, 15)));
+  } catch (e) {
+    mostrarErro("Não foi possível salvar — armazenamento local cheio ou indisponível neste navegador.");
+    return;
+  }
+  renderizarRelatoriosSalvos();
+  document.getElementById("relatorioSalvosPainel")?.classList.remove("oculto");
+}
+function excluirRelatorioSalvo(id) {
+  const lista = carregarRelatoriosSalvos().filter((x) => x.id !== id);
+  try { localStorage.setItem(CHAVE_RELATORIOS_SALVOS_LOCAL, JSON.stringify(lista)); } catch (e) {}
+  renderizarRelatoriosSalvos();
+}
+function abrirRelatorioSalvo(id) {
+  const item = carregarRelatoriosSalvos().find((x) => x.id === id);
+  if (item) mostrarRelatorioVisualInline(item.html, item.nome);
+}
+function alternarPainelRelatoriosSalvos() {
+  const painel = document.getElementById("relatorioSalvosPainel");
+  if (!painel) return;
+  painel.classList.toggle("oculto");
+  if (!painel.classList.contains("oculto")) renderizarRelatoriosSalvos();
+}
+function renderizarRelatoriosSalvos() {
+  const el = document.getElementById("relatorioSalvosLista");
+  if (!el) return;
+  const lista = carregarRelatoriosSalvos();
+  if (!lista.length) { el.innerHTML = '<p class="small-note">Nenhum relatório salvo neste navegador ainda.</p>'; return; }
+  el.innerHTML = lista.map((x) =>
+    `<div class="relatorio-salvo-item"><button type="button" class="relatorio-salvo-abrir" onclick="abrirRelatorioSalvo('${x.id}')"><strong>${escapeHtmlRelatorio(x.nome)}</strong><span>${escapeHtmlRelatorio(x.quando)}</span></button><button type="button" class="relatorio-salvo-excluir" onclick="excluirRelatorioSalvo('${x.id}')" title="Excluir">✕</button></div>`
+  ).join("");
 }
 
 // -------------------------- Forecast semanal -------------------------------
@@ -293,7 +349,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   popupMetodologia+
   `<script>function abrirDetalhe(id){var e=document.getElementById(id);if(!e)return;e.open=true;var n=e.querySelectorAll('details');for(var i=0;i<n.length;i++)n[i].open=true;e.scrollIntoView({behavior:'smooth',block:'start'});}function abrirPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.add('aberto');}function fecharPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.remove('aberto');}document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fecharPopupInfo();});function filtrarRelatorioPorVendedor(nome){var cards=document.querySelectorAll('.ccard[data-vendedor]');cards.forEach(function(c){c.style.display=(!nome||c.dataset.vendedor===nome)?'':'none';});var grupos=document.querySelectorAll('.month-card, .stage-card');grupos.forEach(function(g){var visiveis=Array.prototype.slice.call(g.querySelectorAll('.ccard')).some(function(c){return c.style.display!=='none';});g.style.display=visiveis?'':'none';});var aviso=document.getElementById('filtroVendedorAviso');if(aviso)aviso.textContent=nome?('Mostrando apenas negócios de: '+nome):'';}<\/script></body></html>`;
 }
-function abrirRelatorioVisualForecast(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)mostrarRelatorioVisualInline(h);}
+function abrirRelatorioVisualForecast(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)mostrarRelatorioVisualInline(h,"Forecast Semanal — Comercial");}
 function baixarHTMLForecastModelo(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)baixarArquivo(h,`forecast_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
 
 async function extrairForecastSemanal(webhook) {
@@ -597,21 +653,19 @@ function renderizarForecastSemanal() {
     (r.meta.meta_mensal ? ` Meta mensal (${escapeHtmlRelatorio(mesAnoBR(r.meta.mes_inicio))}): <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
 
   const kpis = [
-    ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA)],
-    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES)],
-    ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL)],
-    ["Forecast total (mês)", moedaRelatorio(r.resumo.FORECAST_MES_TOTAL)],
-    ["Commit", moedaRelatorio(r.resumo.COMMIT)],
-    ["Best Case", moedaRelatorio(r.resumo.BEST_CASE)],
-    ["Pipeline", moedaRelatorio(r.resumo.PIPELINE)],
+    ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA), "forecastNegociosTabela"],
+    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES), "forecastNegociosTabela"],
+    ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL), "forecastNegociosTabela"],
+    ["Forecast total (mês)", moedaRelatorio(r.resumo.FORECAST_MES_TOTAL), "forecastNegociosTabela"],
+    ["Commit", moedaRelatorio(r.resumo.COMMIT), "forecastNegociosTabela"],
+    ["Best Case", moedaRelatorio(r.resumo.BEST_CASE), "forecastNegociosTabela"],
+    ["Pipeline", moedaRelatorio(r.resumo.PIPELINE), "forecastNegociosTabela"],
     // v17 — meta mensal ao lado do Pipeline, só o número da meta.
     ["Meta mensal", r.meta.meta_mensal ? moedaRelatorio(r.meta.meta_mensal) : "não informada"],
-    ["Abertos previstos", r.resumo.ABERTOS_PREVISTOS_SEMANA],
-    ["Sem CLOSEDATE", r.resumo.SEM_CLOSEDATE_QTD]
+    ["Abertos previstos", r.resumo.ABERTOS_PREVISTOS_SEMANA, "forecastNegociosTabela"],
+    ["Sem CLOSEDATE", r.resumo.SEM_CLOSEDATE_QTD, "forecastHigieneTabela"]
   ];
-  document.getElementById("forecastKpis").innerHTML = kpis.map(([rotulo, valor]) =>
-    `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
-  ).join("");
+  document.getElementById("forecastKpis").innerHTML = kpis.map(([rotulo, valor, alvo]) => kpiCardHtml(rotulo, valor, alvo)).join("");
 
   const metaBarrasEl = document.getElementById("forecastMetasBarras");
   if (metaBarrasEl) metaBarrasEl.innerHTML = "";

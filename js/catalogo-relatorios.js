@@ -63,7 +63,7 @@ function renderizarRelatorioCatalogo(){
   document.getElementById("bloco-relatorio-catalogo").classList.remove("oculto");
   document.getElementById("relatorioResultadoTitulo").textContent=r.titulo;
   document.getElementById("relatorioResultadoSubtitulo").innerHTML=r.subtitulo||"";
-  document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>`<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(x.valor)}</span><span class="rotulo">${escapeHtmlRelatorio(x.rotulo)}</span></div>`).join("");
+  document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>kpiCardHtml(x.rotulo,x.valor,r.tabelas?.length?"relatorioResultadoTabelas":undefined)).join("");
   const metaBarrasEl=document.getElementById("relatorioResultadoMetaBarras");if(metaBarrasEl)metaBarrasEl.innerHTML=r.barra_meta||"";
   document.getElementById("relatorioResultadoTabelas").innerHTML=(r.tabelas||[]).map((t)=>`<div class="relatorio-subtitulo">${escapeHtmlRelatorio(t.titulo)}</div><div class="relatorio-scroll">${tabelaRelatorio(t.colunas,t.dados||[],t.limite||300)}</div>`).join("");
   document.getElementById("relatorioResultadoNota").textContent=r.nota||"";
@@ -74,9 +74,26 @@ function renderizarRelatorioCatalogo(){
 // v11 — modelo visual genérico: mesmo letterhead/hero/kpis do modelo do Forecast,
 // aplicado a QUALQUER relatório do catálogo (chave/titulo/subtitulo/kpis/tabelas),
 // não só ao Forecast mensal. Cada tabela vira uma seção retrátil com model-table.
+// v25 — varre os KPIs à procura de padrões que sempre indicam algo que
+// merece atenção (vencido, atrasado, sem atividade/dados, fora do SLA,
+// crítico...) e monta alertas automáticos — funciona em QUALQUER relatório
+// do catálogo/Diário SDR/Jornada sem precisar de lógica dedicada por
+// relatório, já que só olha rótulo + valor numérico dos KPIs que o próprio
+// relatório já calculou.
+function pontosDeAtencaoGenerico(kpis){
+  const PADROES=/vencid|atrasad|sem atividade|sem closedate|sem clientedate|fora do sla|fora sla|cr[ií]tico|sem contato|pendente|não localizado/i;
+  const achados=(kpis||[]).filter((x)=>{
+    const n=Number(String(x.valor).replace(/[^\d,.-]/g,"").replace(",","."));
+    return PADROES.test(x.rotulo||"")&&Number.isFinite(n)&&n>0;
+  });
+  if(!achados.length)return "";
+  const itens=achados.map((x)=>`<li><strong>${escapeHtmlRelatorio(x.valor)}</strong> — ${escapeHtmlRelatorio(x.rotulo)}</li>`).join("");
+  return `<div class="alert-banner warn" style="align-items:flex-start;"><span class="icon">⚠️</span><div><strong>Pontos de atenção encontrados neste relatório:</strong><ul style="margin:6px 0 0;padding-left:18px;">${itens}</ul></div></div>`;
+}
 function gerarHTMLRelatorioVisualGenerico(r){
   if(!r?.titulo)return "";
-  const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
+  const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value valor-pisca">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
+  const atencaoHtml=pontosDeAtencaoGenerico(r.kpis);
   const tabelasHtml=(r.tabelas||[]).map((t,i)=>{
     const tabela=tabelaModelo((t.colunas||[]).map((c)=>({label:c.label,valor:typeof c.valor==="function"?c.valor:(row)=>row[c.valor],html:!!c.html})),(t.dados||[]).slice(0,t.limite||300));
     return `<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
@@ -84,7 +101,7 @@ function gerarHTMLRelatorioVisualGenerico(r){
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(r.titulo)}</h1><p class="subtitle">${(r.subtitulo||"").replace(/<[^>]+>/g,"")||"Extraído automaticamente pelo extrator Atlas."}</p></div></header>`+
-  `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2><div class="kpis">${kpisHtml||'<p class="small-note">Sem indicadores.</p>'}</div></div>`+
+  `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2>${atencaoHtml}<div class="kpis">${kpisHtml||'<p class="small-note">Sem indicadores.</p>'}</div></div>`+
   `<h2 class="section">Detalhamento</h2><div class="top3grid">${tabelasHtml||'<p class="small-note">Sem tabelas neste relatório.</p>'}</div>`+
   (r.nota?`<div class="note">${escapeHtmlRelatorio(r.nota)}</div>`:"")+
   `<a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · ${escapeHtmlRelatorio(r.titulo)}</footer></body></html>`;
@@ -92,7 +109,7 @@ function gerarHTMLRelatorioVisualGenerico(r){
 function abrirRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
   const h=(r.chave==="forecast_mensal"&&r.modelo_visual)?gerarHTMLForecastModelo(r,"mensal"):gerarHTMLRelatorioVisualGenerico(r);
-  if(h)mostrarRelatorioVisualInline(h);
+  if(h)mostrarRelatorioVisualInline(h,r.titulo);
 }
 function baixarHTMLRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
