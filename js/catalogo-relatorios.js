@@ -139,6 +139,9 @@ async function extrairRelatorioCatalogo(webhook,chave){
       resultadoRelatorioCatalogo.meta_semanal_implicita=metaSemanalImplicita;
       resultadoRelatorioCatalogo.resumo={FECHADO:fechado,FORECAST_TOTAL:forecast};
       resultadoRelatorioCatalogo.barra_meta=barraAtingimentoMeta(`Atingimento da meta mensal (${mesAnoBR(p.fim||p.referencia)})`,forecast,meta);
+      // v20 — mesma "foto" do dia salva pelo Forecast semanal (js/jornada.js), para
+      // que a tendência do relatório visual funcione também vindo do catálogo.
+      if(meta>0)salvarHistoricoForecastLocal({data:formatarDataISO(new Date()),metaMensal:meta,fechadoMes:fechado,projecaoMes:forecast});
       renderizarRelatorioCatalogo();
     }
 
@@ -752,6 +755,49 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .popup-close{position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;line-height:1;cursor:pointer;color:var(--text-secondary)}
 .popup-close:hover{color:var(--critical)}
 @media(prefers-reduced-motion:reduce){.kpis>*,.top3grid>*,.cgrid>*,.month-list>*,.stage-list>*,.alert-banner,.popup-box,.popup-overlay.aberto{animation:none!important}.badge-ping{animation:none!important}}
+
+/* ---------- v20: mini gráfico de tendência, drill-down e filtro por vendedor(a) ---------- */
+.trend-box{margin:14px 0 0;padding:14px 16px 8px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.trend-box.trend-vazio{padding:14px 16px;font-size:12px;color:var(--text-muted);text-align:center}
+.trend-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;font-size:12.5px;font-weight:800;color:var(--atlas-dark)}
+.trend-sub{font-size:11px;font-weight:600;color:var(--text-muted)}
+.trend-svg{width:100%;height:64px;margin-top:8px;display:block}
+.trend-line{fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.trend-line-fechado{stroke:var(--orange)}
+.trend-line-projecao{stroke:var(--gold);stroke-dasharray:5 3}
+.trend-line-meta{stroke:var(--muted);stroke-dasharray:2 3}
+.trend-legend{display:flex;gap:14px;margin-top:6px;font-size:10.5px;font-weight:700;color:var(--text-secondary)}
+.trend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.trend-dot-fechado{background:var(--orange)}
+.trend-dot-projecao{background:var(--gold)}
+.trend-dot-meta{background:var(--muted)}
+.ccard-abrir{align-self:flex-start;margin-top:2px;font-size:11.5px;font-weight:800;color:var(--atlas-primary);text-decoration:none;border:1px solid rgba(255,86,24,.35);border-radius:999px;padding:4px 10px;transition:background .15s ease,color .15s ease}
+.ccard-abrir:hover{background:var(--atlas-primary);color:#fff}
+.filtro-vendedor-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px 19px;font-size:12.5px;font-weight:700;color:var(--text-secondary)}
+.filtro-vendedor-row select{font:inherit;font-weight:700;padding:6px 10px;border-radius:8px;border:1.5px solid var(--orange);background:#fff;color:var(--text-primary)}
+.filtro-vendedor-aviso{font-size:11.5px;font-weight:700;color:var(--atlas-primary)}
+
+/* ---------- v20: fontes maiores, mais negrito e contorno laranja nos cards ---------- */
+body{font-size:15px}
+h2.section{font-size:17px;font-weight:900}
+.hero h1{font-size:36px}
+.kpi{border:2px solid var(--orange)}
+.kpi .label{font-size:11.5px;font-weight:800}
+.kpi .value{font-size:26px;font-weight:800}
+.kpi .small{font-size:12px;font-weight:700}
+.meta-card-destaque{border-width:2px;border-color:var(--orange)}
+.meta-card-label{font-size:12px;font-weight:800}
+.meta-card-valor{font-size:32px;font-weight:800}
+.meta-card-linha{font-size:14px;font-weight:600}
+.meta-card-linha strong{font-weight:800}
+.meta-card-pct{font-size:12.5px;font-weight:800}
+.ccard{border:2px solid var(--orange)}
+.ccard-name{font-size:16px;font-weight:800}
+.ccard-value{font-size:17px;font-weight:800}
+.ccard-meta{font-size:13px;font-weight:700}
+.vcard{border:2px solid var(--orange)}
+.vcard-name{font-size:15px;font-weight:800}
+.vcard-stats{font-size:12.5px;font-weight:800}
 `;
 const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
         <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>

@@ -385,6 +385,13 @@
       <div class="row" style="margin-top:10px;"><button type="button" id="btnExecutarSync" onclick="executarSyncBitrix()" disabled>Sincronizar alterações</button></div>
       <div class="sync-log" id="syncLog">Modo leitura ativo. Nenhuma alteração foi enviada ao Bitrix.</div>
     </div>
+    <div class="sync-auditoria">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px;">
+        <strong style="font-size:12px;">Histórico de sincronizações (auditoria, neste navegador)</strong>
+        <button type="button" class="secundario" onclick="limparAuditoriaSync()">Limpar histórico</button>
+      </div>
+      <div class="sync-preview" id="syncAuditoriaLista"><div class="rodape-nota" style="padding:12px;">Nenhuma sincronização registrada neste navegador ainda.</div></div>
+    </div>
   </div>
 
   <div class="card oculto" id="bloco-auditoria-jornada">

@@ -75,6 +75,7 @@ async function construirDadosModeloForecast(webhook, meta, inicio, fim, dealsCom
   };
   return {
     periodo_inicio:inicio,periodo_fim:fim,referencia:ref,fechados,pendentes,pipeline,
+    dominio:extrairDominioWebhook(webhook),
     vendedores_fechados:porVend(fechados),vendedores_pipeline:porVend(pipeline),
     resumo:{
       FECHADOS_VALOR:somarModelo(fechados),FECHADOS_NEGOCIOS:fechados.length,FECHADOS_CLIENTES:contarClientesUnicosModelo(fechados),
@@ -89,22 +90,25 @@ function renderBarModelo(rows) {
   const max=Math.max(1,...rows.map((x)=>x.VALOR||0)),cores=["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#7254c7"];
   return `<div class="mini-chart"><div class="mini-chart-title">Visão geral por vendedor(a)</div>`+rows.map((x,i)=>`<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(x.RESPONSAVEL)}</div><div class="bartrack"><div class="barfill" style="width:${Math.max(2,(x.VALOR/max)*100).toFixed(1)}%;background:${cores[i%cores.length]}"></div></div><div class="barvalue">${moedaRelatorio(x.VALOR)}</div></div>`).join("")+`</div>`;
 }
-function cardForecastModelo(x,tipo) {
+function cardForecastModelo(x,tipo,dominio) {
   const badge=tipo==="fechado"?"s-won":tipo==="pendente"?"s-pend":"s-2";
   let txt=`Nesta etapa desde ${x.DATA_MOVIMENTO_BR||"—"}`;
   if(tipo==="fechado")txt=`Assinado em ${x.DATA_MOVIMENTO_BR||"—"}`;
   if(tipo==="pendente")txt=`Aguardando assinatura ${x.DIAS_NO_ESTAGIO===0?"hoje":`há ${x.DIAS_NO_ESTAGIO} dia(s)`} (desde ${x.DATA_MOVIMENTO_BR||"—"})`;
-  return `<div class="ccard"><div class="ccard-top"><span class="stage-badge ${badge}">${escapeHtmlRelatorio(x.ESTAGIO)}</span><span class="ccard-value">${moedaRelatorio(x.VALOR)}</span></div><div class="ccard-name">${escapeHtmlRelatorio(x.CLIENTE)}</div><div class="ccard-meta"><span>👤 ${escapeHtmlRelatorio(x.RESPONSAVEL)}</span><span>🎯 ${escapeHtmlRelatorio(x.ORIGEM)}</span></div><div class="ccard-date">${txt}</div></div>`;
+  // v20 — link direto pro negócio no Bitrix (drill-down): usa só o domínio do
+  // webhook (sem token) + ID do negócio, nunca a credencial.
+  const linkBitrix=dominio&&x.DEAL_ID?`<a class="ccard-abrir" href="https://${dominio}/crm/deal/details/${encodeURIComponent(x.DEAL_ID)}/" target="_blank" rel="noopener noreferrer">Abrir no Bitrix ↗</a>`:"";
+  return `<div class="ccard" data-vendedor="${escapeHtmlRelatorio(x.RESPONSAVEL)}"><div class="ccard-top"><span class="stage-badge ${badge}">${escapeHtmlRelatorio(x.ESTAGIO)}</span><span class="ccard-value">${moedaRelatorio(x.VALOR)}</span></div><div class="ccard-name">${escapeHtmlRelatorio(x.CLIENTE)}</div><div class="ccard-meta"><span>👤 ${escapeHtmlRelatorio(x.RESPONSAVEL)}</span><span>🎯 ${escapeHtmlRelatorio(x.ORIGEM)}</span></div><div class="ccard-date">${txt}</div>${linkBitrix}</div>`;
 }
-function mesesForecastModelo(rows,tipo,porEtapa=false) {
+function mesesForecastModelo(rows,tipo,porEtapa=false,dominio) {
   const grupos=agruparPorModelo(rows,(x)=>x.MES_CHAVE||"sem-data"),keys=Object.keys(grupos).sort().reverse();
   return keys.map((k)=>{
     const a=grupos[k],label=a[0]?.MES_LABEL||"Sem data",stats=`${a.length} negócio(s) · ${contarClientesUnicosModelo(a)} cliente(s) · ${moedaRelatorio(somarModelo(a))}`;
     let body="";
     if(porEtapa){
       const st=agruparPorModelo(a,(x)=>x.ESTAGIO||"Sem etapa");
-      body=`<div class="stage-list">`+Object.entries(st).map(([nome,r])=>`<details class="vcard stage-card"><summary><span class="stage-badge s-2">${escapeHtmlRelatorio(nome)}</span><span class="vcard-stats">${r.length} negócio(s) · ${contarClientesUnicosModelo(r)} cliente(s) · ${moedaRelatorio(somarModelo(r))}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="cgrid">${r.map((x)=>cardForecastModelo(x,tipo)).join("")}</div></div></details>`).join("")+`</div>`;
-    } else body=`<div class="cgrid">${a.map((x)=>cardForecastModelo(x,tipo)).join("")}</div>`;
+      body=`<div class="stage-list">`+Object.entries(st).map(([nome,r])=>`<details class="vcard stage-card"><summary><span class="stage-badge s-2">${escapeHtmlRelatorio(nome)}</span><span class="vcard-stats">${r.length} negócio(s) · ${contarClientesUnicosModelo(r)} cliente(s) · ${moedaRelatorio(somarModelo(r))}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="cgrid">${r.map((x)=>cardForecastModelo(x,tipo,dominio)).join("")}</div></div></details>`).join("")+`</div>`;
+    } else body=`<div class="cgrid">${a.map((x)=>cardForecastModelo(x,tipo,dominio)).join("")}</div>`;
     return `<details class="vcard month-card"><summary><span class="vcard-name">🗓️ ${escapeHtmlRelatorio(label)}</span><span class="vcard-stats">${stats}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${body}</div></details>`;
   }).join("")||`<p class="small-note">Nenhum registro encontrado.</p>`;
 }
@@ -131,6 +135,11 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const alertaHigiene=(semCloseDate+closeDateVencida)<=0?"":`<div class="alert-banner warn"><span class="icon">🧹</span><span>${semCloseDate?`${semCloseDate} negócio(s) sem CLOSEDATE`:""}${semCloseDate&&closeDateVencida?" e ":""}${closeDateVencida?`${closeDateVencida} com CLOSEDATE vencida`:""} — vale revisar antes de fechar o mês.</span></div>`;
   const badgePendentes=r.resumo.PENDENTES_NEGOCIOS>0?`<span class="badge-ping" title="${r.resumo.PENDENTES_NEGOCIOS} negócio(s) aguardando assinatura">${r.resumo.PENDENTES_NEGOCIOS}</span>`:"";
   const popupMetodologia=`<div class="popup-overlay" id="popupInfo" onclick="if(event.target===this)fecharPopupInfo()"><div class="popup-box"><button type="button" class="popup-close" onclick="fecharPopupInfo()" aria-label="Fechar">✕</button><h3>Como este relatório é calculado</h3><p><b>Negócios ≠ clientes:</b> os cartões mostram as duas contagens separadamente — 31 negócios podem ser de 20 clientes diferentes.</p><p><b>Pendentes Assinatura / Pipeline Aberto:</b> só entram negócios parados na etapa atual há no máximo 60 dias, sem estágios "Piloto".</p><p><b>Projeção final do mês:</b> fechado no mês + pipeline aberto ponderado pela probabilidade de cada estágio — é recalculada a cada extração, evoluindo dia a dia.</p><p><b>Gap:</b> quanto falta do fechado até a meta mensal informada.</p></div></div>`;
+  // v20 — tendência local (histórico neste navegador), drill-down direto pro
+  // negócio no Bitrix e filtro por vendedor(a) nas listas de detalhe.
+  const trendBox=sparklineHistoricoForecast(carregarHistoricoForecastLocal());
+  const vendedoresUnicos=[...new Set([...r.fechados,...r.pendentes,...r.pipeline].map((x)=>x.RESPONSAVEL).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const filtroVendedorHtml=vendedoresUnicos.length?`<div class="filtro-vendedor-row"><label for="filtroVendedorRel">Filtrar por vendedor(a):</label><select id="filtroVendedorRel" onchange="filtrarRelatorioPorVendedor(this.value)"><option value="">Todos</option>${vendedoresUnicos.map((v)=>`<option value="${escapeHtmlRelatorio(v)}">${escapeHtmlRelatorio(v)}</option>`).join("")}</select><span id="filtroVendedorAviso" class="filtro-vendedor-aviso"></span></div>`:"";
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
@@ -140,15 +149,19 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   `<div class="kpi good kpi-clickable" onclick="abrirDetalhe('detail-fechados')"><div class="label">Fechados → <span class="info-tip" data-tip="Negócios com contrato assinado dentro do período selecionado.">i</span></div><div class="value">${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</div><div class="small">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)}</div></div>`+
   `<div class="kpi warn kpi-clickable" onclick="abrirDetalhe('detail-pendentes')">${badgePendentes}<div class="label">Pendentes Assinatura → <span class="info-tip" data-tip="Negócios aguardando assinatura, parados há no máximo 60 dias.">i</span></div><div class="value">${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</div><div class="small">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)}</div></div>`+
   `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto → <span class="info-tip" data-tip="Negócios em aberto no funil Comercial, sem estágios Piloto, parados há no máximo 60 dias.">i</span></div><div class="value">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
-  `${cardMetaDestaque("Meta Mensal",metaMensal,realizadoMes,projecaoMes)}</div></div>`+
+  `${cardMetaDestaque("Meta Mensal",metaMensal,realizadoMes,projecaoMes)}</div>`+
+  trendBox+
+  `</div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
-  `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p><div class="top3grid">`+
-  `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado")).join("")}</div></div></details>`+
-  `<details class="vcard section-card" id="detail-pendentes"><summary><span class="vcard-name">⏳ Pendentes Assinatura</span><span class="vcard-stats">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)} · ${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="month-list">${mesesForecastModelo(r.pendentes,"pendente",false)}</div></div></details>`+
-  `<details class="vcard section-card" id="detail-forecast"><summary><span class="vcard-name">📈 Pipeline Aberto — Forecast</span><span class="vcard-stats">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)} · ${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_pipeline)}<div class="month-list">${mesesForecastModelo(r.pipeline,"pipeline",true)}</div></div></details>`+
+  `<h2 class="section">Fechados, Pendentes e Pipeline Aberto</h2><p class="section-sub">Mesma lógica visual do modelo fornecido, agora abastecida diretamente pelo Bitrix. Pendentes Assinatura e Pipeline Aberto mostram só negócios parados na etapa atual há até 60 dias, sem estágios "Piloto".</p>`+
+  filtroVendedorHtml+
+  `<div class="top3grid">`+
+  `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado",r.dominio)).join("")}</div></div></details>`+
+  `<details class="vcard section-card" id="detail-pendentes"><summary><span class="vcard-name">⏳ Pendentes Assinatura</span><span class="vcard-stats">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)} · ${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="month-list">${mesesForecastModelo(r.pendentes,"pendente",false,r.dominio)}</div></div></details>`+
+  `<details class="vcard section-card" id="detail-forecast"><summary><span class="vcard-name">📈 Pipeline Aberto — Forecast</span><span class="vcard-stats">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)} · ${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_pipeline)}<div class="month-list">${mesesForecastModelo(r.pipeline,"pipeline",true,r.dominio)}</div></div></details>`+
   `</div><a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · Forecast Comercial</footer>`+
   popupMetodologia+
-  `<script>function abrirDetalhe(id){var e=document.getElementById(id);if(!e)return;e.open=true;var n=e.querySelectorAll('details');for(var i=0;i<n.length;i++)n[i].open=true;e.scrollIntoView({behavior:'smooth',block:'start'});}function abrirPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.add('aberto');}function fecharPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.remove('aberto');}document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fecharPopupInfo();});<\/script></body></html>`;
+  `<script>function abrirDetalhe(id){var e=document.getElementById(id);if(!e)return;e.open=true;var n=e.querySelectorAll('details');for(var i=0;i<n.length;i++)n[i].open=true;e.scrollIntoView({behavior:'smooth',block:'start'});}function abrirPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.add('aberto');}function fecharPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.remove('aberto');}document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fecharPopupInfo();});function filtrarRelatorioPorVendedor(nome){var cards=document.querySelectorAll('.ccard[data-vendedor]');cards.forEach(function(c){c.style.display=(!nome||c.dataset.vendedor===nome)?'':'none';});var grupos=document.querySelectorAll('.month-card, .stage-card');grupos.forEach(function(g){var visiveis=Array.prototype.slice.call(g.querySelectorAll('.ccard')).some(function(c){return c.style.display!=='none';});g.style.display=visiveis?'':'none';});var aviso=document.getElementById('filtroVendedorAviso');if(aviso)aviso.textContent=nome?('Mostrando apenas negócios de: '+nome):'';}<\/script></body></html>`;
 }
 function abrirRelatorioVisualForecast(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)abrirHtmlEmNovaAba(h);}
 function baixarHTMLForecastModelo(){const h=gerarHTMLForecastModelo(resultadoForecastSemanal,"semanal");if(h)baixarArquivo(h,`forecast_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
@@ -372,6 +385,12 @@ async function extrairForecastSemanal(webhook) {
     }
     const forecastMesTotal = fechadoMes + pipelinePonderadoMes;
     const gapMensal = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : 0;
+
+    // v20 — grava a "foto" de hoje no histórico local (ver js/jornada.js) para
+    // alimentar o mini gráfico de tendência do relatório visual.
+    if (metaMensal > 0) {
+      salvarHistoricoForecastLocal({ data: hojeISO, metaMensal, fechadoMes, projecaoMes: forecastMesTotal });
+    }
 
     atualizarStatus("Forecast: montando modelo executivo Atlas...");
     const modeloVisualForecast = await construirDadosModeloForecast(webhook, meta, inicio, fim, deals);
