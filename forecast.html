@@ -76,17 +76,17 @@
   <div class="card" id="conexao">
     <h2>🔑 Conexão com o Bitrix</h2>
     <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
-    <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/450/xxxxxxxxxxxx/" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
+    <input type="password" id="webhook" value="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
     <div class="row" style="margin-top:9px;align-items:center;">
       <div class="webhook-actions">
         <button type="button" class="toggle-eye" onclick="alternarVisibilidadeWebhook()">mostrar/ocultar</button>
         <button type="button" class="secundario" onclick="testarConexaoBitrix()">Testar conexão agora</button>
         <button type="button" class="secundario" onclick="salvarWebhookNoNavegador()">💾 Salvar webhook</button>
-        <button type="button" class="secundario" onclick="esquecerWebhookSalvo()">🗑️ Esquecer webhook</button>
-        <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook não salvo</span></span>
+        <button type="button" class="secundario" onclick="esquecerWebhookSalvo()">🗑️ Restaurar padrão</button>
+        <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook fixo ativo</span></span>
       </div>
     </div>
-    <p class="rodape-nota">O webhook nunca vem embutido neste HTML e só fica salvo neste navegador se você clicar em "Salvar webhook" (ofuscado, não é criptografia real). Detalhes completos do risco em <a href="extracao.html#conexao">Extração &amp; Diagnóstico</a>.</p>
+    <p class="rodape-nota">Webhook fixo padrão configurado para a AtlasGR. Se precisar usar uma credencial diferente, altere no campo acima ou salve no navegador.</p>
   </div>
 
   <!-- Piezas do motor genérico necessárias para o Forecast semanal funcionar nesta

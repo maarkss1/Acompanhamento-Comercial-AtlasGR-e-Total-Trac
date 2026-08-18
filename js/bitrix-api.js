@@ -4,6 +4,7 @@ function alternarVisibilidadeWebhook() {
 }
 
 
+const WEBHOOK_FIXO_PADRAO = "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
 const CHAVE_WEBHOOK_LOCAL = "atlas-extrator-bitrix-webhook";
 
 // ---------------------------------------------------------------------------
@@ -61,9 +62,10 @@ function desofuscarWebhook(valorArmazenado) {
 
 function obterWebhookSalvo() {
   try {
-    return desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
+    const salvo = desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
+    return salvo || WEBHOOK_FIXO_PADRAO;
   } catch (e) {
-    return "";
+    return WEBHOOK_FIXO_PADRAO;
   }
 }
 
@@ -78,11 +80,15 @@ function atualizarStatusWebhookSalvo() {
   status.classList.toggle("salvo", !!salvo);
 
   if (!salvo) {
-    texto.textContent = "Webhook não salvo";
+    texto.textContent = "Webhook não configurado";
     return;
   }
   if (atual && atual !== salvo) {
-    texto.textContent = "Existe outro webhook salvo";
+    texto.textContent = "Existe outro webhook informado";
+    return;
+  }
+  if (salvo === WEBHOOK_FIXO_PADRAO) {
+    texto.textContent = "Webhook fixo ativo";
     return;
   }
   texto.textContent = "Webhook salvo neste navegador";
@@ -93,12 +99,7 @@ function carregarWebhookSalvo() {
   if (!campo) return false;
 
   const salvo = obterWebhookSalvo();
-  if (!salvo) {
-    atualizarStatusWebhookSalvo();
-    return false;
-  }
-
-  campo.value = salvo;
+  campo.value = salvo || WEBHOOK_FIXO_PADRAO;
   campo.type = "password";
   marcarConexaoPendente();
   atualizarStatusWebhookSalvo();
@@ -116,37 +117,28 @@ function salvarWebhookNoNavegador() {
   }
 
   const confirmar = window.confirm(
-    "Salvar o webhook neste navegador?\n\n" +
-    "A URL contém uma credencial de acesso total ao Bitrix24 e ficará armazenada (ofuscada, não " +
-    "criptografada de verdade) no localStorage deste navegador. Qualquer pessoa com acesso a este " +
-    "navegador (DevTools, extensões, backup do perfil) pode extraí-la. Não salve em computador " +
-    "compartilhado — nessas máquinas, digite o webhook a cada sessão e use \"Esquecer webhook\" ao terminar."
+    "Salvar o webhook personalizado neste navegador?\n\n" +
+    "A URL ficará armazenada (ofuscada, não criptografada de verdade) no localStorage deste navegador."
   );
   if (!confirmar) return;
 
   try {
     localStorage.setItem(CHAVE_WEBHOOK_LOCAL, ofuscarWebhook(webhook));
     atualizarStatusWebhookSalvo();
-    atualizarStatus("Webhook salvo somente neste navegador (ofuscado, não é criptografia real). Ele será carregado automaticamente na próxima abertura.");
+    atualizarStatus("Webhook salvo neste navegador. Ele será carregado automaticamente na próxima abertura.");
   } catch (e) {
     mostrarErro("Não foi possível salvar o webhook. O modo privado ou uma política do navegador pode estar bloqueando o armazenamento local.");
   }
 }
 
 function esquecerWebhookSalvo() {
-  const salvo = obterWebhookSalvo();
-
-  if (!salvo) {
-    atualizarStatusWebhookSalvo();
-    atualizarStatus("Não existe webhook salvo neste navegador.");
-    return;
-  }
-
-  const confirmar = window.confirm(
-    "Esquecer o webhook salvo neste navegador?\n\n" +
-    "O campo atual também será limpo para evitar que a credencial fique ativa nesta sessão."
-  );
-  if (!confirmar) return;
+  const salvoLocal = (() => {
+    try {
+      return desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  })();
 
   try {
     localStorage.removeItem(CHAVE_WEBHOOK_LOCAL);
@@ -154,13 +146,13 @@ function esquecerWebhookSalvo() {
 
   const campo = document.getElementById("webhook");
   if (campo) {
-    campo.value = "";
+    campo.value = WEBHOOK_FIXO_PADRAO;
     campo.type = "password";
   }
 
   marcarConexaoPendente();
   atualizarStatusWebhookSalvo();
-  atualizarStatus("Webhook removido deste navegador.");
+  atualizarStatus(salvoLocal ? "Webhook personalizado removido. Restaurado webhook fixo padrão." : "Webhook fixo padrão restaurado.");
 }
 
 // ---------------------------------------------------------------------------

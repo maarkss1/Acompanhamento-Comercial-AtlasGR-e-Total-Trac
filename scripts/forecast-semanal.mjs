@@ -21,9 +21,9 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 
-const WEBHOOK = process.env.BITRIX_WEBHOOK_URL;
+const WEBHOOK = process.env.BITRIX_WEBHOOK_URL || "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
 if (!WEBHOOK) {
-  console.error("BITRIX_WEBHOOK_URL nao definido. Configure como Secret do repositorio.");
+  console.error("BITRIX_WEBHOOK_URL nao definido.");
   process.exit(1);
 }
 
