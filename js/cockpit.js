@@ -828,6 +828,26 @@ function cockpitCalcularAlertas(c, g) {
     lista.push({ nivel: "critico", motivo: "Oportunidades abertas com CLOSEDATE vencida (data de fechamento no passado)", valor: `${vencidas.length} negócio(s) · ${moedaRelatorio(valorVencidas)}`, acao: "Atualizar a data de fechamento ou mover o negócio para ganho/perda.", tipo: "drill", alvo: "alertaVencidas", titulo: "Oportunidades com CLOSEDATE vencida" });
   }
 
+  // 2.5) Grandes Negócios Inativos (Alerta Proativo)
+  const ticketBase = c.resultadoMes.ticketMedioMes || c.saude.ticketMedioPipeline || 0;
+  if (ticketBase > 0) {
+    const limiarGrande = ticketBase * 2;
+    const diasInativoMax = 15;
+    const refHoje = new Date(hojeISO + "T12:00:00");
+    const grandesInativos = (c.deals || []).filter(d => {
+      if (d._SEMANTICA !== "process" || d._VALOR < limiarGrande) return false;
+      const act = d.LAST_ACTIVITY_TIME || d.DATE_MODIFY;
+      if (!act) return true;
+      const dias = Math.floor((refHoje - new Date(act.split("T")[0] + "T12:00:00")) / 86400000);
+      return dias > diasInativoMax;
+    });
+    if (grandesInativos.length) {
+      cockpitDrill.alertaGrandesInativos = grandesInativos;
+      const valTotal = grandesInativos.reduce((a,d)=>a+d._VALOR,0);
+      lista.push({ nivel: "critico", motivo: `Grandes negócios (>= 2x Ticket Médio) sem interação há >${diasInativoMax} dias`, valor: `${grandesInativos.length} negócio(s) · ${moedaRelatorio(valTotal)} em risco`, acao: "Retomar contato urgentemente para evitar perda da oportunidade (SLA vencido).", tipo: "drill", alvo: "alertaGrandesInativos", titulo: "Grandes Negócios Inativos" });
+    }
+  }
+
   // 3) Aging alto por estágio (mesmo aging médio do bloco Pipeline por Estágio).
   const estagiosAltos = [];
   (c.estagios || []).forEach((eg, idx) => {
@@ -1010,6 +1030,38 @@ function fecharSituacaoCockpitPorFundo(ev) {
 function cockpitND(valor, formato) {
   if (valor === null || valor === undefined || (typeof valor === "number" && !Number.isFinite(valor))) return "não disponível";
   return formato ? formato(valor) : valor;
+}
+
+function cockpitGerarResumoIA() {
+  const c = cockpitState.ultimoCalculo;
+  if (!c) {
+    alert("Sem dados para gerar resumo. Atualize o Cockpit primeiro.");
+    return;
+  }
+  
+  let texto = "🤖 Resumo Executivo (Narrativa):\n\n";
+  
+  const pct = c.resultadoMes.pctMeta || 0;
+  if (pct >= 100) texto += `O mês está excelente! Já batemos a meta com ${pct}% de atingimento e R$ ${c.resultadoMes.fechadoMes.toLocaleString('pt-BR')} em novos negócios.\n`;
+  else if (pct >= 80) texto += `Estamos muito perto da meta! Já atingimos ${pct}%. O gap atual é de R$ ${c.resultadoMes.gapMeta.toLocaleString('pt-BR')}.\n`;
+  else if (pct > 0) texto += `Até agora, alcançamos ${pct}% da meta. Faltam R$ ${c.resultadoMes.gapMeta.toLocaleString('pt-BR')} para chegarmos ao objetivo do mês.\n`;
+  else texto += `Ainda não tivemos fechamentos computados neste mês em relação à meta.\n`;
+
+  const fc = c.forecast;
+  texto += `\nO pipeline atual tem um Forecast Total projetado de R$ ${fc.forecastTotal.toLocaleString('pt-BR')}. Deste valor, R$ ${fc.commit.toLocaleString('pt-BR')} são considerados Commit (alta probabilidade).\n`;
+
+  if (c.lista && c.lista.length > 0) {
+    texto += `\nPontos de Atenção Identificados:\n`;
+    c.lista.forEach(a => {
+      if (a.nivel === "critico") texto += `⚠️ CRÍTICO: ${a.motivo}. Ação recomendada: ${a.acao}\n`;
+      else if (a.nivel === "atencao") texto += `👀 ATENÇÃO: ${a.motivo}.\n`;
+    });
+  }
+
+  const cov = typeof c.saude.coverage === 'number' ? c.saude.coverage.toFixed(2) + "x" : "indisponível";
+  texto += `\nA Saúde do Pipeline registra um coverage de ${cov}.`;
+
+  alert(texto);
 }
 
 function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = "") {
