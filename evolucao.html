@@ -21,7 +21,20 @@
 </script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body class="aguardando-login">
+
+<div class="login-gate" id="loginGate">
+  <div class="login-gate-card">
+    <div class="login-gate-icone">🔒</div>
+    <h1>Portal Comercial AtlasGR</h1>
+    <p>Acesso restrito. Digite a senha para continuar.</p>
+    <form id="loginGateForm" autocomplete="off">
+      <input type="password" id="loginGateSenha" placeholder="Senha" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+    <p class="login-gate-erro oculto" id="loginGateErro" role="alert"></p>
+  </div>
+</div>
 
 <div class="letterhead">
   <div class="letterhead-inner">
@@ -58,7 +71,7 @@
 
 <nav class="quick-nav" aria-label="Navegação do portal">
   <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="evolucao.html">Evolução</a>
+    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="evolucao.html">Evolução</a><a href="#" onclick="sairDoPortal();return false;" title="Sair e pedir a senha novamente">🔒 Sair</a>
   </div></div>
 </nav>
 
@@ -83,12 +96,19 @@
   </div>
 
   <div class="card">
+    <h2>⚠️ Pontos de atenção (pipeline aberto)</h2>
+    <p class="rodape-nota" style="margin-top:-6px;">Calculados pela mesma automação semanal do Forecast — os mesmos números que disparam o alerta proativo (Slack/Teams), quando configurado.</p>
+    <div id="evolucaoAtencao"></div>
+  </div>
+
+  <div class="card">
     <h2>🗓️ Histórico detalhado</h2>
     <div id="evolucaoTabela"></div>
   </div>
 
 </main>
 
+<script src="js/auth.js"></script>
 <script src="js/config.js"></script>
 <script src="js/bitrix-api.js"></script>
 <script src="js/extrator.js"></script>

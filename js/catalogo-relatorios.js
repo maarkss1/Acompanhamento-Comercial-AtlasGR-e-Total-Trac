@@ -704,6 +704,9 @@ const MODELO_EXECUTIVO_CSS = String.raw`
   @media print {
     .hero { clip-path: none; }
     body { background: var(--white); }
+    .valor-pisca { animation: none !important; opacity: 1 !important; }
+    .kpi, .analise-card, .stat-item, .barrow, .mbarrow, .model-table-wrap { break-inside: avoid; page-break-inside: avoid; }
+    .info-tip::after, .info-tip::before { display: none !important; }
   }
 
 .model-table-wrap{overflow:auto;background:#fff;border-radius:14px;box-shadow:var(--shadow-soft);margin-bottom:22px}

@@ -724,6 +724,23 @@ function tabelaEvolucaoForecast(pontos) {
   }).join("");
   return `<table><thead><tr><th>Data</th><th>Fonte</th><th>Meta mensal</th><th>Fechado</th><th>Projeção</th><th>Atingimento</th></tr></thead><tbody>${linhas}</tbody></table>`;
 }
+// v26 — "pontos de atenção" (CLOSEDATE vencida / sem CLOSEDATE) calculados
+// pela automação semanal (scripts/forecast-semanal.mjs), a partir do mesmo
+// laço de negócios que já gera o histórico de meta/fechado/projeção — por
+// isso vivem no mesmo registro do historico.json, sem chamada extra ao
+// Bitrix. Só existem a partir da 1ª execução automática depois desta
+// mudança; registros antigos ficam sem esses campos (tratado como 0/ausente).
+function pontosAtencaoEvolucaoHtml(pontos) {
+  const comDados = [...pontos].reverse().find((p) => p.vencidoCount != null || p.semCloseDateCount != null);
+  if (!comDados) {
+    return `<p class="rodape-nota">Ainda sem pontos de atenção registrados — aparecem a partir da próxima execução automática do Forecast semanal (toda sexta-feira).</p>`;
+  }
+  return `<div class="atencao-mini-grid">
+    <div class="atencao-mini-card"><b>${comDados.vencidoCount ?? 0}</b><span>Negócio(s) com CLOSEDATE vencida ainda aberto(s) — ${moedaRelatorio(comDados.vencidoValor || 0)}</span></div>
+    <div class="atencao-mini-card"><b>${comDados.semCloseDateCount ?? 0}</b><span>Negócio(s) aberto(s) sem CLOSEDATE preenchida — ${moedaRelatorio(comDados.semCloseDateValor || 0)}</span></div>
+  </div>
+  <p class="rodape-nota">Atualizado em ${formatarDataBR(comDados.data)} (fonte: ${comDados.fonte === "automatico" ? "automática, toda sexta-feira" : "local, neste navegador"}).</p>`;
+}
 async function iniciarPaginaEvolucao() {
   const status = document.getElementById("evolucaoStatus");
   if (status) status.textContent = "Carregando histórico...";
@@ -734,8 +751,10 @@ async function iniciarPaginaEvolucao() {
   const pontos = mesclarHistoricosForecast(compartilhado, local);
   const graficoEl = document.getElementById("evolucaoGrafico");
   const tabelaEl = document.getElementById("evolucaoTabela");
+  const atencaoEl = document.getElementById("evolucaoAtencao");
   if (graficoEl) graficoEl.innerHTML = graficoEvolucaoForecast(pontos);
   if (tabelaEl) tabelaEl.innerHTML = pontos.length ? tabelaEvolucaoForecast(pontos) : "";
+  if (atencaoEl) atencaoEl.innerHTML = pontosAtencaoEvolucaoHtml(pontos);
   if (status) {
     status.textContent = pontos.length
       ? `${pontos.length} registro(s) — ${compartilhado.length ? `${compartilhado.length} automático(s)` : "nenhum automático ainda"}, ${local.length} local(is) neste navegador.`

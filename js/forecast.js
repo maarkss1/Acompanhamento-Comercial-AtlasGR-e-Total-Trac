@@ -45,6 +45,21 @@ function baixarRelatorioVisualAtual() {
 function abrirRelatorioVisualEmNovaAba() {
   if (relatorioVisualAtualHtml) abrirHtmlEmNovaAba(relatorioVisualAtualHtml);
 }
+// v26 — "Baixar PDF": aciona a impressão do próprio iframe do relatório (o
+// relatório já tem regras @media print dedicadas — sem "pisca", sem cortar
+// cards no meio). O navegador abre o diálogo de impressão nativo, onde
+// "Salvar como PDF" é uma das impressoras disponíveis — sem depender de
+// nenhuma biblioteca externa (o portal é 100% estático, sem etapa de build).
+function baixarRelatorioVisualPDF() {
+  const frame = document.getElementById("relatorioVisualInlineFrame");
+  if (!frame || !relatorioVisualAtualHtml) return;
+  try {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+  } catch (e) {
+    mostrarErro('Não foi possível abrir a impressão automaticamente. Use "Baixar" e abra o arquivo .html para imprimir/salvar como PDF.');
+  }
+}
 
 // v25 — "Salvar": guarda o HTML gerado numa lista local (até 15, mais
 // recente primeiro), pra poder reabrir depois sem precisar reextrair do
