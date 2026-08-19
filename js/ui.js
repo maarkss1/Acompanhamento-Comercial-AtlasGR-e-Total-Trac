@@ -32,6 +32,35 @@ function iniciar() {
 
   if (document.getElementById("campos-produtos-contexto")) construirCamposProdutosUI();
   atualizarIconeTema();
+
+  // Restaurar filtros globais e plugar persistência
+  try {
+    const salvo = localStorage.getItem("atlas-filtros-globais");
+    if (salvo) {
+      const f = JSON.parse(salvo);
+      if (f.inicio && document.getElementById("dataInicio")) document.getElementById("dataInicio").value = f.inicio;
+      if (f.fim && document.getElementById("dataFim")) document.getElementById("dataFim").value = f.fim;
+      if (f.preset && document.getElementById("periodoPreset")) document.getElementById("periodoPreset").value = f.preset;
+      if (f.meta && document.getElementById("cockpitMetaMensal")) document.getElementById("cockpitMetaMensal").value = f.meta;
+    }
+  } catch(e) {}
+
+  const salvarFiltros = () => {
+    try {
+      const f = {
+        inicio: document.getElementById("dataInicio")?.value || "",
+        fim: document.getElementById("dataFim")?.value || "",
+        preset: document.getElementById("periodoPreset")?.value || "",
+        meta: document.getElementById("cockpitMetaMensal")?.value || ""
+      };
+      localStorage.setItem("atlas-filtros-globais", JSON.stringify(f));
+    } catch(e) {}
+  };
+
+  ["dataInicio", "dataFim", "periodoPreset", "cockpitMetaMensal", "mesEspecifico", "diaEspecifico"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", salvarFiltros);
+  });
 }
 
 // Alterna claro/escuro. A escolha fica salva em localStorage (preferência de UI,

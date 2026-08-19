@@ -76,6 +76,7 @@ async function executarLoteExtracao() {
 }
 
 async function extrair() {
+  if (window.limparCacheBitrix) window.limparCacheBitrix();
   const webhook = document.getElementById("webhook").value.trim();
   const erroWebhook = validarWebhook(webhook);
   if (erroWebhook) {
