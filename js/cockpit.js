@@ -282,6 +282,7 @@ async function atualizarCockpit() {
   extracaoCancelada = false;
   const btn = cockpitEl("cockpitBtnAtualizar");
   if (btn) btn.disabled = true;
+  cockpitRenderEstadoSkeleton();
   atualizarStatus("Cockpit: buscando negócios do funil Comercial...");
   try {
     const base = await baseDealsCatalogo(webhook, true); // somenteComercial=true → CATEGORY_ID 0
@@ -572,11 +573,33 @@ function cockpitCalcular() {
   })).sort((a, b) => b.valor - a.valor);
   estagiosLista.forEach((g, i) => { drill[`estagio_${i}`] = g.deals; });
 
+  const mesAnteriorObj = new Date(Number(mes.inicio.split("-")[0]), Number(mes.inicio.split("-")[1]) - 1, 1);
+  const mFimObj = new Date(mesAnteriorObj.getFullYear(), mesAnteriorObj.getMonth() + 1, 0);
+  const mesAnterior = { inicio: formatarDataISO(mesAnteriorObj), fim: formatarDataISO(mFimObj) };
+  
+  const ganhosMesAnterior = deals.filter((d) => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, mesAnterior));
+  const fechadoMesAnterior = ganhosMesAnterior.reduce((a, d) => a + d._VALOR, 0);
+  const qtdAnterior = ganhosMesAnterior.length;
+  const ticketMedioMesAnterior = qtdAnterior ? fechadoMesAnterior / qtdAnterior : null;
+
+  function fmtMom(atual, ant) {
+    if (!ant) return "";
+    const pct = ((atual - ant) / ant) * 100;
+    if (pct === 0) return `<span style="color:var(--ink-2); font-weight:bold;">— 0%</span> vs mês anterior`;
+    const sinal = pct > 0 ? "▲" : "▼";
+    const cor = pct > 0 ? "var(--ok)" : "var(--danger)";
+    return `<span style="color:${cor}; font-weight:bold;">${sinal} ${Math.abs(pct).toFixed(1)}%</span> vs mês anterior`;
+  }
+
+  const fechadoMesMom = fmtMom(fechadoMes, fechadoMesAnterior);
+  const qtdMom = fmtMom(ganhosMes.length, qtdAnterior);
+  const ticketMom = fmtMom(ticketMedioMes, ticketMedioMesAnterior);
+
   cockpitDrill = drill;
 
   return {
     mes, deals,
-    resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes },
+    resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes, fechadoMesMom, qtdMom, ticketMom },
     forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
     saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, coverageRecomendado, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
@@ -989,10 +1012,11 @@ function cockpitND(valor, formato) {
   return formato ? formato(valor) : valor;
 }
 
-function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "") {
+function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = "") {
   const clique = chaveDrill ? ` onclick="cockpitAbrirDrill('${chaveDrill}','${escapeHtmlRelatorio(rotulo).replace(/'/g, "\\'")}')"` : "";
   const cls = chaveDrill ? "cockpit-kpi cockpit-kpi-clicavel" : "cockpit-kpi";
-  return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
+  const sub = subTexto ? `<div style="font-size:10px; margin-top:4px; color:var(--ink-2); line-height:1.2;">${subTexto}</div>` : "";
+  return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span>${sub}</div>`;
 }
 
 // Ids de todos os containers de KPI/lista do Cockpit que ficam vazios até o
@@ -1024,6 +1048,17 @@ function cockpitRenderEstadoVazio() {
   if (sdrAviso) sdrAviso.textContent = "";
 }
 
+function cockpitRenderEstadoSkeleton() {
+  const skl = `<div class="skeleton" style="height:38px; margin-bottom:8px; width:100%; border-radius:8px;"></div>`;
+  const html = `<div style="display:flex; flex-direction:column; gap:8px;">${skl}${skl}${skl}</div>`;
+  COCKPIT_CONTAINERS_KPI.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = html; });
+  COCKPIT_CONTAINERS_LISTA.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = html; });
+  const protecao = cockpitEl("cockpitProtecaoTabela");
+  if (protecao) protecao.innerHTML = html;
+  const aviso = cockpitEl("cockpitAvisoPipelineForecast");
+  if (aviso) { aviso.textContent = ""; aviso.classList.add("oculto"); }
+}
+
 function renderizarCockpit() {
   if (!cockpitState.deals.length) { cockpitRenderEstadoVazio(); return; }
   const aviso = cockpitEl("cockpitAvisoPipelineForecast");
@@ -1033,11 +1068,11 @@ function renderizarCockpit() {
   // A) Resultado do Mês
   cockpitEl("cockpitResultadoMes").innerHTML = [
     cockpitKpiCard("Meta New MRR (mês)", c.resultadoMes.metaMensal ? moedaRelatorio(c.resultadoMes.metaMensal) : "não informada", null),
-    cockpitKpiCard("Fechado no mês", moedaRelatorio(c.resultadoMes.fechadoMes), "resultadoMesFechado"),
+    cockpitKpiCard("Fechado no mês", moedaRelatorio(c.resultadoMes.fechadoMes), "resultadoMesFechado", "", c.resultadoMes.fechadoMesMom),
     cockpitKpiCard("% da Meta", cockpitND(c.resultadoMes.pctMeta, (v) => `${v}%`), "resultadoMesFechado"),
     cockpitKpiCard("Gap para a meta", cockpitND(c.resultadoMes.gapMeta, moedaRelatorio), "resultadoMesGap"),
-    cockpitKpiCard("Negócios ganhos", c.resultadoMes.qtd, "resultadoMesFechado"),
-    cockpitKpiCard("Ticket médio (mês)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado"),
+    cockpitKpiCard("Negócios ganhos", c.resultadoMes.qtd, "resultadoMesFechado", "", c.resultadoMes.qtdMom),
+    cockpitKpiCard("Ticket médio (mês)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
   ].join("");
 
   // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes).
@@ -1163,8 +1198,20 @@ function cockpitAbrirDrill(chave, titulo) {
     { label: "CLOSEDATE", valor: (x) => formatarDataBR(parteDataISO(x.CLOSEDATE)) },
   ];
   if (chave === "pipelineInelegivel") colunas.push({ label: "Motivo(s) de inelegibilidade", valor: "_MOTIVOS_INELEGIBILIDADE" });
-  cockpitEl("cockpitDrillConteudo").innerHTML = tabelaRelatorio(colunas, linhas, 300);
+  let tabelaHTML = tabelaRelatorio(colunas, linhas, 300);
+  const inputHTML = `<input type="text" id="cockpitDrillBusca" placeholder="Pesquisar nos registros..." style="width:100%; padding:8px 12px; margin-bottom:12px; border-radius:6px; border:1px solid var(--line); font-size:13px; outline:none;" onkeyup="filtrarTabelaDrillDown(this)">`;
+  
+  cockpitEl("cockpitDrillConteudo").innerHTML = inputHTML + tabelaHTML;
   modal.classList.add("aberto");
+}
+
+window.filtrarTabelaDrillDown = function(input) {
+  const filtro = input.value.toLowerCase();
+  const linhas = document.querySelectorAll("#cockpitDrillConteudo table tbody tr");
+  linhas.forEach(linha => {
+    const texto = linha.textContent.toLowerCase();
+    linha.style.display = texto.includes(filtro) ? "" : "none";
+  });
 }
 function fecharDrillCockpit() {
   cockpitEl("cockpitDrillModal")?.classList.remove("aberto");
