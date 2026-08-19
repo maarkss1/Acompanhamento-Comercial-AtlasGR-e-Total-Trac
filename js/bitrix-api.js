@@ -81,17 +81,30 @@ function atualizarStatusWebhookSalvo() {
 
   if (!salvo) {
     texto.textContent = "Webhook não configurado";
-    return;
-  }
-  if (atual && atual !== salvo) {
+  } else if (atual && atual !== salvo) {
     texto.textContent = "Existe outro webhook informado";
-    return;
-  }
-  if (salvo === WEBHOOK_FIXO_PADRAO) {
+  } else if (salvo === WEBHOOK_FIXO_PADRAO) {
     texto.textContent = "Webhook fixo ativo";
-    return;
+  } else {
+    texto.textContent = "Webhook salvo neste navegador";
   }
-  texto.textContent = "Webhook salvo neste navegador";
+
+  const inputWebhook = document.getElementById("webhook");
+  if (inputWebhook) {
+    if (atual === "") {
+      inputWebhook.style.borderColor = "";
+      inputWebhook.style.backgroundColor = "";
+    } else {
+      const erroValidacao = validarWebhook(atual);
+      if (erroValidacao) {
+        inputWebhook.style.borderColor = "var(--perda)";
+        inputWebhook.style.backgroundColor = "var(--fundo)";
+      } else {
+        inputWebhook.style.borderColor = "var(--sucesso)";
+        inputWebhook.style.backgroundColor = "rgba(40, 167, 69, 0.05)";
+      }
+    }
+  }
 }
 
 function carregarWebhookSalvo() {
@@ -507,6 +520,23 @@ function validarPeriodo() {
   return null;
 }
 
+function gerarHashSimples(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+window.FORCAR_ATUALIZACAO_BITRIX = false;
+window.limparCacheBitrix = function() {
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith("atlas_cache_")).forEach(k => localStorage.removeItem(k));
+    console.log("Cache local do Bitrix limpo com sucesso.");
+  } catch(e){}
+};
+
 // fetch com timeout (AbortController) + retentativa com backoff exponencial.
 // Trata especificamente erro de limite de chamadas do Bitrix (QUERY_LIMIT_EXCEEDED).
 async function bitrixFetchComRetentativa(url) {
@@ -520,6 +550,21 @@ async function bitrixFetchComRetentativa(url) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: parts[1]
     };
+  }
+
+  const chaveCache = "atlas_cache_" + gerarHashSimples(fetchUrl + "|" + (fetchOptions.body || ""));
+  if (!window.FORCAR_ATUALIZACAO_BITRIX) {
+    try {
+      const emCache = localStorage.getItem(chaveCache);
+      if (emCache) {
+        const parseado = JSON.parse(emCache);
+        if (Date.now() - parseado.ts < 5 * 60 * 1000) { // 5 minutos de TTL
+          return parseado.data;
+        } else {
+          localStorage.removeItem(chaveCache);
+        }
+      }
+    } catch (e) {}
   }
 
   let ultimoErro = null;
@@ -552,6 +597,15 @@ async function bitrixFetchComRetentativa(url) {
         const erroFinal = new Error(`HTTP ${resp.status} — ${resp.statusText}`);
         erroFinal.definitivo = (resp.status >= 400 && resp.status < 500 && resp.status !== 429);
         throw erroFinal;
+      }
+      
+      try {
+        localStorage.setItem(chaveCache, JSON.stringify({ ts: Date.now(), data: body }));
+      } catch(e) {
+        try {
+           window.limparCacheBitrix();
+           localStorage.setItem(chaveCache, JSON.stringify({ ts: Date.now(), data: body }));
+        } catch(e2) {}
       }
       
       return body;
