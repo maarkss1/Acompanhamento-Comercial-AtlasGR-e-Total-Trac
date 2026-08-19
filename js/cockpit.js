@@ -1467,7 +1467,7 @@ function cockpitGerarHTMLExport(completo) {
 
 function cockpitAbrirHTMLExport() {
   const h = cockpitGerarHTMLExport(false);
-  if (h) abrirHtmlEmNovaAba(h);
+  if (h) mostrarRelatorioVisualInline(h,"Cockpit Comercial");
 }
 function cockpitBaixarHTMLExport() {
   const h = cockpitGerarHTMLExport(false);
@@ -1475,7 +1475,7 @@ function cockpitBaixarHTMLExport() {
 }
 function cockpitAbrirRelatorioExecutivo() {
   const h = cockpitGerarHTMLExport(true);
-  if (h) abrirHtmlEmNovaAba(h);
+  if (h) mostrarRelatorioVisualInline(h,"Relatório Executivo Completo — Cockpit");
 }
 function cockpitBaixarRelatorioExecutivo() {
   const h = cockpitGerarHTMLExport(true);

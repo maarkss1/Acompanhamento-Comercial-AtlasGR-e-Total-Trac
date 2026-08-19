@@ -38,6 +38,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           FORECAST_DESTINATARIOS: ${{ vars.FORECAST_DESTINATARIOS }}
+          ALERTA_WEBHOOK_URL: ${{ secrets.ALERTA_WEBHOOK_URL }}
         run: node scripts/forecast-semanal.mjs
 
       - name: Commitar relatorio gerado

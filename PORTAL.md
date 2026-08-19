@@ -25,7 +25,14 @@ grupo). Isso é seguro porque `js/app.js` e as funções de boot (`iniciar()`,
 realmente existem em cada página (ver seção "O que mudou no JS compartilhado"
 abaixo).
 
-## As 5 páginas
+## As páginas
+
+> **Nota (2026-08-18):** uma 6ª página, `evolucao.html`, foi adicionada depois
+> desta reestruturação original — ver seção "Página 6" logo após a página 5
+> abaixo. Ela segue os mesmos princípios gerais (mesmo `css/styles.css` e os
+> mesmos `js/*.js`, sem lógica duplicada), mas é mais enxuta: não tem card de
+> conexão com o Bitrix nem depende do motor genérico, porque só lê dados já
+> salvos (histórico local + `relatorios/forecast-semanal/historico.json`).
 
 ### 1. `index.html` — Home do portal
 - Cabeçalho/hero simples, ticker do Cockpit ao vivo (`#cockpitTicker`,
@@ -110,6 +117,22 @@ abaixo).
   SLA de primeiro contato, Auditoria SDR, Decisão Final SDR) levam para
   `extracao.html?relatorio=chave`.
 - Mesmos elementos ocultos do motor genérico que `forecast.html` tem.
+
+### 6. `evolucao.html` — 📈 Evolução (adicionada depois, ver nota no topo)
+- Sem card de conexão com o Bitrix e sem nenhum elemento do motor genérico —
+  é só leitura de dados já salvos, não faz nenhuma chamada ao Bitrix.
+- Junta duas fontes de histórico do Forecast (função `iniciarPaginaEvolucao()`,
+  `js/jornada.js`): o histórico local (`localStorage`, gravado a cada
+  extração do Forecast feita nesta ferramenta — `salvarHistoricoForecastLocal()`)
+  e o histórico "oficial" (`relatorios/forecast-semanal/historico.json`,
+  gravado toda sexta-feira por `scripts/forecast-semanal.mjs` via GitHub
+  Actions, versionado no repo e publicado com o site). Quando os dois têm um
+  registro do mesmo dia, o automático vence.
+- Mostra um gráfico grande (SVG puro, `graficoEvolucaoForecast()`) com três
+  séries — Fechado, Projeção final e Meta mensal — e uma tabela com o
+  detalhe de cada "foto" salva.
+- Botão "↻ Atualizar agora" só re-executa `iniciarPaginaEvolucao()` (não
+  refaz nenhuma extração) — útil depois que a automação semanal roda.
 
 ## Navegação entre páginas
 

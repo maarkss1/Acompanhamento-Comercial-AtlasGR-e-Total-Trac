@@ -60,7 +60,7 @@
 
 <nav class="quick-nav" aria-label="Navegação do portal">
   <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="https://atlasgr-integracao-bitrix-d4sign.onrender.com" target="_blank" rel="noopener">💰 Financeiro (Contratos &amp; Cobrança) ↗</a>
+    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="evolucao.html">Evolução</a><a href="https://atlasgr-integracao-bitrix-d4sign.onrender.com" target="_blank" rel="noopener">💰 Financeiro (Contratos &amp; Cobrança) ↗</a>
   </div></div>
 </nav>
 
@@ -268,6 +268,25 @@
     </p>
   </div>
 
+  <div class="relatorio-modal-overlay oculto" id="relatorioVisualInlineCard" onclick="if(event.target===this)fecharRelatorioVisualInline()">
+    <div class="relatorio-modal-sheet">
+      <div class="relatorio-modal-head">
+        <h2 id="relatorioModalTitulo">📊 Modelo visual do relatório</h2>
+        <div class="relatorio-modal-acoes">
+          <button type="button" class="secundario" onclick="alternarPainelRelatoriosSalvos()" title="Ver relatórios salvos neste navegador">📂 Salvos</button>
+          <button type="button" class="secundario" onclick="salvarRelatorioVisualAtual()" title="Salvar este relatório neste navegador">💾 Salvar</button>
+          <button type="button" class="secundario" onclick="baixarRelatorioVisualAtual()" title="Baixar como arquivo .html">⬇️ Baixar</button>
+          <button type="button" class="secundario" onclick="abrirRelatorioVisualEmNovaAba()" title="Abrir em uma aba nova">🌐 Abrir em nova aba</button>
+          <button type="button" class="relatorio-modal-fechar" onclick="fecharRelatorioVisualInline()" aria-label="Fechar">✕</button>
+        </div>
+      </div>
+      <div class="relatorio-salvos-painel oculto" id="relatorioSalvosPainel">
+        <div id="relatorioSalvosLista"></div>
+      </div>
+      <iframe id="relatorioVisualInlineFrame" class="relatorio-visual-inline-frame" title="Modelo visual do relatório"></iframe>
+    </div>
+  </div>
+
 </main>
 
 <div class="help-modal" id="helpModal" onclick="fecharAjudaPorFundo(event)">
@@ -318,3 +337,4 @@
 
 </body>
 </html>
+

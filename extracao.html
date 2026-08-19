@@ -63,7 +63,7 @@
 
 <nav class="quick-nav" aria-label="Navegação do portal">
   <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="https://atlasgr-integracao-bitrix-d4sign.onrender.com" target="_blank" rel="noopener">💰 Financeiro ↗</a>
+    <span class="quick-nav-grupo">🏠 Portal</span><a href="index.html">Início</a><a href="cockpit.html">Cockpit Executivo</a><a href="forecast.html">Relatórios Comerciais</a><a href="sdr.html">SDR &amp; Operação</a><a href="extracao.html">Extração &amp; Diagnóstico</a><a href="evolucao.html">Evolução</a><a href="https://atlasgr-integracao-bitrix-d4sign.onrender.com" target="_blank" rel="noopener">💰 Financeiro (Contratos &amp; Cobrança) ↗</a>
     <span class="quick-nav-grupo">Nesta página</span><a href="#conexao">Conexão</a><a href="#configuracao">Escolher</a><a href="#bloco-periodo">Período</a><a href="#card-campos">Campos</a><a href="#execucao">Executar</a><a href="#card-sincronizacao">Sincronizar</a><a href="#bloco-resultado">Resultados</a><a href="#central-inteligencia-v10">Central v10 ✨</a><a href="#analise-ia">IA</a>
   </div></div>
 </nav>
@@ -384,6 +384,13 @@
       <label for="syncConfirmacao">Confirmação</label><input type="text" id="syncConfirmacao" placeholder="Digite SINCRONIZAR" oninput="atualizarBotaoSync()">
       <div class="row" style="margin-top:10px;"><button type="button" id="btnExecutarSync" onclick="executarSyncBitrix()" disabled>Sincronizar alterações</button></div>
       <div class="sync-log" id="syncLog">Modo leitura ativo. Nenhuma alteração foi enviada ao Bitrix.</div>
+    </div>
+    <div class="sync-auditoria">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px;">
+        <strong style="font-size:12px;">Histórico de sincronizações (auditoria, neste navegador)</strong>
+        <button type="button" class="secundario" onclick="limparAuditoriaSync()">Limpar histórico</button>
+      </div>
+      <div class="sync-preview" id="syncAuditoriaLista"><div class="rodape-nota" style="padding:12px;">Nenhuma sincronização registrada neste navegador ainda.</div></div>
     </div>
   </div>
 
@@ -716,6 +723,25 @@
 
   </div>
 
+  <div class="relatorio-modal-overlay oculto" id="relatorioVisualInlineCard" onclick="if(event.target===this)fecharRelatorioVisualInline()">
+    <div class="relatorio-modal-sheet">
+      <div class="relatorio-modal-head">
+        <h2 id="relatorioModalTitulo">📊 Modelo visual do relatório</h2>
+        <div class="relatorio-modal-acoes">
+          <button type="button" class="secundario" onclick="alternarPainelRelatoriosSalvos()" title="Ver relatórios salvos neste navegador">📂 Salvos</button>
+          <button type="button" class="secundario" onclick="salvarRelatorioVisualAtual()" title="Salvar este relatório neste navegador">💾 Salvar</button>
+          <button type="button" class="secundario" onclick="baixarRelatorioVisualAtual()" title="Baixar como arquivo .html">⬇️ Baixar</button>
+          <button type="button" class="secundario" onclick="abrirRelatorioVisualEmNovaAba()" title="Abrir em uma aba nova">🌐 Abrir em nova aba</button>
+          <button type="button" class="relatorio-modal-fechar" onclick="fecharRelatorioVisualInline()" aria-label="Fechar">✕</button>
+        </div>
+      </div>
+      <div class="relatorio-salvos-painel oculto" id="relatorioSalvosPainel">
+        <div id="relatorioSalvosLista"></div>
+      </div>
+      <iframe id="relatorioVisualInlineFrame" class="relatorio-visual-inline-frame" title="Modelo visual do relatório"></iframe>
+    </div>
+  </div>
+
 </main>
 
 
@@ -775,3 +801,4 @@
 
 </body>
 </html>
+

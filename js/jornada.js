@@ -294,7 +294,7 @@ function montarResultadoVisualJornada() {
     nota: "Amostra limitada às 10 primeiras colunas de cada dataset; baixe o CSV/JSON para o detalhamento completo."
   };
 }
-function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) abrirHtmlEmNovaAba(h); }
+function abrirRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) mostrarRelatorioVisualInline(h,"Jornada do Cliente"); }
 function baixarHTMLRelatorioVisualJornada() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualJornada()); if (h) baixarArquivo(h, `jornada_cliente_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 function baixarCSVJornadaNormalizada() {
@@ -330,6 +330,24 @@ function escapeHtmlRelatorio(valor) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// v25 — cartão de KPI reutilizado por todos os blocos (Forecast semanal,
+// Diário SDR, Análise SDR, Catálogo, Cockpit). Quando `alvoId` aponta pra um
+// elemento que existe na página, o card fica clicável e rola até lá — dá
+// pra consultar o detalhe sem precisar abrir o modelo visual completo.
+function kpiCardHtml(rotulo, valor, alvoId) {
+  const clique = alvoId ? ` kpi-clicavel" onclick="rolarParaSecao('${alvoId}')` : "";
+  return `<div class="relatorio-especial-kpi${clique}"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
+}
+function rolarParaSecao(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const alvo = el.closest("details") || el;
+  if (alvo.tagName === "DETAILS") alvo.open = true;
+  alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+  alvo.classList.add("secao-realce");
+  setTimeout(() => alvo.classList.remove("secao-realce"), 1300);
 }
 
 function moedaRelatorio(valor) {
@@ -552,6 +570,19 @@ function barraAtingimentoMeta(rotulo, realizado, meta, projetado) {
 // v15 — card de meta em destaque: meta, entregue e projeção juntos no mesmo
 // card, com a seta de tendência dentro do próprio card (substitui a barra
 // separada na Visão geral do forecast — mais destaque, menos peças soltas).
+// v23 — sem a linha de "Projeção final" (pedido explícito: só meta/entregue/
+// gap ficam visíveis); ganhou um gauge radial (SVG puro) do % da meta e as
+// classes de "pisca" (glow pulsante, ver .valor-pisca no CSS) nos valores.
+function gaugeMetaSvg(pct, noCaminho) {
+  const p = Math.max(0, Math.min(100, pct));
+  const r = 30, c = 2 * Math.PI * r, dash = (p / 100) * c;
+  const cor = noCaminho ? "var(--good)" : "#d03b3b";
+  return `<svg viewBox="0 0 72 72" class="meta-gauge" role="img" aria-label="${p}% da meta atingido">
+    <circle cx="36" cy="36" r="${r}" class="meta-gauge-trilha"/>
+    <circle cx="36" cy="36" r="${r}" class="meta-gauge-progresso valor-pisca" style="stroke:${cor};stroke-dasharray:${dash.toFixed(1)} ${c.toFixed(1)}"/>
+    <text x="36" y="41" text-anchor="middle" class="meta-gauge-texto">${p}%</text>
+  </svg>`;
+}
 function cardMetaDestaque(titulo, meta, realizado, projetado) {
   if (!meta) {
     return `<div class="meta-card-destaque sem-meta"><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor">A definir</div><div class="meta-card-linha"><span>Meta não informada</span></div></div>`;
@@ -559,18 +590,158 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
   const bateu = realizado >= meta;
   const noCaminho = bateu || (projetado != null && projetado >= meta);
   const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
+  const gap = Math.max(0, meta - realizado);
   const seta = noCaminho
     ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
     : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
+  const badgeAlerta = noCaminho ? "" : `<span class="badge-ping" title="Projeção não está batendo a meta">!</span>`;
   return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
-    <div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div>
-    <div class="meta-card-valor">${moedaRelatorio(meta)}</div>
-    <div class="meta-card-linha"><span>Entregue</span><strong>${seta} ${moedaRelatorio(realizado)}</strong></div>
-    ${projetado != null ? `<div class="meta-card-linha"><span>Projeção</span><strong>${moedaRelatorio(projetado)}</strong></div>` : ""}
-    <div class="meta-card-pct">${pct}% da meta atingido</div>
+    ${badgeAlerta}
+    <div class="meta-card-topo">
+      <div><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor valor-pisca">${moedaRelatorio(meta)}</div></div>
+      ${gaugeMetaSvg(pct, noCaminho)}
+    </div>
+    <div class="meta-card-linha"><span>Entregue</span><strong class="valor-pisca">${seta} ${moedaRelatorio(realizado)}</strong></div>
+    <div class="meta-card-linha"><span>Gap para a meta</span><strong class="valor-pisca">${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
   </div>`;
 }
 
+// ---------------------------------------------------------------------------
+// v20 — histórico local de Meta Mensal: como a ferramenta é 100% client-side
+// (sem backend/banco), cada extração do Forecast (semanal ou catálogo mensal)
+// grava uma "foto" do dia (meta/fechado/projeção) no localStorage deste
+// navegador. Serve para desenhar uma mini tendência no relatório visual —
+// é histórico só deste navegador/dispositivo, não sincroniza entre pessoas.
+// ---------------------------------------------------------------------------
+const CHAVE_HISTORICO_FORECAST_LOCAL = "atlas-extrator-historico-forecast";
+function carregarHistoricoForecastLocal() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_HISTORICO_FORECAST_LOCAL) || "[]"); }
+  catch (e) { return []; }
+}
+function salvarHistoricoForecastLocal(snapshot) {
+  if (!snapshot?.data) return;
+  try {
+    const lista = carregarHistoricoForecastLocal();
+    const idx = lista.findIndex((x) => x.data === snapshot.data);
+    if (idx >= 0) lista[idx] = snapshot; else lista.push(snapshot);
+    lista.sort((a, b) => a.data.localeCompare(b.data));
+    while (lista.length > 60) lista.shift();
+    localStorage.setItem(CHAVE_HISTORICO_FORECAST_LOCAL, JSON.stringify(lista));
+  } catch (e) { /* localStorage indisponível (modo privado, quota) — segue sem histórico */ }
+}
+// v20 — mini gráfico de tendência (SVG puro, sem lib) comparando fechado no mês
+// vs. meta mensal ao longo das últimas extrações registradas neste navegador.
+function sparklineHistoricoForecast(historico) {
+  const pts = (historico || []).slice(-12);
+  if (pts.length < 2) {
+    return `<div class="trend-box trend-vazio"><span>📈 Tendência ainda não disponível — aparece a partir da 2ª extração do Forecast feita neste navegador.</span></div>`;
+  }
+  const w = 320, h = 64, pad = 8;
+  const max = Math.max(1, ...pts.map((p) => p.metaMensal || 0), ...pts.map((p) => p.fechadoMes || 0), ...pts.map((p) => p.projecaoMes || 0));
+  const stepX = (w - 2 * pad) / (pts.length - 1);
+  const coordY = (v) => (h - pad - ((Number(v) || 0) / max) * (h - 2 * pad)).toFixed(1);
+  const linha = (campo) => pts.map((p, i) => `${(pad + i * stepX).toFixed(1)},${coordY(p[campo])}`).join(" ");
+  const ultimo = pts[pts.length - 1];
+  return `<div class="trend-box">
+    <div class="trend-head"><span>📈 Tendência (histórico neste navegador)</span><span class="trend-sub">${pts.length} extração(ões) · última em ${formatarDataBR(ultimo.data)}</span></div>
+    <svg viewBox="0 0 ${w} ${h}" class="trend-svg" preserveAspectRatio="none" role="img" aria-label="Tendência de fechado, projeção e meta mensal">
+      <polyline points="${linha("metaMensal")}" class="trend-line trend-line-meta"/>
+      <polyline points="${linha("projecaoMes")}" class="trend-line trend-line-projecao"/>
+      <polyline points="${linha("fechadoMes")}" class="trend-line trend-line-fechado"/>
+    </svg>
+    <div class="trend-legend"><span><i class="trend-dot trend-dot-fechado"></i>Fechado</span><span><i class="trend-dot trend-dot-projecao"></i>Projeção</span><span><i class="trend-dot trend-dot-meta"></i>Meta</span></div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// v21 — página Evolução (evolucao.html): combina o histórico local (deste
+// navegador, salvo a cada extração do Forecast) com o histórico "oficial"
+// gravado pelo script automático semanal (relatorios/forecast-semanal/
+// historico.json, versionado no repositório e publicado junto com o site,
+// então visível em qualquer dispositivo). Quando os dois têm uma "foto" do
+// mesmo dia, a automática vence (é a fonte mais confiável).
+// ---------------------------------------------------------------------------
+async function carregarHistoricoCompartilhadoForecast() {
+  try {
+    const resp = await fetch("relatorios/forecast-semanal/historico.json", { cache: "no-store" });
+    if (!resp.ok) return [];
+    const dados = await resp.json();
+    return Array.isArray(dados) ? dados.map((x) => ({ ...x, fonte: "automatico" })) : [];
+  } catch (e) {
+    return []; // arquivo ainda não existe, ou página aberta via file:// (sem fetch de outro arquivo)
+  }
+}
+function mesclarHistoricosForecast(compartilhado, local) {
+  const porData = {};
+  (local || []).forEach((x) => { porData[x.data] = { ...x, fonte: "local" }; });
+  (compartilhado || []).forEach((x) => { porData[x.data] = { ...x, fonte: "automatico" }; });
+  return Object.values(porData).sort((a, b) => a.data.localeCompare(b.data));
+}
+// Gráfico grande (bem maior que o sparkline embutido no relatório) para a
+// página Evolução: eixo com linhas-guia, rótulos de data e círculos com
+// tooltip nativo (title) em cada ponto — tudo em SVG puro, sem lib de gráfico.
+function graficoEvolucaoForecast(pontos) {
+  if (!pontos.length) {
+    return `<p class="rodape-nota">Nenhum dado de evolução ainda. Ele aparece automaticamente a cada extração do Forecast (semanal ou catálogo mensal) feita nesta ferramenta, e toda sexta-feira via automação.</p>`;
+  }
+  if (pontos.length < 2) {
+    return `<p class="rodape-nota">Só há 1 registro até agora (${formatarDataBR(pontos[0].data)}). O gráfico aparece a partir do 2º registro — continue extraindo o Forecast normalmente.</p>`;
+  }
+  const w = 900, h = 320, padL = 92, padR = 24, padT = 20, padB = 40;
+  const max = Math.max(1, ...pontos.map((p) => p.metaMensal || 0), ...pontos.map((p) => p.fechadoMes || 0), ...pontos.map((p) => p.projecaoMes || 0)) * 1.08;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const stepX = pontos.length > 1 ? innerW / (pontos.length - 1) : 0;
+  const coordX = (i) => padL + i * stepX;
+  const coordY = (v) => padT + innerH - ((Number(v) || 0) / max) * innerH;
+  const linha = (campo) => pontos.map((p, i) => `${coordX(i).toFixed(1)},${coordY(p[campo]).toFixed(1)}`).join(" ");
+  const gridN = 4;
+  const grid = Array.from({ length: gridN + 1 }, (_, i) => {
+    const valor = (max / gridN) * i, y = coordY(valor);
+    const rotulo = "R$ " + Math.round(valor).toLocaleString("pt-BR");
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" class="evo-grid-line"/><text x="${padL - 10}" y="${(y + 3).toFixed(1)}" class="evo-grid-label" text-anchor="end">${rotulo}</text>`;
+  }).join("");
+  const maxRotulos = 8;
+  const cadaN = Math.max(1, Math.ceil(pontos.length / maxRotulos));
+  const rotulosX = pontos.map((p, i) => (i % cadaN === 0 || i === pontos.length - 1)
+    ? `<text x="${coordX(i).toFixed(1)}" y="${h - padB + 18}" class="evo-grid-label" text-anchor="middle">${formatarDataBR(p.data).slice(0, 5)}</text>` : "").join("");
+  const pontosFechado = pontos.map((p, i) => `<circle cx="${coordX(i).toFixed(1)}" cy="${coordY(p.fechadoMes).toFixed(1)}" r="3.4" class="evo-point evo-point-fechado"><title>${formatarDataBR(p.data)} (${p.fonte === "automatico" ? "automático" : "local"})\nFechado: ${moedaRelatorio(p.fechadoMes)}\nProjeção: ${moedaRelatorio(p.projecaoMes)}\nMeta: ${moedaRelatorio(p.metaMensal)}</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="evo-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Evolução de fechado, projeção e meta mensal ao longo do tempo">
+    ${grid}
+    <polyline points="${linha("metaMensal")}" class="evo-line evo-line-meta"/>
+    <polyline points="${linha("projecaoMes")}" class="evo-line evo-line-projecao"/>
+    <polyline points="${linha("fechadoMes")}" class="evo-line evo-line-fechado"/>
+    ${pontosFechado}
+    ${rotulosX}
+  </svg>
+  <div class="evo-legend"><span><i class="trend-dot trend-dot-fechado"></i>Fechado no mês</span><span><i class="trend-dot trend-dot-projecao"></i>Projeção final</span><span><i class="trend-dot trend-dot-meta"></i>Meta mensal</span></div>`;
+}
+function tabelaEvolucaoForecast(pontos) {
+  if (!pontos.length) return "";
+  const linhas = [...pontos].reverse().map((p) => {
+    const pct = p.metaMensal > 0 ? `${Math.round((p.fechadoMes / p.metaMensal) * 1000) / 10}%` : "—";
+    const fonteLabel = p.fonte === "automatico" ? "🤖 Automático" : "💻 Local";
+    return `<tr><td>${escapeHtmlRelatorio(formatarDataBR(p.data))}</td><td>${fonteLabel}</td><td>${moedaRelatorio(p.metaMensal)}</td><td>${moedaRelatorio(p.fechadoMes)}</td><td>${moedaRelatorio(p.projecaoMes)}</td><td>${pct}</td></tr>`;
+  }).join("");
+  return `<table><thead><tr><th>Data</th><th>Fonte</th><th>Meta mensal</th><th>Fechado</th><th>Projeção</th><th>Atingimento</th></tr></thead><tbody>${linhas}</tbody></table>`;
+}
+async function iniciarPaginaEvolucao() {
+  const status = document.getElementById("evolucaoStatus");
+  if (status) status.textContent = "Carregando histórico...";
+  const [compartilhado, local] = await Promise.all([
+    carregarHistoricoCompartilhadoForecast(),
+    Promise.resolve(carregarHistoricoForecastLocal()),
+  ]);
+  const pontos = mesclarHistoricosForecast(compartilhado, local);
+  const graficoEl = document.getElementById("evolucaoGrafico");
+  const tabelaEl = document.getElementById("evolucaoTabela");
+  if (graficoEl) graficoEl.innerHTML = graficoEvolucaoForecast(pontos);
+  if (tabelaEl) tabelaEl.innerHTML = pontos.length ? tabelaEvolucaoForecast(pontos) : "";
+  if (status) {
+    status.textContent = pontos.length
+      ? `${pontos.length} registro(s) — ${compartilhado.length ? `${compartilhado.length} automático(s)` : "nenhum automático ainda"}, ${local.length} local(is) neste navegador.`
+      : "Nenhum registro encontrado ainda.";
+  }
+}
 
 async function extrairJornada(webhook) {
   document.getElementById("spinner").style.display = "inline-block";

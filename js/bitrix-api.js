@@ -511,6 +511,12 @@ function validarWebhook(webhook) {
   return null;
 }
 
+// Extrai só o domínio do webhook (ex: "empresa.bitrix24.com.br") para montar
+// links diretos de "abrir no Bitrix" nos relatórios — nunca inclui o token.
+function extrairDominioWebhook(webhook) {
+  try { return new URL(webhook).host; } catch (e) { return ""; }
+}
+
 function validarPeriodo() {
   const inicio = document.getElementById("dataInicio").value;
   const fim = document.getElementById("dataFim").value;

@@ -855,9 +855,7 @@ function renderizarAnaliseSDR() {
     ["Reuniões", obj.REUNIOES],
     ["Oportunidades criadas", obj.OPORTUNIDADES_CRIADAS],
     ["Lead → Oportunidade", `${obj.TAXA_LEAD_OPORTUNIDADE}%`]
-  ].map(([rotulo, valor]) =>
-    `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
-  ).join("");
+  ].map(([rotulo, valor]) => kpiCardHtml(rotulo, valor, "analiseSdrDiarioTabela")).join("");
 
   document.getElementById("analiseSdrSemanaKpis").innerHTML = montarKpis(semana);
   document.getElementById("analiseSdrMesKpis").innerHTML = montarKpis(mes);
@@ -982,7 +980,7 @@ function gerarHTMLRelatorioJoao(){
   `<h2 class="section">Taxas de conversão</h2>${conv}<h2 class="section">Jornadas mais frequentes</h2>${rotas}`+
   `<footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · Análise SDR · ${escapeHtmlRelatorio(r.meta.sdr_nome)}</footer></div></body></html>`;
 }
-function abrirRelatorioVisualJoao(){const h=gerarHTMLRelatorioJoao();if(h)abrirHtmlEmNovaAba(h);}
+function abrirRelatorioVisualJoao(){const h=gerarHTMLRelatorioJoao();if(h)mostrarRelatorioVisualInline(h,"Análise SDR — João Reis");}
 function baixarHTMLRelatorioJoao(){const h=gerarHTMLRelatorioJoao();if(h)baixarArquivo(h,`analise_sdr_joao_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
 
 async function extrairDiarioSDR(webhook) {
@@ -1344,18 +1342,16 @@ function renderizarDiarioSDR() {
     `Pipelines potenciais: ${escapeHtmlRelatorio(r.meta.funis_potenciais.join(", ") || "nenhum")}.`;
 
   const kpis = [
-    ["Atividades CRM", r.resumo.ATIVIDADES_CRM_REALIZADAS],
-    ["Atividades SDR/Comercial", r.resumo.ATIVIDADES_SDR_COMERCIAL],
-    ["Leads atendidos", r.resumo.LEADS_ATENDIDOS],
-    ["Negócios atendidos", r.resumo.NEGOCIOS_ATENDIDOS],
-    ["Potenciais Leads SDR", r.resumo.POTENCIAIS_LEADS_SDR],
-    ["Potenciais Comercial/SDR", r.resumo.POTENCIAIS_NEGOCIOS_COMERCIAL_SDR],
-    ["Potenciais sem atividade", r.resumo.POTENCIAIS_SEM_ATIVIDADE],
-    ["Responsáveis", r.resumo.RESPONSAVEIS_MONITORADOS]
+    ["Atividades CRM", r.resumo.ATIVIDADES_CRM_REALIZADAS, "diarioSdrAtividadesTabela"],
+    ["Atividades SDR/Comercial", r.resumo.ATIVIDADES_SDR_COMERCIAL, "diarioSdrAtividadesTabela"],
+    ["Leads atendidos", r.resumo.LEADS_ATENDIDOS, "diarioSdrLeadsAtendidosTabela"],
+    ["Negócios atendidos", r.resumo.NEGOCIOS_ATENDIDOS, "diarioSdrPotenciaisNegociosTabela"],
+    ["Potenciais Leads SDR", r.resumo.POTENCIAIS_LEADS_SDR, "diarioSdrPotenciaisLeadsTabela"],
+    ["Potenciais Comercial/SDR", r.resumo.POTENCIAIS_NEGOCIOS_COMERCIAL_SDR, "diarioSdrPotenciaisNegociosTabela"],
+    ["Potenciais sem atividade", r.resumo.POTENCIAIS_SEM_ATIVIDADE, "diarioSdrResponsaveisTabela"],
+    ["Responsáveis", r.resumo.RESPONSAVEIS_MONITORADOS, "diarioSdrResponsaveisTabela"]
   ];
-  document.getElementById("diarioSdrKpis").innerHTML = kpis.map(([rotulo, valor]) =>
-    `<div class="relatorio-especial-kpi"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`
-  ).join("");
+  document.getElementById("diarioSdrKpis").innerHTML = kpis.map(([rotulo, valor, alvo]) => kpiCardHtml(rotulo, valor, alvo)).join("");
 
   document.getElementById("diarioSdrResponsaveisTabela").innerHTML = tabelaRelatorio([
     { label: "Responsável", valor: "RESPONSAVEL" },
@@ -1437,7 +1433,7 @@ function montarResultadoVisualDiarioSDR() {
     nota: "Atividade realizada = COMPLETED=Y com END_TIME no período. Lead atendido exige vínculo da atividade ao Lead CRM."
   };
 }
-function abrirRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) abrirHtmlEmNovaAba(h); }
+function abrirRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) mostrarRelatorioVisualInline(h,"Diário SDR"); }
 function baixarHTMLRelatorioVisualDiarioSDR() { const h = gerarHTMLRelatorioVisualGenerico(montarResultadoVisualDiarioSDR()); if (h) baixarArquivo(h, `diario_sdr_modelo_atlas_${dataHoje()}.html`, "text/html;charset=utf-8;"); }
 
 

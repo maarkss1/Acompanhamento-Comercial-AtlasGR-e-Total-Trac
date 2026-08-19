@@ -17,9 +17,14 @@
 //   SMTP_PASS            - obrigatoria se SMTP_HOST estiver definida (senha de app)
 //   SMTP_FROM            - opcional, padrao = SMTP_USER
 //   FORECAST_DESTINATARIOS - opcional, sobrescreve a lista padrao de e-mails
+//   ALERTA_WEBHOOK_URL   - opcional, URL de incoming webhook (Slack/Teams/
+//                          compativel com {"text": "..."}) para avisar de
+//                          forma proativa quando a projecao do mes NAO esta
+//                          batendo a meta, sem depender de alguem abrir o
+//                          e-mail. Sem essa variavel, o alerta e so pulado.
 // -----------------------------------------------------------------------------
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 
 const WEBHOOK = process.env.BITRIX_WEBHOOK_URL || "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
 if (!WEBHOOK) {
@@ -175,6 +180,52 @@ function pctAtingimento(realizado, meta) {
 // crm.status.list (ENTITY_ID="DEAL_STAGE"), para alimentar
 // probabilidadeFallbackForecast() com o mesmo texto que o navegador usa —
 // mesmo padrao de buscarMetadadosFunisEEstagios() em js/jornada.js.
+// v20 — historico persistido no proprio repo (uma "foto" por execucao), para
+// alimentar uma secao de tendencia no relatorio semanal. Como esta automacao
+// nao tem banco de dados, o historico e so este arquivo JSON versionado.
+const HISTORICO_PATH = "relatorios/forecast-semanal/historico.json";
+async function carregarHistorico() {
+  try {
+    return JSON.parse(await readFile(HISTORICO_PATH, "utf8"));
+  } catch (e) {
+    return [];
+  }
+}
+async function salvarHistorico(lista) {
+  await mkdir("relatorios/forecast-semanal", { recursive: true });
+  await writeFile(HISTORICO_PATH, JSON.stringify(lista, null, 2) + "\n", "utf8");
+}
+function linhasTendenciaMarkdown(historico) {
+  const pts = historico.slice(-8);
+  if (pts.length < 2) {
+    return "_Tendência aparece a partir da 2ª execução automática (ainda não há histórico suficiente)._";
+  }
+  const linhas = ["| Data | Meta mensal | Fechado no mês | Projeção | Atingimento |", "|---|---|---|---|---|"];
+  pts.forEach((p) => {
+    linhas.push(`| ${formatarDataBR(p.data)} | ${moeda(p.metaMensal)} | ${moeda(p.fechadoMes)} | ${moeda(p.projecaoMes)} | ${p.atingimentoMensalPct == null ? "—" : `${p.atingimentoMensalPct}%`} |`);
+  });
+  return linhas.join("\n");
+}
+
+// v20 — alerta proativo opcional (Slack/Teams via incoming webhook): so envia
+// quando ha algo que exige atencao (projecao do mes fora do caminho da meta,
+// ou a propria geracao falhou), para nao virar ruido de notificacao toda
+// semana. Falha ao enviar o alerta nunca deve derrubar o resto do script.
+async function enviarAlertaSeConfigurado(texto) {
+  const url = process.env.ALERTA_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: texto }),
+    });
+    console.log("Alerta proativo enviado (ALERTA_WEBHOOK_URL).");
+  } catch (e) {
+    console.warn(`Falha ao enviar alerta proativo, seguindo sem interromper (${e.message}).`);
+  }
+}
+
 async function buscarLabelsEstagiosComercial() {
   try {
     const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } });
@@ -267,6 +318,18 @@ async function main() {
   const projecaoMes = fechadoMes + pipelinePonderadoMes;
   const atingimentoSemanalPct = pctAtingimento(fechadoSemana, metaSemanal);
   const atingimentoMensalPct = pctAtingimento(fechadoMes, metaMensal);
+  const noCaminhoMensal = metaMensal > 0 && (fechadoMes >= metaMensal || projecaoMes >= metaMensal);
+
+  // v20 — grava a "foto" de hoje no historico versionado e monta a secao de
+  // tendencia das ultimas execucoes para o relatorio.
+  const historico = await carregarHistorico();
+  if (metaMensal > 0) {
+    const idx = historico.findIndex((x) => x.data === hojeISO);
+    const snapshot = { data: hojeISO, metaMensal, fechadoMes, projecaoMes, atingimentoMensalPct };
+    if (idx >= 0) historico[idx] = snapshot; else historico.push(snapshot);
+    historico.sort((a, b) => a.data.localeCompare(b.data));
+    await salvarHistorico(historico);
+  }
 
   const geradoEm = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short",
@@ -292,6 +355,10 @@ async function main() {
   );
   linhas.push("");
   linhas.push(`_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Projeção = fechado + pipeline aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._`);
+  linhas.push("");
+  linhas.push("## Tendência (últimas execuções automáticas)");
+  linhas.push("");
+  linhas.push(linhasTendenciaMarkdown(historico));
   linhas.push("");
   linhas.push("## Pipeline aberto da semana");
   linhas.push("");
@@ -320,6 +387,17 @@ async function main() {
   console.log(`Relatorio salvo em relatorios/forecast-semanal/${fimSemana}.md`);
 
   await enviarPorEmailSeConfigurado(conteudo, inicioSemana, fimSemana);
+
+  // v20 — alerta proativo: só dispara quando a projeção do mês NÃO está no
+  // caminho da meta, pra virar notificação (Slack/Teams) sem precisar abrir
+  // o e-mail semanal para descobrir que algo está fora do previsto.
+  if (metaMensal > 0 && !noCaminhoMensal) {
+    await enviarAlertaSeConfigurado(
+      `⚠️ *Forecast Comercial* — projeção do mês (${moeda(projecaoMes)}) está abaixo da meta de ${moeda(metaMensal)} ` +
+      `(faltam ${moeda(Math.max(0, metaMensal - projecaoMes))} na projeção). ` +
+      `Fechado até agora: ${moeda(fechadoMes)}${atingimentoMensalPct === null ? "" : ` (${atingimentoMensalPct}%)`}.`
+    );
+  }
 }
 
 async function enviarPorEmailSeConfigurado(conteudoMarkdown, inicioSemana, fimSemana) {
@@ -360,7 +438,8 @@ async function enviarPorEmailSeConfigurado(conteudoMarkdown, inicioSemana, fimSe
   console.log(`E-mail enviado para: ${destinatarios.join(", ")}`);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(e);
+  await enviarAlertaSeConfigurado(`🔴 *Forecast Comercial* — a geração automática falhou: ${e.message}`);
   process.exit(1);
 });
