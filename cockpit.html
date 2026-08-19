@@ -19,7 +19,14 @@
     }
   })();
 </script>
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+<style>
+  /* Estilos para Drag & Drop e Layout Customizável */
+  .draggable-card { cursor: grab; transition: transform 0.2s, box-shadow 0.2s; }
+  .draggable-card:active { cursor: grabbing; opacity: 0.8; transform: scale(0.98); }
+  .drag-over { border: 2px dashed var(--brand) !important; background: var(--soft) !important; }
+</style>
 </head>
 <body>
 
@@ -233,6 +240,33 @@
           quão bem preenchido está o CRM (ver comentário em <code>cockpitCalcularQualidadeDados</code>,
           js/cockpit.js).</p>
         <div class="relatorio-especial-grid" id="cockpitQualidadeDados"></div>
+      </section>
+
+      <!-- Novo Bloco: Gráfico de Evolução -->
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-grafico">
+        <h3>📈 Evolução Mensal do Fechamento <span class="cockpit-bloco-subtitulo">Acumulado do Mês Atual vs Anterior</span></h3>
+        <div class="relatorio-scroll" style="padding:15px; background:var(--surface);">
+          <canvas id="graficoEvolucaoPipeline" style="max-height:300px; width:100%;"></canvas>
+        </div>
+      </section>
+      
+      <!-- Novo Bloco: Metas Desdobradas -->
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-metas">
+        <h3>🎯 Metas Individuais (Desdobramento) <span class="cockpit-bloco-subtitulo">Vendedores</span></h3>
+        <div class="relatorio-scroll" style="padding:15px; background:var(--surface);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <p class="small-note" style="margin:0;">Distribuição da Meta Global (R$ <span id="metaGlobalDesdobramento">0</span>).</p>
+            <button type="button" class="secundario" onclick="cockpitSalvarMetasIndividuais()">💾 Salvar Metas Individuais</button>
+          </div>
+          <table style="margin-top:0;">
+            <thead>
+              <tr><th>Vendedor</th><th>Meta Atribuída (R$)</th><th>Fechado (Mês)</th><th>% Atingido</th></tr>
+            </thead>
+            <tbody id="cockpitMetasDesdobradasTabela">
+              <!-- Gerado via JS -->
+            </tbody>
+          </table>
+        </div>
       </section>
 
     </div>

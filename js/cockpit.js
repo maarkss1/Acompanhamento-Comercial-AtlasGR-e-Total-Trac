@@ -76,6 +76,7 @@ function iniciarCockpitExecutivo() {
   cockpitRenderEstadoVazio();
   cockpitAtualizarTicker();
   cockpitIniciarAutoAtualizacao();
+  initDragAndDrop();
 }
 
 // ---------------------------------------------------------------------------
@@ -1228,6 +1229,10 @@ function renderizarCockpit() {
   // Agora" para montar o resumo sem reprocessar nada (nem chamar o Bitrix).
   cockpitState.ultimoCalculo = { c, g, s, q, alertasInfo };
   cockpitAtualizarTicker();
+  
+  // Customizações (Criação 5 e 10)
+  cockpitRenderizarGrafico(c);
+  cockpitRenderizarMetasDesdobradas(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -1475,4 +1480,158 @@ function cockpitAbrirRelatorioExecutivo() {
 function cockpitBaixarRelatorioExecutivo() {
   const h = cockpitGerarHTMLExport(true);
   if (h) baixarArquivo(h, `relatorio_executivo_completo_${dataHoje()}.html`, "text/html;charset=utf-8;");
+}
+
+// ---------------------------------------------------------------------------
+// Gráfico de Evolução (Criação 10)
+// ---------------------------------------------------------------------------
+let graficoCockpitInstance = null;
+function cockpitRenderizarGrafico(c) {
+  const ctx = document.getElementById("graficoEvolucaoPipeline");
+  if (!ctx || !window.Chart) return;
+  
+  // Agrupar fechamentos por dia do mês atual
+  const ganhosMes = c.resultadoMesFechado || (c.deals || []).filter(d => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, c.mes));
+  const diasMes = new Date(c.mes.hojeISO).getDate();
+  const dados = new Array(diasMes).fill(0);
+  ganhosMes.forEach(d => {
+    const dia = parseInt(d._FECHAMENTO.split("-")[2], 10);
+    if (dia >= 1 && dia <= diasMes) dados[dia-1] += d._VALOR;
+  });
+  
+  const acumulado = [];
+  let soma = 0;
+  for (let i = 0; i < diasMes; i++) {
+    soma += dados[i];
+    acumulado.push(soma);
+  }
+  
+  const labels = Array.from({length: diasMes}, (_, i) => `${i+1}`);
+  const metaLinha = new Array(diasMes).fill(c.resultadoMes.metaMensal || 0);
+
+  if (graficoCockpitInstance) graficoCockpitInstance.destroy();
+  graficoCockpitInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Fechado Acumulado (R$)', data: acumulado, borderColor: '#053eff', backgroundColor: 'rgba(5, 62, 255, 0.1)', fill: true, tension: 0.1 },
+        { label: 'Meta Mensal', data: metaLinha, borderColor: '#ccc', borderDash: [5, 5], fill: false, pointRadius: 0 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Metas Desdobradas (Criação 5)
+// ---------------------------------------------------------------------------
+function cockpitRenderizarMetasDesdobradas(c) {
+  const tbody = document.getElementById("cockpitMetasDesdobradasTabela");
+  const elGlobal = document.getElementById("metaGlobalDesdobramento");
+  if (!tbody || !elGlobal) return;
+  
+  const metaGlobal = c.resultadoMes.metaMensal || 0;
+  elGlobal.textContent = moedaRelatorio(metaGlobal);
+  
+  const ganhosMes = c.resultadoMesFechado || (c.deals || []).filter(d => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, c.mes));
+  
+  // Agrupar por vendedor
+  const vendasVendedor = {};
+  ganhosMes.forEach(d => {
+    const v = d._RESPONSAVEL || "Desconhecido";
+    vendasVendedor[v] = (vendasVendedor[v] || 0) + d._VALOR;
+  });
+  const vendedores = [...new Set((c.deals || []).map(d => d._RESPONSAVEL || "Desconhecido"))];
+  
+  let salvo = {};
+  try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas")) || {}; } catch(e){}
+  
+  let html = "";
+  vendedores.forEach((v, i) => {
+    const fechado = vendasVendedor[v] || 0;
+    const atribuida = salvo[v] || (metaGlobal > 0 ? (metaGlobal / vendedores.length) : 0);
+    const pct = atribuida > 0 ? ((fechado / atribuida) * 100).toFixed(1) + "%" : "—";
+    html += `<tr>
+      <td>${escapeHtmlRelatorio(v)}</td>
+      <td><input type="number" class="meta-vendedor" data-vendedor="${escapeHtmlRelatorio(v)}" value="${atribuida.toFixed(2)}" style="width:120px; padding:4px;"></td>
+      <td>${moedaRelatorio(fechado)}</td>
+      <td><span class="${parseFloat(pct)>=100 ? 'badge-relatorio ok' : ''}">${pct}</span></td>
+    </tr>`;
+  });
+  tbody.innerHTML = html || "<tr><td colspan='4'>Nenhum vendedor listado.</td></tr>";
+}
+
+window.cockpitSalvarMetasIndividuais = function() {
+  const inputs = document.querySelectorAll(".meta-vendedor");
+  const metas = {};
+  inputs.forEach(i => { metas[i.dataset.vendedor] = parseFloat(i.value) || 0; });
+  try { localStorage.setItem("atlas-metas-desdobradas", JSON.stringify(metas)); } catch(e){}
+  atualizarStatus("Metas individuais salvas localmente!");
+  setTimeout(() => renderizarCockpit(), 500);
+};
+
+// ---------------------------------------------------------------------------
+// Customização de Layout Drag & Drop (Criação 8)
+// ---------------------------------------------------------------------------
+function initDragAndDrop() {
+  const container = document.querySelector('.cockpit-executivo');
+  if (!container) return;
+  
+  const draggables = document.querySelectorAll('.draggable-card');
+  draggables.forEach(drg => {
+    drg.addEventListener('dragstart', () => { drg.classList.add('dragging'); });
+    drg.addEventListener('dragend', () => {
+      drg.classList.remove('dragging');
+      salvarOrdemLayout();
+    });
+  });
+
+  container.addEventListener('dragover', e => {
+    e.preventDefault();
+    const afterElement = getDragAfterElement(container, e.clientY);
+    const draggable = document.querySelector('.dragging');
+    if (draggable) {
+      if (afterElement == null) {
+        container.appendChild(draggable);
+      } else {
+        container.insertBefore(draggable, afterElement);
+      }
+    }
+  });
+
+  restaurarOrdemLayout();
+}
+
+function getDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.draggable-card:not(.dragging)')];
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function salvarOrdemLayout() {
+  const container = document.querySelector('.cockpit-executivo');
+  if (!container) return;
+  const ids = [...container.querySelectorAll('.draggable-card')].map(el => el.id);
+  try { localStorage.setItem('atlas-layout-ordem', JSON.stringify(ids)); } catch(e){}
+}
+
+function restaurarOrdemLayout() {
+  try {
+    const salvo = JSON.parse(localStorage.getItem('atlas-layout-ordem'));
+    if (!salvo) return;
+    const container = document.querySelector('.cockpit-executivo');
+    if (!container) return;
+    salvo.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) container.appendChild(el);
+    });
+  } catch(e){}
 }
