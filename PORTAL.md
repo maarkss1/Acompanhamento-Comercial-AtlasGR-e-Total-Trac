@@ -13,9 +13,12 @@ páginas).
 ## Princípio geral
 
 Todas as páginas do portal carregam o **mesmo** `css/styles.css` e os
-**mesmos 10 arquivos `js/*.js`**, sempre na mesma ordem (`config.js`,
-`bitrix-api.js`, `extrator.js`, `forecast.js`, `sdr.js`, `jornada.js`,
-`catalogo-relatorios.js`, `exportacoes.js`, `cockpit.js`, `ui.js`, `app.js`).
+**mesmos 11 arquivos `js/*.js`**, sempre na mesma ordem (`auth.js`,
+`config.js`, `bitrix-api.js`, `extrator.js`, `forecast.js`, `sdr.js`,
+`jornada.js`, `catalogo-relatorios.js`, `exportacoes.js`, `cockpit.js`,
+`ui.js`, `app.js`). `auth.js` (v26) é o único que roda antes de tudo — ele
+cuida do gate de senha única do portal (ver seção "Senha única (acesso
+restrito)" mais abaixo) e não depende de nenhum outro arquivo.
 **Nenhuma lógica de negócio foi duplicada entre páginas** — só o HTML de cada
 página muda (quais seções existem no DOM) e um pequeno `<script>` inline no
 fim de cada página cuida da inicialização específica dela (ex.: ler
@@ -278,3 +281,43 @@ ui.js".
   reaproveitam os mesmos padrões de ofuscação/aviso já existentes.
 - `.github/workflows/pages.yml` já publica todo `*.html` da raiz
   automaticamente (`cp *.html _site/`) — nenhuma mudança necessária.
+
+## Senha única (acesso restrito) — v26
+
+Todas as 6 páginas do portal (não o redirect `Relatorios AtlasGR.html`)
+carregam um overlay `#loginGate` logo após `<body class="aguardando-login">`
+e `js/auth.js` como o **primeiro** `<script>` da página. Enquanto o `<body>`
+tiver a classe `aguardando-login`, uma regra CSS (`css/styles.css`) esconde
+tudo que não seja o próprio gate — não há flash de conteúdo antes do JS
+rodar, porque a classe já vem escrita no HTML, não é adicionada via JS.
+
+`js/auth.js` compara a senha digitada (hash SHA-256, via Web Crypto —
+`crypto.subtle.digest`) contra uma constante `SENHA_HASH`. **Não é
+segurança forte** — é só para afastar acesso casual de quem não tem o
+link/senha, conforme pedido explicitamente. Ao acertar, grava
+`atlas-portal-auth-ok=1` no `localStorage` (desbloqueio persiste entre
+sessões, até alguém clicar em "🔒 Sair" na navegação ou limpar os dados do
+navegador). Para trocar a senha, gere o novo hash SHA-256 e substitua
+`SENHA_HASH` em `js/auth.js` (comentário no topo do arquivo explica como).
+
+## Pontos de atenção + alerta expandido — v26
+
+`scripts/forecast-semanal.mjs` (a mesma automação semanal que já gravava
+`relatorios/forecast-semanal/historico.json`) agora também conta, a partir
+do mesmo laço de negócios que já percorre (sem chamada extra ao Bitrix):
+negócios com CLOSEDATE vencida ainda abertos, e negócios abertos sem
+CLOSEDATE preenchida. Esses números entram (a) no `historico.json`
+compartilhado (lido por `evolucao.html`, novo card "Pontos de atenção"), (b)
+na seção nova do relatório em Markdown, e (c) no alerta proativo
+(`ALERTA_WEBHOOK_URL`), que agora dispara por qualquer um dos três motivos
+(projeção fora da meta, CLOSEDATE vencida, ou sem CLOSEDATE) — cada motivo
+some do texto quando não se aplica.
+
+## Baixar PDF — v26
+
+O botão "🖨️ PDF" no modal de relatório (`js/forecast.js`,
+`baixarRelatorioVisualPDF()`) chama `iframe.contentWindow.print()` — o
+relatório já tem regras `@media print` próprias (sem "pisca", sem cortar
+cards no meio de página). "Salvar como PDF" é uma das impressoras do
+diálogo nativo do navegador; não há biblioteca de PDF nova (o portal
+continua 100% estático, sem etapa de build).

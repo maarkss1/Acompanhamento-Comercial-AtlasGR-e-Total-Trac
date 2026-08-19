@@ -272,6 +272,12 @@ async function main() {
   let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
   let pipelinePonderadoMes = 0;
   const negociosPrevistosSemana = [];
+  // v26 — pontos de atenção calculados a partir do MESMO laço de negócios já
+  // buscado acima (sem chamada extra ao Bitrix), pra alimentar o alerta
+  // proativo (item 4) e o histórico compartilhado (item 3) com o mesmo tipo
+  // de sinal que já aparece nos relatórios do navegador.
+  let semCloseDateCount = 0, semCloseDateValor = 0;
+  let vencidoCount = 0, vencidoValor = 0;
 
   for (const d of deals) {
     const semantic = String(d.STAGE_SEMANTIC_ID || "").toLowerCase();
@@ -290,7 +296,15 @@ async function main() {
     if (ehEstagioPiloto(d.STAGE_ID, stageLabel)) continue; // sem pilotos no pipeline aberto
 
     const closeDate = parteDataISO(d.CLOSEDATE);
-    if (!closeDate) continue;
+    if (!closeDate) {
+      semCloseDateCount++;
+      semCloseDateValor += valor;
+      continue;
+    }
+    if (closeDate < hojeISO) {
+      vencidoCount++;
+      vencidoValor += valor;
+    }
 
     const probInformada = Number(d.PROBABILITY);
     const prob = Number.isFinite(probInformada) && probInformada > 0 && probInformada <= 100
@@ -325,7 +339,10 @@ async function main() {
   const historico = await carregarHistorico();
   if (metaMensal > 0) {
     const idx = historico.findIndex((x) => x.data === hojeISO);
-    const snapshot = { data: hojeISO, metaMensal, fechadoMes, projecaoMes, atingimentoMensalPct };
+    const snapshot = {
+      data: hojeISO, metaMensal, fechadoMes, projecaoMes, atingimentoMensalPct,
+      semCloseDateCount, semCloseDateValor, vencidoCount, vencidoValor,
+    };
     if (idx >= 0) historico[idx] = snapshot; else historico.push(snapshot);
     historico.sort((a, b) => a.data.localeCompare(b.data));
     await salvarHistorico(historico);
@@ -365,6 +382,11 @@ async function main() {
   linhas.push(`- Pipeline aberto bruto (sem pilotos): ${moeda(pipelineAbertoSemana)}`);
   linhas.push(`- Pipeline aberto ponderado por probabilidade: ${moeda(pipelinePonderadoSemana)}`);
   linhas.push("");
+  linhas.push("## Pontos de atenção (pipeline aberto, todo o funil Comercial)");
+  linhas.push("");
+  linhas.push(`- CLOSEDATE vencida (ainda aberto, data já passou): ${vencidoCount} negócio(s), ${moeda(vencidoValor)}`);
+  linhas.push(`- Sem CLOSEDATE preenchida: ${semCloseDateCount} negócio(s), ${moeda(semCloseDateValor)}`);
+  linhas.push("");
   if (negociosPrevistosSemana.length) {
     linhas.push(`## Negócios previstos para a semana (${negociosPrevistosSemana.length})`);
     linhas.push("");
@@ -388,14 +410,30 @@ async function main() {
 
   await enviarPorEmailSeConfigurado(conteudo, inicioSemana, fimSemana);
 
-  // v20 — alerta proativo: só dispara quando a projeção do mês NÃO está no
-  // caminho da meta, pra virar notificação (Slack/Teams) sem precisar abrir
-  // o e-mail semanal para descobrir que algo está fora do previsto.
+  // v20/v26 — alerta proativo: só dispara quando há algo que exige atenção
+  // (projeção fora do caminho da meta, OU muito valor com CLOSEDATE vencida,
+  // OU muito valor sem CLOSEDATE preenchida), pra virar notificação
+  // (Slack/Teams) sem precisar abrir o e-mail semanal para descobrir que
+  // algo está fora do previsto. Cada motivo é opcional e some do texto
+  // quando não se aplica, pra não virar ruído genérico toda semana.
+  const motivos = [];
   if (metaMensal > 0 && !noCaminhoMensal) {
+    motivos.push(
+      `projeção do mês (${moeda(projecaoMes)}) abaixo da meta de ${moeda(metaMensal)} ` +
+      `(faltam ${moeda(Math.max(0, metaMensal - projecaoMes))}). Fechado até agora: ${moeda(fechadoMes)}` +
+      `${atingimentoMensalPct === null ? "" : ` (${atingimentoMensalPct}%)`}`
+    );
+  }
+  if (vencidoValor > 0) {
+    motivos.push(`${vencidoCount} negócio(s) com CLOSEDATE vencida ainda aberto(s), somando ${moeda(vencidoValor)}`);
+  }
+  if (semCloseDateValor > 0) {
+    motivos.push(`${semCloseDateCount} negócio(s) aberto(s) sem CLOSEDATE preenchida, somando ${moeda(semCloseDateValor)}`);
+  }
+  if (motivos.length) {
     await enviarAlertaSeConfigurado(
-      `⚠️ *Forecast Comercial* — projeção do mês (${moeda(projecaoMes)}) está abaixo da meta de ${moeda(metaMensal)} ` +
-      `(faltam ${moeda(Math.max(0, metaMensal - projecaoMes))} na projeção). ` +
-      `Fechado até agora: ${moeda(fechadoMes)}${atingimentoMensalPct === null ? "" : ` (${atingimentoMensalPct}%)`}.`
+      `⚠️ *Forecast Comercial* — pontos de atenção desta semana:\n` +
+      motivos.map((m) => `• ${m}`).join("\n")
     );
   }
 }
