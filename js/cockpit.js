@@ -956,7 +956,7 @@ function cockpitGerarSituacaoAgora() {
   ];
 
   const linhasTexto = [];
-  linhasTexto.push("=== SITUAÇÃO COMERCIAL AGORA — AtlasGR ===");
+  linhasTexto.push(`=== SITUAÇÃO COMERCIAL AGORA — ${marcaAtiva().nome} ===`);
   linhasTexto.push(`Gerado em: ${carimbo} · Fonte: Bitrix24 (último "Atualizar agora" do Cockpit)`);
   linhasTexto.push("");
   campos.forEach(([label, valor]) => linhasTexto.push(`${label}: ${valor}`));
@@ -1389,7 +1389,7 @@ function cockpitExportarJSON() {
   if (!cache) return;
   const payload = {
     gerado_em: new Date().toISOString(),
-    fonte: "Cockpit Comercial Executivo — AtlasGR (snapshot já calculado, sem novo acesso ao Bitrix)",
+    fonte: `Cockpit Comercial Executivo — ${marcaAtiva().nome} (snapshot já calculado, sem novo acesso ao Bitrix)`,
     periodo_filtro: cache.c?.saude?.periodoFiltro || null,
     dados: cache,
   };
@@ -1431,6 +1431,8 @@ function cockpitHtmlAlertas(cache) {
 function cockpitGerarHTMLExport(completo) {
   const cache = cockpitExigirCache();
   if (!cache) return "";
+  const marca = marcaAtiva();
+  const paginaHome = `${marca.prefixoArquivo}home.html`;
   const agora = new Date();
   const carimbo = formatarDataBR(formatarDataISO(agora)) + " " + String(agora.getHours()).padStart(2, "0") + ":" + String(agora.getMinutes()).padStart(2, "0");
   const titulo = completo ? "Relatório Executivo Completo" : "Cockpit Comercial";
@@ -1452,16 +1454,16 @@ function cockpitGerarHTMLExport(completo) {
       `<ul><li><strong>Catálogo de Relatórios</strong> — origem, produtos, clientes, aging/SLA, ganhos e perdas por ciclo.</li>` +
       `<li><strong>Análise SDR / Diário SDR</strong> — leads trabalhados, reuniões, conversão Lead → Oportunidade.</li>` +
       `<li><strong>Forecast semanal</strong> — visão semana a semana com o mesmo detalhamento de fechados/pendentes/pipeline.</li></ul>` +
-      `<p class="small-note">Este HTML é estático (baixado do navegador) e não tem link direto de volta à ferramenta — reabra "Relatórios AtlasGR.html" e navegue pelos menus para essas telas.</p>`;
+      `<p class="small-note">Este HTML é estático (baixado do navegador) e não tem link direto de volta à ferramenta — reabra "${paginaHome}" e navegue pelos menus para essas telas.</p>`;
   }
 
   corpo += `</div>`;
 
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(titulo)} — Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>` +
-    `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>${escapeHtmlRelatorio(titulo)}</strong><br>Gerado em ${carimbo}</div></div></div>` +
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(titulo)} — ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>` +
+    `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>${escapeHtmlRelatorio(titulo)}</strong><br>Gerado em ${carimbo}</div></div></div>` +
     `<header class="hero"><div class="hero-inner"><p class="eyebrow">Cockpit Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(titulo)}</h1><p class="subtitle">${cabecalhoInfo}</p></div></header>` +
     corpo +
-    `<footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · ${escapeHtmlRelatorio(titulo)} · gerado em ${carimbo} · nenhum webhook/credencial incluído neste arquivo.</footer>` +
+    `<footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · ${escapeHtmlRelatorio(titulo)} · gerado em ${carimbo} · nenhum webhook/credencial incluído neste arquivo.</footer>` +
     `</body></html>`;
 }
 

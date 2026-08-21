@@ -144,7 +144,7 @@ function gerarPromptIA() {
     aviso = `⚠️ Os dados extraídos são grandes demais para caber inteiros neste prompt — foram cortados em ${LIMITE_CARACTERES_PROMPT.toLocaleString("pt-BR")} caracteres. Para uma análise sobre a base completa, baixe o(s) arquivo(s) JSON/CSV no passo 6 e anexe-os na conversa com a IA em vez de colar só este texto.`;
   }
 
-  const prompt = `Você está analisando dados extraídos do CRM Bitrix24 da AtlasGR (${pacote.modo}).
+  const prompt = `Você está analisando dados extraídos do CRM Bitrix24 da ${marcaAtiva().nome} (${pacote.modo}).
 
 O que eu quero que você faça com esses dados:
 ${pergunta}

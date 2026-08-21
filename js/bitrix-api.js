@@ -7,6 +7,19 @@ function alternarVisibilidadeWebhook() {
 const WEBHOOK_FIXO_PADRAO = "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
 const CHAVE_WEBHOOK_LOCAL = "atlas-extrator-bitrix-webhook";
 
+// v27 — multi-empresa: cada marca (ver MARCAS em config.js) tem sua própria
+// chave de localStorage (sufixoStorage) e seu próprio webhook padrão
+// (webhookPadrao) — senão, salvar um webhook na Total Trac sobrescreveria o
+// da AtlasGR, já que hoje é uma única chave global. Sem sufixo pra AtlasGR
+// (sufixoStorage:"" no registro dela), então continua lendo o que já estava
+// salvo antes desta mudança.
+function chaveWebhookAtual() {
+  return CHAVE_WEBHOOK_LOCAL + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "");
+}
+function webhookPadraoAtual() {
+  return typeof marcaAtiva === "function" ? marcaAtiva().webhookPadrao : WEBHOOK_FIXO_PADRAO;
+}
+
 // ---------------------------------------------------------------------------
 // Ofuscação leve do webhook salvo no localStorage.
 //
@@ -62,10 +75,10 @@ function desofuscarWebhook(valorArmazenado) {
 
 function obterWebhookSalvo() {
   try {
-    const salvo = desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
-    return salvo || WEBHOOK_FIXO_PADRAO;
+    const salvo = desofuscarWebhook(localStorage.getItem(chaveWebhookAtual()) || "").trim();
+    return salvo || webhookPadraoAtual();
   } catch (e) {
-    return WEBHOOK_FIXO_PADRAO;
+    return webhookPadraoAtual();
   }
 }
 
@@ -83,7 +96,7 @@ function atualizarStatusWebhookSalvo() {
     texto.textContent = "Webhook não configurado";
   } else if (atual && atual !== salvo) {
     texto.textContent = "Existe outro webhook informado";
-  } else if (salvo === WEBHOOK_FIXO_PADRAO) {
+  } else if (salvo === webhookPadraoAtual()) {
     texto.textContent = "Webhook fixo ativo";
   } else {
     texto.textContent = "Webhook salvo neste navegador";
@@ -112,7 +125,7 @@ function carregarWebhookSalvo() {
   if (!campo) return false;
 
   const salvo = obterWebhookSalvo();
-  campo.value = salvo || WEBHOOK_FIXO_PADRAO;
+  campo.value = salvo || webhookPadraoAtual();
   campo.type = "password";
   marcarConexaoPendente();
   atualizarStatusWebhookSalvo();
@@ -136,7 +149,7 @@ function salvarWebhookNoNavegador() {
   if (!confirmar) return;
 
   try {
-    localStorage.setItem(CHAVE_WEBHOOK_LOCAL, ofuscarWebhook(webhook));
+    localStorage.setItem(chaveWebhookAtual(), ofuscarWebhook(webhook));
     atualizarStatusWebhookSalvo();
     atualizarStatus("Webhook salvo neste navegador. Ele será carregado automaticamente na próxima abertura.");
   } catch (e) {
@@ -147,25 +160,30 @@ function salvarWebhookNoNavegador() {
 function esquecerWebhookSalvo() {
   const salvoLocal = (() => {
     try {
-      return desofuscarWebhook(localStorage.getItem(CHAVE_WEBHOOK_LOCAL) || "").trim();
+      return desofuscarWebhook(localStorage.getItem(chaveWebhookAtual()) || "").trim();
     } catch (e) {
       return "";
     }
   })();
 
   try {
-    localStorage.removeItem(CHAVE_WEBHOOK_LOCAL);
+    localStorage.removeItem(chaveWebhookAtual());
   } catch (e) {}
 
   const campo = document.getElementById("webhook");
   if (campo) {
-    campo.value = WEBHOOK_FIXO_PADRAO;
+    campo.value = webhookPadraoAtual();
     campo.type = "password";
   }
 
   marcarConexaoPendente();
   atualizarStatusWebhookSalvo();
-  atualizarStatus(salvoLocal ? "Webhook personalizado removido. Restaurado webhook fixo padrão." : "Webhook fixo padrão restaurado.");
+  const temPadraoFixo = !!webhookPadraoAtual();
+  if (salvoLocal) {
+    atualizarStatus(temPadraoFixo ? "Webhook personalizado removido. Restaurado webhook fixo padrão." : "Webhook personalizado removido. Cole outro webhook para conectar.");
+  } else {
+    atualizarStatus(temPadraoFixo ? "Webhook fixo padrão restaurado." : "Nenhum webhook salvo. Cole um webhook para conectar.");
+  }
 }
 
 // ---------------------------------------------------------------------------

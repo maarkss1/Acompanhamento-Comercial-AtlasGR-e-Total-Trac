@@ -4,11 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>AtlasGR — Evolução do Forecast</title>
+<title>AtlasGR — Portal Comercial · Bitrix24 v10.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
+  // Aplica o tema salvo (ou o do sistema operacional) antes da primeira pintura,
+  // pra não piscar claro→escuro ao carregar. Preferência de tema não é credencial —
+  // pode ficar em localStorage. O webhook só persiste após ação explícita no botão Salvar webhook.
   (function () {
     try {
       var salvo = localStorage.getItem("atlas-extrator-tema");
@@ -59,11 +62,13 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Evolução</div>
-      <h1>Evolução do Forecast.</h1>
-      <p>Cada extração do Forecast (nesta ferramenta ou pela automação semanal) grava uma "foto" de meta, fechado e projeção. Esta página junta esse histórico e mostra a evolução ao longo do tempo — sem precisar reextrair nada.</p>
+      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Portal Comercial</div>
+      <h1>Extraia, entenda e atualize o CRM em um só lugar.</h1>
+      <p>Portal com páginas dedicadas: Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico. Comece escolhendo o que você quer descobrir abaixo, ou use a navegação no topo.</p>
     </div>
     <div class="hero-actions">
+      <span class="connection-pill" id="statusConexaoTopo"><span class="connection-dot"></span><span id="statusConexaoTexto">Conexão não testada</span></span>
+      <button type="button" class="hero-btn" onclick="testarConexaoBitrix()">Testar conexão</button>
       <button type="button" class="btn-tema hero-btn" id="btnTema" onclick="alternarTema()" aria-label="Alternar tema" title="Alternar tema">🌙</button>
     </div>
   </div>
@@ -77,36 +82,52 @@
 
 <main>
 
-  <div class="card">
-    <h2>📊 De onde vêm os dados</h2>
-    <div class="evolucao-fontes">
-      <span>🤖 <strong>Automático</strong> — gravado toda sexta-feira pela automação do Forecast semanal (GitHub Actions), salvo no próprio repositório (<code>relatorios/forecast-semanal/historico.json</code>). Visível em qualquer dispositivo, assim que o site é publicado.</span>
-      <span>💻 <strong>Local</strong> — gravado neste navegador sempre que você extrai o Forecast (semanal ou o "Forecast mensal" do catálogo) por aqui. Só aparece neste navegador/dispositivo.</span>
-      <span>Quando os dois têm um registro do mesmo dia, o automático prevalece (é a fonte mais confiável).</span>
+  <div class="cockpit-ticker" id="cockpitTicker" aria-live="polite">
+    <div class="cockpit-ticker-label"><span class="cockpit-ticker-dot"></span> Cockpit ao vivo</div>
+    <div class="cockpit-ticker-track-wrap">
+      <div class="cockpit-ticker-track" id="cockpitTickerTrack">
+        <span class="cockpit-ticker-item">Sem dados carregados nesta sessão — cole o webhook abaixo e clique em "Ver Cockpit completo", ou salve o webhook para o ticker atualizar sozinho a cada 5 minutos.</span>
+      </div>
     </div>
+    <a href="cockpit.html" class="cockpit-ticker-link">Ver Cockpit completo →</a>
   </div>
 
-  <div class="card">
-    <div class="resultado-header">
-      <h2>📈 Evolução: Fechado, Projeção e Meta mensal</h2>
-      <button type="button" class="secundario" onclick="iniciarPaginaEvolucao()">↻ Atualizar agora</button>
+  <div class="card" id="conexao">
+    <h2>🔑 Conexão rápida com o Bitrix</h2>
+    <p class="rodape-nota" style="margin-top:-6px;">Só é necessária para o ticker acima atualizar sozinho e para testar a conexão por aqui. Cada relatório abaixo também pede o webhook na própria página, se ainda não estiver salvo.</p>
+    <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
+    <input type="password" id="webhook" value="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
+    <div class="row" style="margin-top:9px;align-items:center;">
+      <div class="webhook-actions">
+        <button type="button" class="toggle-eye" onclick="alternarVisibilidadeWebhook()">mostrar/ocultar</button>
+        <button type="button" class="secundario" onclick="testarConexaoBitrix()">Testar conexão agora</button>
+        <button type="button" class="secundario" onclick="salvarWebhookNoNavegador()">💾 Salvar webhook</button>
+        <button type="button" class="secundario" onclick="esquecerWebhookSalvo()">🗑️ Restaurar padrão</button>
+        <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook fixo ativo</span></span>
+      </div>
     </div>
-    <p class="rodape-nota" id="evolucaoStatus">Carregando histórico...</p>
-    <div class="evo-chart-box" id="evolucaoGrafico"></div>
+    <p class="rodape-nota">Webhook fixo padrão configurado para a AtlasGR. Se precisar usar uma credencial diferente, altere no campo acima ou salve no navegador.</p>
   </div>
 
-  <div class="card">
-    <h2>⚠️ Pontos de atenção (pipeline aberto)</h2>
-    <p class="rodape-nota" style="margin-top:-6px;">Calculados pela mesma automação semanal do Forecast — os mesmos números que disparam o alerta proativo (Slack/Teams), quando configurado.</p>
-    <div id="evolucaoAtencao"></div>
-  </div>
-
-  <div class="card">
-    <h2>🗓️ Histórico detalhado</h2>
-    <div id="evolucaoTabela"></div>
-  </div>
+  <section class="workspace-intro" id="inicio">
+    <div class="workspace-title">
+      <div><h2>Comece pelo que você quer descobrir</h2><p>Um card para cada relatório disponível. Clique em qualquer um para ir direto à Extração &amp; Diagnóstico já configurada com esse relatório e período — ou use os mini-portais de Relatórios Comerciais/SDR &amp; Operação na navegação acima, que já trazem alguns relatórios prontos na própria página.</p></div>
+      <button type="button" class="secundario" onclick="abrirAjuda('visaoGeral')">Como usar esta tela?</button>
+    </div>
+    <label for="buscaAtalhosRelatorios">Buscar relatório (nome, palavra-chave ou grupo)</label>
+    <input type="text" id="buscaAtalhosRelatorios" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarAtalhosRelatorios()">
+    <div id="atalhosRelatoriosGrupos"></div>
+    <p class="rodape-nota oculto" id="atalhosRelatoriosSemResultado">Nenhum relatório encontrado para esta busca.</p>
+  </section>
 
 </main>
+
+<div class="help-modal" id="helpModal" onclick="fecharAjudaPorFundo(event)">
+  <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitulo">
+    <div class="help-head"><div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">Ajuda contextual</div><h3 id="helpTitulo">Como funciona</h3></div><button type="button" class="help-close" onclick="fecharAjuda()">×</button></div>
+    <div class="help-body" id="helpConteudo"></div>
+  </div>
+</div>
 
 <script src="js/auth.js"></script>
 <script src="js/config.js"></script>
@@ -120,12 +141,6 @@
 <script src="js/cockpit.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
-
-<script>
-  // Init específico desta página: carrega e desenha a evolução assim que a
-  // página abre (não depende de webhook nem de extração nesta sessão).
-  iniciarPaginaEvolucao();
-</script>
 
 </body>
 </html>

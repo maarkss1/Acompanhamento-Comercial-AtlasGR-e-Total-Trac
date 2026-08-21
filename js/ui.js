@@ -442,7 +442,9 @@ function selecionarRelatorioRapido(chave){
       bloco.scrollIntoView({behavior:"smooth",block:"start"});
       return;
     }
-    window.location.href=`extracao.html?relatorio=${encodeURIComponent(chave)}`;
+    // v27: nas páginas da Total Trac isso precisa levar para
+    // totaltrac-extracao.html, não para o extracao.html da AtlasGR.
+    window.location.href=`${marcaAtiva().prefixoArquivo}extracao.html?relatorio=${encodeURIComponent(chave)}`;
     return;
   }
   revelarFluxoExtracao();const s=document.getElementById("relatorio");s.value=chave;aoTrocarRelatorio();atualizarResumoConfiguracaoV7();document.getElementById("configuracao")?.scrollIntoView({behavior:"smooth",block:"start"});
@@ -1263,7 +1265,7 @@ async function enviarMensagemChatIAV10() {
   }
   const modeloEscolhido = document.querySelector('input[name="v10modelo"]:checked')?.value || "claude-sonnet-5";
 
-  const systemPrompt = `Você é um analista de dados comerciais ajudando a equipe da AtlasGR a interpretar dados extraídos do CRM Bitrix24 (${pacote.modo}). Responda em português do Brasil, de forma direta e objetiva, sempre baseado nos dados abaixo — não invente números que não estejam neles. Quando fizer contas, mostre o raciocínio de forma resumida.${avisoCorte}\n\nDados extraídos (JSON):\n\`\`\`json\n${dadosTexto}\n\`\`\``;
+  const systemPrompt = `Você é um analista de dados comerciais ajudando a equipe da ${marcaAtiva().nome} a interpretar dados extraídos do CRM Bitrix24 (${pacote.modo}). Responda em português do Brasil, de forma direta e objetiva, sempre baseado nos dados abaixo — não invente números que não estejam neles. Quando fizer contas, mostre o raciocínio de forma resumida.${avisoCorte}\n\nDados extraídos (JSON):\n\`\`\`json\n${dadosTexto}\n\`\`\``;
 
   v10ChatHistorico.push({ role: "user", content: pergunta });
   input.value = "";

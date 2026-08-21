@@ -497,6 +497,11 @@ async function listarCompletoRelatorio(webhook, method, campos, filtro = {}, ord
   return { dados: acumulado, total, duplicados };
 }
 
+// v27 — contador só para gerar um id único por tabela renderizada nesta
+// página (permite ter várias tabelas com busca própria na mesma tela, ex.:
+// Diário SDR com 5 tabelas visíveis ao mesmo tempo).
+let contadorTabelaRelatorio = 0;
+
 function tabelaRelatorio(campos, dados, limite = 250) {
   if (!dados?.length) return "<p class='rodape-nota' style='padding:10px;'>Nenhum registro encontrado.</p>";
   const lista = dados.slice(0, limite);
@@ -515,7 +520,40 @@ function tabelaRelatorio(campos, dados, limite = 250) {
   if (dados.length > limite) {
     h += `<p class="rodape-nota" style="padding:8px 10px;">Prévia de ${limite} de ${dados.length} linhas. O CSV contém tudo.</p>`;
   }
-  return h;
+
+  // v27 — campo de busca em tempo real sobre as linhas já renderizadas
+  // (filtra no navegador, sem chamar o Bitrix de novo). tabelaRelatorio() é a
+  // única função de renderização de tabela usada por Jornada, Diário/Análise
+  // SDR, Forecast (semanal/mensal) e todo o Catálogo — colocar a busca aqui
+  // cobre "todos os relatórios" de uma vez, sem precisar repetir em cada um.
+  const idTabela = `tabelaRel${++contadorTabelaRelatorio}`;
+  return `<div class="tabela-relatorio-wrap">` +
+    `<div class="tabela-relatorio-busca-row">` +
+    `<input type="text" id="${idTabela}Busca" class="tabela-relatorio-busca" placeholder="🔎 Buscar nesta tabela..." oninput="filtrarTabelaRelatorio('${idTabela}')">` +
+    `<span class="rodape-nota" id="${idTabela}Contador"></span>` +
+    `</div>` +
+    `<div id="${idTabela}">${h}</div>` +
+  `</div>`;
+}
+
+// Filtra as linhas (<tr>) já renderizadas de uma tabelaRelatorio() pelo texto
+// digitado — comparação normalizada (sem acento, minúscula) contra todo o
+// texto da linha, então funciona em qualquer coluna sem precisar configurar
+// nada por relatório.
+function filtrarTabelaRelatorio(idTabela) {
+  const input = document.getElementById(`${idTabela}Busca`);
+  const container = document.getElementById(idTabela);
+  const contador = document.getElementById(`${idTabela}Contador`);
+  if (!input || !container) return;
+  const termo = normalizarTextoChave(input.value);
+  const linhas = container.querySelectorAll("tbody tr");
+  let visiveis = 0;
+  linhas.forEach((tr) => {
+    const bate = !termo || normalizarTextoChave(tr.textContent).includes(termo);
+    tr.style.display = bate ? "" : "none";
+    if (bate) visiveis++;
+  });
+  if (contador) contador.textContent = termo ? `${visiveis} de ${linhas.length} linha(s)` : "";
 }
 
 function camposDeDados(dados) {
@@ -567,45 +605,6 @@ function barraAtingimentoMeta(rotulo, realizado, meta, projetado) {
   </div>`;
 }
 
-// v15 — card de meta em destaque: meta, entregue e projeção juntos no mesmo
-// card, com a seta de tendência dentro do próprio card (substitui a barra
-// separada na Visão geral do forecast — mais destaque, menos peças soltas).
-// v23 — sem a linha de "Projeção final" (pedido explícito: só meta/entregue/
-// gap ficam visíveis); ganhou um gauge radial (SVG puro) do % da meta e as
-// classes de "pisca" (glow pulsante, ver .valor-pisca no CSS) nos valores.
-function gaugeMetaSvg(pct, noCaminho) {
-  const p = Math.max(0, Math.min(100, pct));
-  const r = 30, c = 2 * Math.PI * r, dash = (p / 100) * c;
-  const cor = noCaminho ? "var(--good)" : "#d03b3b";
-  return `<svg viewBox="0 0 72 72" class="meta-gauge" role="img" aria-label="${p}% da meta atingido">
-    <circle cx="36" cy="36" r="${r}" class="meta-gauge-trilha"/>
-    <circle cx="36" cy="36" r="${r}" class="meta-gauge-progresso valor-pisca" style="stroke:${cor};stroke-dasharray:${dash.toFixed(1)} ${c.toFixed(1)}"/>
-    <text x="36" y="41" text-anchor="middle" class="meta-gauge-texto">${p}%</text>
-  </svg>`;
-}
-function cardMetaDestaque(titulo, meta, realizado, projetado) {
-  if (!meta) {
-    return `<div class="meta-card-destaque sem-meta"><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor">A definir</div><div class="meta-card-linha"><span>Meta não informada</span></div></div>`;
-  }
-  const bateu = realizado >= meta;
-  const noCaminho = bateu || (projetado != null && projetado >= meta);
-  const pct = Math.max(0, Math.round((realizado / meta) * 1000) / 10);
-  const gap = Math.max(0, meta - realizado);
-  const seta = noCaminho
-    ? `<span class="meta-seta meta-seta-up" title="Batendo a meta ou projetando bater">▲</span>`
-    : `<span class="meta-seta meta-seta-down" title="Não está batendo nem projetando bater a meta">▼</span>`;
-  const badgeAlerta = noCaminho ? "" : `<span class="badge-ping" title="Projeção não está batendo a meta">!</span>`;
-  return `<div class="meta-card-destaque ${noCaminho ? "no-caminho" : "abaixo"}">
-    ${badgeAlerta}
-    <div class="meta-card-topo">
-      <div><div class="meta-card-label">${escapeHtmlRelatorio(titulo)}</div><div class="meta-card-valor valor-pisca">${moedaRelatorio(meta)}</div></div>
-      ${gaugeMetaSvg(pct, noCaminho)}
-    </div>
-    <div class="meta-card-linha"><span>Entregue</span><strong class="valor-pisca">${seta} ${moedaRelatorio(realizado)}</strong></div>
-    <div class="meta-card-linha"><span>Gap para a meta</span><strong class="valor-pisca">${bateu ? "Meta batida" : moedaRelatorio(gap)}</strong></div>
-  </div>`;
-}
-
 // ---------------------------------------------------------------------------
 // v20 — histórico local de Meta Mensal: como a ferramenta é 100% client-side
 // (sem backend/banco), cada extração do Forecast (semanal ou catálogo mensal)
@@ -614,8 +613,14 @@ function cardMetaDestaque(titulo, meta, realizado, projetado) {
 // é histórico só deste navegador/dispositivo, não sincroniza entre pessoas.
 // ---------------------------------------------------------------------------
 const CHAVE_HISTORICO_FORECAST_LOCAL = "atlas-extrator-historico-forecast";
+// v27 — multi-empresa: sufixo por marca (igual ao webhook em bitrix-api.js),
+// senão o histórico local de Forecast da Total Trac se misturaria com o da
+// AtlasGR (mesma chave global de localStorage antes desta mudança).
+function chaveHistoricoForecastAtual() {
+  return CHAVE_HISTORICO_FORECAST_LOCAL + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "");
+}
 function carregarHistoricoForecastLocal() {
-  try { return JSON.parse(localStorage.getItem(CHAVE_HISTORICO_FORECAST_LOCAL) || "[]"); }
+  try { return JSON.parse(localStorage.getItem(chaveHistoricoForecastAtual()) || "[]"); }
   catch (e) { return []; }
 }
 function salvarHistoricoForecastLocal(snapshot) {
@@ -626,7 +631,7 @@ function salvarHistoricoForecastLocal(snapshot) {
     if (idx >= 0) lista[idx] = snapshot; else lista.push(snapshot);
     lista.sort((a, b) => a.data.localeCompare(b.data));
     while (lista.length > 60) lista.shift();
-    localStorage.setItem(CHAVE_HISTORICO_FORECAST_LOCAL, JSON.stringify(lista));
+    localStorage.setItem(chaveHistoricoForecastAtual(), JSON.stringify(lista));
   } catch (e) { /* localStorage indisponível (modo privado, quota) — segue sem histórico */ }
 }
 // v20 — mini gráfico de tendência (SVG puro, sem lib) comparando fechado no mês
@@ -744,8 +749,14 @@ function pontosAtencaoEvolucaoHtml(pontos) {
 async function iniciarPaginaEvolucao() {
   const status = document.getElementById("evolucaoStatus");
   if (status) status.textContent = "Carregando histórico...";
+  // v27 — relatorios/forecast-semanal/historico.json é escrito só pela
+  // automação da AtlasGR (scripts/forecast-semanal.mjs, webhook fixo dela) —
+  // não existe automação equivalente para a Total Trac. Buscar esse arquivo
+  // fora da AtlasGR misturaria dado de uma empresa na tela da outra, então só
+  // a AtlasGR usa a fonte "automática"; Total Trac fica só com o histórico
+  // local (extrações feitas nesta ferramenta).
   const [compartilhado, local] = await Promise.all([
-    carregarHistoricoCompartilhadoForecast(),
+    empresaAtiva() === "atlasgr" ? carregarHistoricoCompartilhadoForecast() : Promise.resolve([]),
     Promise.resolve(carregarHistoricoForecastLocal()),
   ]);
   const pontos = mesclarHistoricosForecast(compartilhado, local);

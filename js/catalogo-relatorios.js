@@ -92,19 +92,20 @@ function pontosDeAtencaoGenerico(kpis){
 }
 function gerarHTMLRelatorioVisualGenerico(r){
   if(!r?.titulo)return "";
+  const marca=marcaAtiva();
   const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value valor-pisca">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
   const atencaoHtml=pontosDeAtencaoGenerico(r.kpis);
   const tabelasHtml=(r.tabelas||[]).map((t,i)=>{
     const tabela=tabelaModelo((t.colunas||[]).map((c)=>({label:c.label,valor:typeof c.valor==="function"?c.valor:(row)=>row[c.valor],html:!!c.html})),(t.dados||[]).slice(0,t.limite||300));
     return `<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
   }).join("");
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
-  `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
-  `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(r.titulo)}</h1><p class="subtitle">${(r.subtitulo||"").replace(/<[^>]+>/g,"")||"Extraído automaticamente pelo extrator Atlas."}</p></div></header>`+
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>`+
+  `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
+  `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(r.titulo)}</h1><p class="subtitle">${(r.subtitulo||"").replace(/<[^>]+>/g,"")||`Extraído automaticamente pelo extrator ${escapeHtmlRelatorio(marca.nome)}.`}</p></div></header>`+
   `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2>${atencaoHtml}<div class="kpis">${kpisHtml||'<p class="small-note">Sem indicadores.</p>'}</div></div>`+
   `<h2 class="section">Detalhamento</h2><div class="top3grid">${tabelasHtml||'<p class="small-note">Sem tabelas neste relatório.</p>'}</div>`+
   (r.nota?`<div class="note">${escapeHtmlRelatorio(r.nota)}</div>`:"")+
-  `<a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · ${escapeHtmlRelatorio(r.titulo)}</footer></body></html>`;
+  `<a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · ${escapeHtmlRelatorio(r.titulo)}</footer></body></html>`;
 }
 function abrirRelatorioVisualCatalogo(){
   const r=resultadoRelatorioCatalogo;if(!r?.titulo)return;
@@ -882,4 +883,34 @@ const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="ht
         <path d="M753.69,174.78q-20.75,0-33.48-10.82t-12.82-28.6h29q.11,7.09,5.14,10.88T754.89,150A20.3,20.3,0,0,0,766,147.14a9.17,9.17,0,0,0,4.54-8.18,7.43,7.43,0,0,0-1.55-4.69,11.43,11.43,0,0,0-4.84-3.35,43.86,43.86,0,0,0-6.48-2.09q-3.2-.75-8.39-1.65-4.68-.8-7.88-1.45t-7.73-1.94a44.3,44.3,0,0,1-7.64-2.85,43.08,43.08,0,0,1-6.54-4.14,23,23,0,0,1-5.49-5.74,29.62,29.62,0,0,1-3.39-7.63,34.21,34.21,0,0,1-1.35-9.88,31.18,31.18,0,0,1,12.28-25.5q12.27-9.82,32.13-9.83t32,10.13q12.07,10.13,12.17,26.7H769.56q-.09-6.49-4.44-9.78T752.9,82q-6.9,0-10.83,2.9a9.07,9.07,0,0,0-3.94,7.68,7.92,7.92,0,0,0,.64,3.25,5.9,5.9,0,0,0,2.3,2.49q1.65,1,3.09,1.8a22.06,22.06,0,0,0,4.39,1.49c2,.5,3.56.87,4.79,1.1l5.64,1q16.07,2.89,23.16,6,17.86,8,17.86,27.94,0,16.86-12.67,27t-33.64,10.12"/>
         <polygon points="153.4 87.56 167.65 62.87 167.68 62.85 178.13 44.72 178.11 44.68 178.15 44.68 203.95 0 182.97 0 152.31 0 110.4 0 99.17 0 73.37 44.68 73.35 44.72 62.87 62.87 48.62 87.56 48.41 87.94 0 171.76 83.81 171.76 104.78 171.76 125.74 135.49 125.76 135.44 153.19 87.94 153.4 87.56"/>
         <polygon points="203.07 87.94 175.75 87.94 153.9 125.79 153.9 125.83 137.02 155.01 146.7 171.76 209.57 171.76 251.48 171.76 203.07 87.94"/></svg>`;
+
+// v27 — logo da Total Trac para os relatórios exportáveis (segundo tenant do
+// portal), reproduzindo o símbolo (pin de localização + ondas de wi-fi) e o
+// wordmark de duas cores do manual de identidade visual deles (TOTAL em
+// navy #374898, TRAC em azul #008FCE) — mesmo padrão String.raw do logo
+// acima, usado por gerarHTMLRelatorioVisualGenerico/cockpitGerarHTMLExport/
+// gerarHTMLForecastModelo/gerarHTMLRelatorioJoao via marcaAtiva().logoSvg.
+const MODELO_EXECUTIVO_LOGO_TOTALTRAC = String.raw`<svg viewBox="0 0 620 120" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(2,4)">
+    <path d="M52 0C27 0 7 19 7 43c0 30 45 71 45 71s45-41 45-71C97 19 77 0 52 0z" fill="#93DBF2"/>
+    <circle cx="52" cy="43" r="15" fill="#ffffff"/>
+    <circle cx="52" cy="43" r="6.5" fill="#374898"/>
+    <path d="M52 20a24 24 0 0 1 24 20" stroke="#ffffff" stroke-width="6.5" fill="none" stroke-linecap="round"/>
+    <path d="M52 31a13 13 0 0 1 13 11" stroke="#ffffff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  </g>
+  <text x="122" y="76" font-family="Poppins, Arial, sans-serif" font-weight="800" font-size="54"><tspan fill="#374898">TOTAL</tspan><tspan fill="#008FCE">TRAC</tspan></text>
+</svg>`;
+
+// Constrói o CSS do modelo executivo (letterhead/kpis/etc.) trocando a cor de
+// marca (--orange/--orange-2/--orange-3) pelas cores da empresa ativa — os
+// três hexes abaixo aparecem uma única vez cada, na definição de :root do
+// MODELO_EXECUTIVO_CSS (ver `--orange`/`--orange-2`/`--orange-3`), então essa
+// substituição simples reskinha todo o relatório exportado sem duplicar o
+// CSS inteiro por marca.
+function modeloExecutivoCssParaMarca(marca) {
+  return MODELO_EXECUTIVO_CSS
+    .replace("#FF5618", marca.corPrimaria)
+    .replace("#FF8008", marca.corSecundaria1)
+    .replace("#FF6B10", marca.corSecundaria2);
+}
 

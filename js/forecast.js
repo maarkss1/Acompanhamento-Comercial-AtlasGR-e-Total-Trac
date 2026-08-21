@@ -269,6 +269,7 @@ function mesesForecastModelo(rows,tipo,porEtapa=false,dominio) {
 }
 function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const r=resultado?.modelo_visual;if(!r)return "";
+  const marca=marcaAtiva();
   const periodo=tipo==="mensal"?mesAnoBR(r.periodo_fim):`${formatarDataBR(r.periodo_inicio)} a ${formatarDataBR(r.periodo_fim)}`;
   const metaMensal=tipo==="semanal"?(Number(resultado?.meta?.meta_mensal)||0):(Number(resultado?.meta_visual)||0);
   // v21 — "Entregue" no card de Meta Mensal usa a MESMA base da seção "✅
@@ -285,17 +286,20 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const realizadoMes=Number(r.resumo.FECHADOS_VALOR)||0;
   const projecaoMes=realizadoMes+pipelinePonderadoMesDelta;
   const stats=(n,c)=>`${n} negócio(s) · ${c} cliente(s)`;
-  // v18 — meta mensal volta a ser o card em destaque (cardMetaDestaque): mostra
-  // % da meta batido, Gap e projeção final (fechado + pipeline aberto ponderado
-  // do mês, recalculados a cada extração/dia), com seta verde/vermelha conforme
-  // a projeção bate ou não a meta.
-  // v19 — mais vida: alerta no topo avisando se a projeção do mês bate ou não a
-  // meta, badge de notificação nos Pendentes Assinatura, balões de dica nos
-  // rótulos dos KPIs e um popup com a metodologia do relatório.
-  const metaNoCaminho=metaMensal>0&&(realizadoMes>=metaMensal||projecaoMes>=metaMensal);
-  const alertaMeta=!metaMensal?"":metaNoCaminho
-    ?`<div class="alert-banner good"><span class="icon">✅</span><span>Projeção do mês (<strong>${moedaRelatorio(projecaoMes)}</strong>) está no caminho para bater a meta de ${moedaRelatorio(metaMensal)}.</span></div>`
-    :`<div class="alert-banner bad"><span class="icon">⚠️</span><span>Projeção do mês (<strong>${moedaRelatorio(projecaoMes)}</strong>) está abaixo da meta de ${moedaRelatorio(metaMensal)} — faltam ${moedaRelatorio(Math.max(0,metaMensal-projecaoMes))} na projeção.</span></div>`;
+  // v18 — meta mensal em cards separados na Visão geral (Meta / Entregue / Gap),
+  // recalculados a cada extração/dia a partir do fechado e do pipeline aberto
+  // ponderado do mês.
+  // v25 — removido o banner de alerta "Projeção do mês está abaixo/no caminho
+  // da meta" (pedido explícito): a mesma informação já aparece nos cards
+  // Meta/Entregue/Gap logo abaixo, sem duplicar o aviso.
+  const metaBatida=metaMensal>0&&realizadoMes>=metaMensal;
+  const metaNoCaminho=metaBatida||(metaMensal>0&&projecaoMes>=metaMensal);
+  const gapMeta=Math.max(0,metaMensal-realizadoMes);
+  const cardsMeta=!metaMensal
+    ?`<div class="kpi kpi-clickable"><div class="label">Meta Mensal</div><div class="value valor-pisca">A definir</div><div class="small">Meta não informada</div></div>`
+    :`<div class="kpi kpi-clickable"><div class="label">Meta Mensal → <span class="info-tip" data-tip="Meta comercial do mês, editável antes da extração.">i</span></div><div class="value valor-pisca">${moedaRelatorio(metaMensal)}</div><div class="small">Projeção: ${moedaRelatorio(projecaoMes)}</div></div>`+
+      `<div class="kpi ${metaNoCaminho?"good":"warn"} kpi-clickable"><div class="label">Entregue → <span class="info-tip" data-tip="Fechado no mês (contrato assinado).">i</span></div><div class="value valor-pisca">${moedaRelatorio(realizadoMes)}</div><div class="small">${metaNoCaminho?"No caminho da meta":"Abaixo da meta"}</div></div>`+
+      `<div class="kpi ${metaBatida?"good":"warn"} kpi-clickable"><div class="label">Gap para a meta</div><div class="value valor-pisca">${metaBatida?"Meta batida":moedaRelatorio(gapMeta)}</div><div class="small">${metaBatida?"":"Falta para bater a meta"}</div></div>`;
   const semCloseDate=Number(resultado?.resumo?.SEM_CLOSEDATE_QTD)||0;
   const closeDateVencida=Number(resultado?.resumo?.CLOSEDATE_VENCIDA_QTD)||0;
   const alertaHigiene=(semCloseDate+closeDateVencida)<=0?"":`<div class="alert-banner warn"><span class="icon">🧹</span><span>${semCloseDate?`${semCloseDate} negócio(s) sem CLOSEDATE`:""}${semCloseDate&&closeDateVencida?" e ":""}${closeDateVencida?`${closeDateVencida} com CLOSEDATE vencida`:""} — vale revisar antes de fechar o mês.</span></div>`;
@@ -320,7 +324,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   const compMax=Math.max(1,comp.valorAtual||0,comp.valorAnoPassado||0);
   const compDeltaTxt=comp.deltaPct==null?"sem negócios fechados no mesmo período do ano passado para comparar":`${comp.deltaPct>=0?"+":""}${comp.deltaPct}% em relação a ${escapeHtmlRelatorio(comp.anoPassadoLabel||"ano passado")}`;
   const comparativoAnoHtml=(comp.valorAtual||comp.valorAnoPassado)?`<div class="mini-chart" style="margin:0;">`+
-    `<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(comp.anoAtualLabel||"Este ano")}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(comp.valorAtual/compMax)*100).toFixed(1)}%;background:#FF5618"></div></div><div class="barvalue valor-pisca">${moedaRelatorio(comp.valorAtual)}</div></div>`+
+    `<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(comp.anoAtualLabel||"Este ano")}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(comp.valorAtual/compMax)*100).toFixed(1)}%;background:${marca.corPrimaria}"></div></div><div class="barvalue valor-pisca">${moedaRelatorio(comp.valorAtual)}</div></div>`+
     `<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(comp.anoPassadoLabel||"Ano passado")}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(comp.valorAnoPassado/compMax)*100).toFixed(1)}%;background:#8A8078"></div></div><div class="barvalue valor-pisca">${moedaRelatorio(comp.valorAnoPassado)}</div></div>`+
     `<div class="small-note" style="margin:8px 0 0;">${comp.negociosAtual||0} negócio(s) este ano · ${comp.negociosAnoPassado||0} no mesmo período do ano passado · <strong>${compDeltaTxt}</strong></div></div>`
     :`<p class="small-note">Sem negócios fechados no mesmo período do ano passado para comparar.</p>`;
@@ -340,16 +344,16 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
     `<div class="vcard analise-card"><div class="analise-card-titulo">🧭 Pipeline por estágio</div>${pipelineEstagioHtml}</div>`+
     `<div class="vcard analise-card analise-card-wide"><div class="analise-card-titulo">🔎 Estatísticas adicionais</div>${statsAdicionaisHtml}</div>`+
     `</div>`;
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · Atlas</title><style>${MODELO_EXECUTIVO_CSS}</style></head><body>`+
-  `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${MODELO_EXECUTIVO_LOGO}<div class="letterhead-divider"></div><div class="letterhead-tagline">Gerenciamento de Risco em Processos Logísticos</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forecast Comercial — ${escapeHtmlRelatorio(periodo)} · ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>`+
+  `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>Forecast Comercial — ${escapeHtmlRelatorio(periodo)}</h1><p class="subtitle">Fechados, pendentes de assinatura e pipeline aberto, preenchidos automaticamente pelo extrator.</p></div></header>`+
   `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral<button type="button" class="btn-info-flutuante" onclick="abrirPopupInfo()" title="Como esses números são calculados">i</button></h2>`+
-  alertaMeta+alertaHigiene+
+  alertaHigiene+
   `<div class="kpis">`+
   `<div class="kpi good kpi-clickable" onclick="abrirDetalhe('detail-fechados')"><div class="label">Fechados → <span class="info-tip" data-tip="Negócios com contrato assinado dentro do período selecionado.">i</span></div><div class="value valor-pisca">${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</div><div class="small">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)}</div></div>`+
   `<div class="kpi warn kpi-clickable" onclick="abrirDetalhe('detail-pendentes')">${badgePendentes}<div class="label">Pendentes Assinatura → <span class="info-tip" data-tip="Negócios aguardando assinatura, parados há no máximo 60 dias.">i</span></div><div class="value valor-pisca">${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</div><div class="small">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)}</div></div>`+
   `<div class="kpi kpi-clickable" onclick="abrirDetalhe('detail-forecast')"><div class="label">Pipeline Aberto → <span class="info-tip" data-tip="Negócios em aberto no funil Comercial, sem estágios Piloto, parados há no máximo 60 dias.">i</span></div><div class="value valor-pisca">${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</div><div class="small">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)}</div></div>`+
-  `${cardMetaDestaque("Meta Mensal",metaMensal,realizadoMes,projecaoMes)}</div>`+
+  `${cardsMeta}</div>`+
   trendBox+
   `</div>`+
   `<div class="note"><b>Negócios ≠ clientes</b>O relatório mostra as duas contagens separadamente. Assim, se existirem 31 negócios de 20 clientes, você verá 31 negócios e 20 clientes.</div>`+
@@ -360,7 +364,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
   `<details class="vcard section-card" id="detail-fechados"><summary><span class="vcard-name">✅ Fechados</span><span class="vcard-stats">${stats(r.resumo.FECHADOS_NEGOCIOS,r.resumo.FECHADOS_CLIENTES)} · ${moedaRelatorio(r.resumo.FECHADOS_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_fechados)}<div class="cgrid">${r.fechados.map((x)=>cardForecastModelo(x,"fechado",r.dominio)).join("")}</div></div></details>`+
   `<details class="vcard section-card" id="detail-pendentes"><summary><span class="vcard-name">⏳ Pendentes Assinatura</span><span class="vcard-stats">${stats(r.resumo.PENDENTES_NEGOCIOS,r.resumo.PENDENTES_CLIENTES)} · ${moedaRelatorio(r.resumo.PENDENTES_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body"><div class="month-list">${mesesForecastModelo(r.pendentes,"pendente",false,r.dominio)}</div></div></details>`+
   `<details class="vcard section-card" id="detail-forecast"><summary><span class="vcard-name">📈 Pipeline Aberto — Forecast</span><span class="vcard-stats">${stats(r.resumo.PIPELINE_NEGOCIOS,r.resumo.PIPELINE_CLIENTES)} · ${moedaRelatorio(r.resumo.PIPELINE_VALOR)}</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${renderBarModelo(r.vendedores_pipeline)}<div class="month-list">${mesesForecastModelo(r.pipeline,"pipeline",true,r.dominio)}</div></div></details>`+
-  `</div><a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${MODELO_EXECUTIVO_LOGO}<span>Atlas</span></div>Atlas · Forecast Comercial</footer>`+
+  `</div><a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · Forecast Comercial</footer>`+
   popupMetodologia+
   `<script>function abrirDetalhe(id){var e=document.getElementById(id);if(!e)return;e.open=true;var n=e.querySelectorAll('details');for(var i=0;i<n.length;i++)n[i].open=true;e.scrollIntoView({behavior:'smooth',block:'start'});}function abrirPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.add('aberto');}function fecharPopupInfo(){var e=document.getElementById('popupInfo');if(e)e.classList.remove('aberto');}document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fecharPopupInfo();});function filtrarRelatorioPorVendedor(nome){var cards=document.querySelectorAll('.ccard[data-vendedor]');cards.forEach(function(c){c.style.display=(!nome||c.dataset.vendedor===nome)?'':'none';});var grupos=document.querySelectorAll('.month-card, .stage-card');grupos.forEach(function(g){var visiveis=Array.prototype.slice.call(g.querySelectorAll('.ccard')).some(function(c){return c.style.display!=='none';});g.style.display=visiveis?'':'none';});var aviso=document.getElementById('filtroVendedorAviso');if(aviso)aviso.textContent=nome?('Mostrando apenas negócios de: '+nome):'';}<\/script></body></html>`;
 }
@@ -587,7 +591,7 @@ async function extrairForecastSemanal(webhook) {
     const forecastMesTotal = fechadoMes + pipelinePonderadoMes;
     const gapMensal = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : 0;
 
-    atualizarStatus("Forecast: montando modelo executivo Atlas...");
+    atualizarStatus(`Forecast: montando modelo executivo ${marcaAtiva().nome}...`);
     const modeloVisualForecast = await construirDadosModeloForecast(webhook, meta, inicio, fim, deals);
 
     // v21 — grava a "foto" de hoje no histórico local (ver js/jornada.js) já com
