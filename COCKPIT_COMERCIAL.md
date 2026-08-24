@@ -33,10 +33,20 @@ por `enriquecerDealCatalogo` (`js/catalogo-relatorios.js:22`), que já calcula
 e `_CICLO` — o Cockpit não recalcula essas fórmulas, só as consome.
 
 ### 1. Resultado do Mês (`cockpitCalcular`, `js/cockpit.js:257`, bloco A)
-- **Fonte**: negócios com `_SEMANTICA==="success"` e `_FECHAMENTO` dentro do
-  **mês-calendário atual** (`cockpitMesAtual`, `js/cockpit.js:238` — mesma
-  convenção do Forecast semanal, que também sempre olha o mês atual
-  independente do período filtrado, ver `js/forecast.js:303-307`).
+- **Fonte (v26)**: negócios do **funil Financeiro**, etapa "Contrato
+  Assinado" (`cockpitEhFechadoFinanceiro`), com data de movimento
+  (`MOVED_TIME`, fallback `DATE_CREATE`) dentro do **mês-calendário atual**
+  (`cockpitMesAtual`, `js/cockpit.js:238`) — mesma fonte e mesmo critério já
+  usados pelo Forecast (`ehFechado`/`DATA_MOVIMENTO` em
+  `construirDadosModeloForecast`, `js/forecast.js:163-168`). O Cockpit busca
+  esses negócios numa segunda chamada (`cockpitBuscarDealsFinanceiro`,
+  `js/cockpit.js`), além dos negócios do Comercial já extraídos.
+  Antes usava só negócios do Comercial com `_SEMANTICA==="success"` — um
+  cálculo mais simples que produzia um valor bem menor e divergente do que
+  o Forecast mostra para o mesmo mês (auditoria de comparação, 2026-08-24).
+  O bloco "Eficiência da Máquina" (Win Rate/Ganhos/Perdidos) **continua**
+  usando o funil Comercial — é uma métrica de conversão de oportunidade, não
+  de faturamento, propósito diferente do "Fechado no mês".
 - **Meta New MRR**: campo editável `#cockpitMetaMensal`, pré-preenchido por
   `metaMensalPadrao()` (`js/config.js:289`, tabela `METAS_FORECAST_MENSAL_PADRAO`).
 - **Fechado** = soma de `_VALOR` dos ganhos do mês.
@@ -193,8 +203,19 @@ arquivo) — nenhum código React foi copiado.
   auditoria de comparação).
 
 ### 5. Pipeline por Estágio (bloco G, `js/cockpit.js:339-354`)
-- Agrupa **todos** os negócios abertos do Comercial (inclui "Piloto", para
-  mostrar o funil completo) por `_ESTAGIO`.
+- **Cards visíveis (v26, `c.estagiosForecast`)**: agrupa só os negócios
+  abertos do Comercial **parados na etapa atual há até 60 dias, sem
+  estágios "Piloto"** — mesmo recorte já usado pelo Forecast para o pipeline
+  aberto (`dentroJanela60d`/`ehEstagioPiloto`, `js/forecast.js:170-177`).
+  Antes agrupava **todos** os negócios abertos sem filtro, o que produzia
+  valores por estágio bem maiores e divergentes dos mesmos estágios no
+  Forecast (auditoria de comparação, 2026-08-24).
+- **Base sem filtro (`c.estagios`)**: continua existindo internamente — é a
+  base do alerta "Estágio com aging médio acima de 45 dias" (item 3 dos
+  Alertas Gerenciais, abaixo) e do "Pipeline Total"/"Saúde do Pipeline"
+  (bloco C), que **de propósito** olham todo o pipeline aberto, incluindo
+  negócios muito parados — filtrar por 60 dias aqui esconderia justamente os
+  piores casos que esses dois recursos existem para flagar.
 - Por estágio: quantidade, soma de valor, % do total, e **aging médio** —
   média de dias entre `MOVED_TIME` e a data de referência, mesma lógica de
   aging usada em `aging_sla` (`js/catalogo-relatorios.js:169-176`). Estágios

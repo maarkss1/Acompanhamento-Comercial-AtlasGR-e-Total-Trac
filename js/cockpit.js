@@ -24,6 +24,11 @@ let cockpitState = {
   ultimaAtualizacao: null,
   deals: [],           // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
   dealsFiltrados: [],  // após filtro de vendedor/origem
+  // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
+  // fonte usada pelo Forecast para "Fechado no mês" (ver
+  // cockpitBuscarDealsFinanceiro/cockpitGanhosFinanceiroPeriodo abaixo).
+  dealsFinanceiro: [],
+  dealsFinanceiroFiltrados: [],
   meta: null,           // metadados de funil/estágio (buscarMetadadosFunisEEstagios)
   periodo: { inicio: "", fim: "" },
 };
@@ -257,6 +262,7 @@ function cockpitReaplicarFiltros() {
   const termo = (cockpitEl("cockpitProduto")?.value || "").trim();
   if (termo) { aplicarFiltroProdutoCockpit(); return; }
   cockpitState.dealsFiltrados = cockpitFiltrarPorVendedorOrigem(cockpitState.deals);
+  cockpitState.dealsFinanceiroFiltrados = cockpitFiltrarPorVendedorOrigem(cockpitState.dealsFinanceiro || []);
   renderizarCockpit();
 }
 
@@ -291,6 +297,16 @@ async function atualizarCockpit() {
     cockpitState.deals = enriquecidos;
     cockpitState.dealsFiltrados = cockpitFiltrarPorVendedorOrigem(enriquecidos);
     cockpitState.meta = base.meta;
+
+    // v26 — "Fechado no mês" usa o funil Financeiro, etapa "Contrato
+    // Assinado" — mesma fonte já usada pelo Forecast (js/forecast.js:128-168)
+    // — em vez de só o funil Comercial marcado como "Ganho", que produzia um
+    // valor bem menor e divergente do que o Forecast mostra para o mesmo mês.
+    atualizarStatus("Cockpit: buscando negócios do funil Financeiro...");
+    const dealsFinanceiro = await cockpitBuscarDealsFinanceiro(webhook, base);
+    cockpitState.dealsFinanceiro = dealsFinanceiro;
+    cockpitState.dealsFinanceiroFiltrados = cockpitFiltrarPorVendedorOrigem(dealsFinanceiro);
+
     cockpitState.periodo = cockpitPeriodoFiltro();
     cockpitState.ultimaAtualizacao = new Date();
     const filtroProduto = cockpitEl("cockpitProduto")?.value?.trim();
@@ -300,13 +316,34 @@ async function atualizarCockpit() {
       renderizarCockpit();
     }
     atualizarRelogioCockpit();
-    atualizarStatus(`Cockpit atualizado: ${enriquecidos.length} negócio(s) do Comercial carregado(s).`);
+    atualizarStatus(`Cockpit atualizado: ${enriquecidos.length} negócio(s) do Comercial e ${dealsFinanceiro.length} do Financeiro carregado(s).`);
   } catch (e) {
     mostrarErro("Não foi possível atualizar o Cockpit Executivo.\n\nDetalhe técnico: " + e.message);
   } finally {
     cockpitState.carregando = false;
     if (btn) btn.disabled = false;
   }
+}
+
+// v26 — busca os negócios do funil Financeiro com os mesmos campos/critério
+// já usados pelo Forecast (construirDadosModeloForecast, js/forecast.js:128-136),
+// e completa o mapa de empresas com os COMPANY_ID que só aparecem nele, para
+// o drill-down mostrar o nome do cliente corretamente.
+async function cockpitBuscarDealsFinanceiro(webhook, base) {
+  const catsFin = encontrarCategoriasPorPalavras(base.meta, ["financeiro"], false);
+  if (!catsFin.length) return [];
+  const filtro = catsFin.length === 1 ? { CATEGORY_ID: catsFin[0] } : { "@CATEGORY_ID": catsFin };
+  const campos = [
+    "ID", "TITLE", "CATEGORY_ID", "STAGE_ID", "STAGE_SEMANTIC_ID", "OPPORTUNITY", "CURRENCY_ID",
+    "ASSIGNED_BY_ID", "COMPANY_ID", "CONTACT_ID", "LEAD_ID", "SOURCE_ID", "DATE_CREATE", "MOVED_TIME", "CLOSEDATE",
+  ];
+  const busca = await listarCompletoRelatorio(webhook, "crm.deal.list", campos, filtro, { ID: "ASC" }, "Cockpit: buscando negócios do funil Financeiro...");
+  const idsFaltando = [...new Set(busca.dados.map((d) => d.COMPANY_ID).filter(idBitrixValido).map(idBitrixString))].filter((id) => !base.empresas[id]);
+  if (idsFaltando.length) {
+    const empresasFin = await buscarEntidadesPorIds(webhook, "crm.company.list", idsFaltando, ["ID", "TITLE", "PHONE", "EMAIL", "DATE_CREATE", "ASSIGNED_BY_ID"]);
+    Object.assign(base.empresas, empresasFin);
+  }
+  return busca.dados.map((d) => enriquecerDealCatalogo(d, base));
 }
 
 // ---------------------------------------------------------------------------
@@ -421,13 +458,37 @@ function cockpitCoverageRecomendado(winRate) {
   return 1 / (winRate / 100);
 }
 
+// v26 — "Fechado no mês" (Resultado do Mês) passa a usar o funil Financeiro,
+// etapa "Contrato Assinado" — mesmo critério e mesma base de data (MOVED_TIME)
+// já usados pelo Forecast (ehFechado/DATA_MOVIMENTO em
+// construirDadosModeloForecast, js/forecast.js:163-168) — em vez de só o
+// funil Comercial marcado como "Ganho" (STAGE_SEMANTIC_ID=success), que
+// produzia um valor bem menor e divergente do que o Forecast já mostrava
+// para o mesmo mês, confundindo quem comparava os dois relatórios lado a lado.
+function cockpitEhFechadoFinanceiro(d) {
+  const n = normalizarTextoChave(d._ESTAGIO || "");
+  return n.includes("contrato assinado") || (d._SEMANTICA === "success" && n.includes("assin"));
+}
+// Data usada para decidir em qual mês o fechamento entra: MOVED_TIME (quando
+// o negócio entrou na etapa atual), não CLOSEDATE/_FECHAMENTO — é a mesma
+// base (DATA_MOVIMENTO) usada pelo Forecast para este mesmo cálculo.
+function cockpitDataFechamentoFinanceiro(d) {
+  return parteDataISO(d.MOVED_TIME) || parteDataISO(d.DATE_CREATE);
+}
+function cockpitGanhosFinanceiroPeriodo(periodo) {
+  const deals = cockpitState.dealsFinanceiroFiltrados || [];
+  return deals
+    .filter((d) => cockpitEhFechadoFinanceiro(d) && dentroPeriodoCatalogo(cockpitDataFechamentoFinanceiro(d), periodo))
+    .map((d) => ({ ...d, _DIA_FECHAMENTO: cockpitDataFechamentoFinanceiro(d) }));
+}
+
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = cockpitMesAtual();
   const drill = {};
 
   // -------------------- A) Resultado do Mês (sempre mês-calendário atual) --
-  const ganhosMes = deals.filter((d) => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, mes));
+  const ganhosMes = cockpitGanhosFinanceiroPeriodo(mes);
   const fechadoMes = ganhosMes.reduce((a, d) => a + d._VALOR, 0);
   const metaMensal = Number(cockpitEl("cockpitMetaMensal")?.value) || 0;
   const pctMeta = metaMensal > 0 ? Math.round((fechadoMes / metaMensal) * 1000) / 10 : null;
@@ -557,28 +618,53 @@ function cockpitCalcular() {
 
   // -------------------- G) Pipeline por Estágio -----------------------------
   const refAging = new Date(`${mes.referencia}T12:00:00`);
-  const porEstagio = {};
-  abertosTodos.forEach((d) => {
-    const k = d._ESTAGIO || "Sem estágio";
-    if (!porEstagio[k]) porEstagio[k] = { estagio: k, qtd: 0, valor: 0, agingSoma: 0, agingN: 0, deals: [] };
-    const g = porEstagio[k];
-    g.qtd++; g.valor += d._VALOR; g.deals.push(d);
-    const mt = parteDataISO(d.MOVED_TIME);
-    if (mt) { g.agingSoma += Math.max(0, Math.floor((refAging - new Date(`${mt}T12:00:00`)) / 86400000)); g.agingN++; }
-  });
-  const totalEstagios = Object.values(porEstagio).reduce((a, g) => a + g.valor, 0);
-  const estagiosLista = Object.values(porEstagio).map((g) => ({
-    ...g,
-    pctTotal: totalEstagios > 0 ? Math.round((g.valor / totalEstagios) * 1000) / 10 : 0,
-    agingMedio: g.agingN ? Math.round((g.agingSoma / g.agingN) * 10) / 10 : null,
-  })).sort((a, b) => b.valor - a.valor);
+  function agruparPorEstagio(lista) {
+    const porEstagio = {};
+    lista.forEach((d) => {
+      const k = d._ESTAGIO || "Sem estágio";
+      if (!porEstagio[k]) porEstagio[k] = { estagio: k, qtd: 0, valor: 0, agingSoma: 0, agingN: 0, deals: [] };
+      const g = porEstagio[k];
+      g.qtd++; g.valor += d._VALOR; g.deals.push(d);
+      const mt = parteDataISO(d.MOVED_TIME);
+      if (mt) { g.agingSoma += Math.max(0, Math.floor((refAging - new Date(`${mt}T12:00:00`)) / 86400000)); g.agingN++; }
+    });
+    const total = Object.values(porEstagio).reduce((a, g) => a + g.valor, 0);
+    return Object.values(porEstagio).map((g) => ({
+      ...g,
+      pctTotal: total > 0 ? Math.round((g.valor / total) * 1000) / 10 : 0,
+      agingMedio: g.agingN ? Math.round((g.agingSoma / g.agingN) * 10) / 10 : null,
+    })).sort((a, b) => b.valor - a.valor);
+  }
+  // Base sem filtro (todo o pipeline aberto) — usada pelo alerta de aging
+  // alto por estágio, que precisa enxergar negócios MUITO parados (>60d)
+  // para ter algum valor de alerta; filtrar aqui esconderia justamente os
+  // piores casos.
+  const estagiosLista = agruparPorEstagio(abertosTodos);
+  const totalEstagios = estagiosLista.reduce((a, g) => a + g.valor, 0);
   estagiosLista.forEach((g, i) => { drill[`estagio_${i}`] = g.deals; });
+  // v26 — "Pipeline por Estágio" (cards visíveis) passa a considerar só
+  // negócios parados na etapa atual há até 60 dias, sem estágios Piloto —
+  // mesmo recorte já usado pelo Forecast para o pipeline aberto
+  // (dentroJanela60d/ehEstagioPiloto, js/forecast.js:170-177). Antes este
+  // bloco somava TODO o pipeline aberto sem filtro (ainda usado acima para
+  // o alerta de aging e para "Saúde do Pipeline"/Pipeline Total, que
+  // continuam de propósito sem filtro), o que produzia valores por estágio
+  // bem maiores e divergentes dos mesmos estágios no Forecast.
+  const abertosPipelineEstagio = abertosTodos.filter((d) => {
+    if (ehEstagioPiloto(d.STAGE_ID, d._ESTAGIO)) return false;
+    const dataRef = parteDataISO(d.MOVED_TIME) || parteDataISO(d.DATE_CREATE);
+    if (!dataRef) return false;
+    const dias = Math.floor((refAging - new Date(`${dataRef}T12:00:00`)) / 86400000);
+    return dias >= 0 && dias <= 60;
+  });
+  const estagiosForecastLista = agruparPorEstagio(abertosPipelineEstagio);
+  estagiosForecastLista.forEach((g, i) => { drill[`estagioFc_${i}`] = g.deals; });
 
   const mesAnteriorObj = new Date(Number(mes.inicio.split("-")[0]), Number(mes.inicio.split("-")[1]) - 1, 1);
   const mFimObj = new Date(mesAnteriorObj.getFullYear(), mesAnteriorObj.getMonth() + 1, 0);
   const mesAnterior = { inicio: formatarDataISO(mesAnteriorObj), fim: formatarDataISO(mFimObj) };
   
-  const ganhosMesAnterior = deals.filter((d) => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, mesAnterior));
+  const ganhosMesAnterior = cockpitGanhosFinanceiroPeriodo(mesAnterior);
   const fechadoMesAnterior = ganhosMesAnterior.reduce((a, d) => a + d._VALOR, 0);
   const qtdAnterior = ganhosMesAnterior.length;
   const ticketMedioMesAnterior = qtdAnterior ? fechadoMesAnterior / qtdAnterior : null;
@@ -600,12 +686,12 @@ function cockpitCalcular() {
 
   return {
     mes, deals,
-    resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes, fechadoMesMom, qtdMom, ticketMom },
+    resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes, fechadoMesMom, qtdMom, ticketMom, deals: ganhosMes },
     forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
     saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, coverageRecomendado, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
     eficiencia: { winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length, ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro },
-    estagios: estagiosLista, totalEstagios,
+    estagios: estagiosLista, totalEstagios, estagiosForecast: estagiosForecastLista,
   };
 }
 
@@ -1167,14 +1253,18 @@ function renderizarCockpit() {
       `<td>${p.coverageRecomendado != null ? `${p.coverageRecomendado.toFixed(2)}x` : "não disponível"}</td>` +
       `</tr>`).join("") + `</tbody></table>`;
 
-  // E) Pipeline por Estágio
-  const maxValor = Math.max(1, ...c.estagios.map((g) => g.valor));
-  cockpitEl("cockpitEstagios").innerHTML = c.estagios.map((g, i) => `
-    <div class="cockpit-estagio-linha" onclick="cockpitAbrirDrill('estagio_${i}','Negócios em ${escapeHtmlRelatorio(g.estagio)}')">
+  // E) Pipeline por Estágio — v26: só negócios parados na etapa atual há até
+  // 60 dias, sem estágios Piloto (mesmo recorte do Forecast; ver
+  // cockpitCalcular/abertosPipelineEstagio). O alerta de aging alto continua
+  // olhando o pipeline sem esse filtro (c.estagios), para não perder de
+  // vista os negócios mais parados.
+  const maxValor = Math.max(1, ...c.estagiosForecast.map((g) => g.valor));
+  cockpitEl("cockpitEstagios").innerHTML = c.estagiosForecast.map((g, i) => `
+    <div class="cockpit-estagio-linha" onclick="cockpitAbrirDrill('estagioFc_${i}','Negócios em ${escapeHtmlRelatorio(g.estagio)}')">
       <div class="cockpit-estagio-nome">${escapeHtmlRelatorio(g.estagio)}</div>
       <div class="cockpit-estagio-barra"><div class="cockpit-estagio-barra-fill" style="width:${Math.max(2, (g.valor / maxValor) * 100).toFixed(1)}%"></div></div>
       <div class="cockpit-estagio-stats">${g.qtd} negócio(s) · ${moedaRelatorio(g.valor)} · ${g.pctTotal}% · aging médio ${g.agingMedio != null ? `${g.agingMedio}d` : "não disponível"}</div>
-    </div>`).join("") || `<p class="rodape-nota">Nenhum negócio em aberto no Comercial.</p>`;
+    </div>`).join("") || `<p class="rodape-nota">Nenhum negócio elegível (≤60 dias na etapa, sem Piloto).</p>`;
 
   // F) Eficiência da Máquina
   cockpitEl("cockpitEficiencia").innerHTML = [
@@ -1349,7 +1439,7 @@ function cockpitListaKpisExport(cache) {
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
   add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
 
-  (c.estagios || []).forEach((eg) => {
+  (c.estagiosForecast || []).forEach((eg) => {
     add("Pipeline por Estágio", eg.estagio, moeda(eg.valor), "R$");
   });
 
@@ -1492,12 +1582,14 @@ function cockpitRenderizarGrafico(c) {
   const ctx = document.getElementById("graficoEvolucaoPipeline");
   if (!ctx || !window.Chart) return;
   
-  // Agrupar fechamentos por dia do mês atual
-  const ganhosMes = c.resultadoMesFechado || (c.deals || []).filter(d => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, c.mes));
+  // Agrupar fechamentos por dia do mês atual (mesma base de "Fechado no
+  // mês" — funil Financeiro, data MOVED_TIME — ver cockpitGanhosFinanceiroPeriodo)
+  const ganhosMes = c.resultadoMes.deals || [];
   const diasMes = new Date(c.mes.hojeISO).getDate();
   const dados = new Array(diasMes).fill(0);
   ganhosMes.forEach(d => {
-    const dia = parseInt(d._FECHAMENTO.split("-")[2], 10);
+    if (!d._DIA_FECHAMENTO) return;
+    const dia = parseInt(d._DIA_FECHAMENTO.split("-")[2], 10);
     if (dia >= 1 && dia <= diasMes) dados[dia-1] += d._VALOR;
   });
   
@@ -1536,8 +1628,8 @@ function cockpitRenderizarMetasDesdobradas(c) {
   const metaGlobal = c.resultadoMes.metaMensal || 0;
   elGlobal.textContent = moedaRelatorio(metaGlobal);
   
-  const ganhosMes = c.resultadoMesFechado || (c.deals || []).filter(d => d._SEMANTICA === "success" && dentroPeriodoCatalogo(d._FECHAMENTO, c.mes));
-  
+  const ganhosMes = c.resultadoMes.deals || [];
+
   // Agrupar por vendedor
   const vendasVendedor = {};
   ganhosMes.forEach(d => {
