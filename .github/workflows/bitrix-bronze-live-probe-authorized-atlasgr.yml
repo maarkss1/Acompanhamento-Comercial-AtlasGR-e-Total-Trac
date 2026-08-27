@@ -1,0 +1,124 @@
+name: Bitrix Bronze Live Probe Authorized - AtlasGR
+
+on:
+  push:
+    branches:
+      - cpi-sprint02-integration
+    paths:
+      - '.github/workflows/bitrix-bronze-live-probe-authorized-atlasgr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bitrix-bronze-live-probe-authorized-atlasgr
+  cancel-in-progress: false
+
+jobs:
+  live-read-probe:
+    name: live-read-probe-atlasgr
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cpi_probe
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cpi_probe"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: cpi_probe
+      BITRIX_PORTAL: atlasgr
+      BITRIX_MAX_RECORDS: '100'
+      BITRIX_LIVE_PROBE_CONFIRMATION: READ_ONLY_LIVE_PROBE
+      BRONZE_SQL_OUT: ${{ runner.temp }}/bitrix-bronze-live.sql
+      BRONZE_MANIFEST_OUT: ${{ runner.temp }}/bitrix-bronze-live-manifest.json
+      BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
+
+    steps:
+      - name: Verify authorized read-only mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$BITRIX_LIVE_PROBE_CONFIRMATION" != "READ_ONLY_LIVE_PROBE" ]; then
+            echo "::error::Probe não autorizado."
+            exit 1
+          fi
+          if [ -z "$BITRIX_WEBHOOK_URL" ]; then
+            echo "::error::Required repository secret BITRIX_WEBHOOK_URL is not configured."
+            exit 1
+          fi
+          echo "::add-mask::$BITRIX_WEBHOOK_URL"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y postgresql-client >/dev/null
+
+      - name: Apply Bronze migrations to ephemeral PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in db/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
+          done
+
+      - name: Read bounded AtlasGR sample and prepare Bronze load
+        run: node scripts/bitrix-bronze-live-probe.mjs
+
+      - name: Load sample into ephemeral PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f "$BRONZE_SQL_OUT" >/dev/null
+
+      - name: Publish safe aggregate summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          import { readFileSync } from 'node:fs';
+          const m = JSON.parse(readFileSync(process.env.BRONZE_MANIFEST_OUT, 'utf8'));
+          console.log('## AtlasGR Bitrix Bronze live probe');
+          console.log('');
+          console.log('Amostra máxima por entidade: **100**');
+          console.log('');
+          console.log('| Entidade | Status | Lidos | Válidos | Inválidos |');
+          console.log('|---|---|---:|---:|---:|');
+          for (const r of m.runs || []) {
+            console.log(`| ${r.entidade} | ${r.status} | ${r.registros_lidos} | ${r.registros_validos} | ${r.registros_invalidos} |`);
+          }
+          console.log('');
+          console.log(`Rejeições auditadas: **${Number(m.rejeicoes || 0)}**`);
+          NODE
+          psql -v ON_ERROR_STOP=1 -At <<'SQL' >> "$GITHUB_STEP_SUMMARY"
+          SELECT E'\nSnapshots persistidos no PostgreSQL efêmero: **' ||
+                 ((SELECT count(*) FROM intelligence.staging_negocios) +
+                  (SELECT count(*) FROM intelligence.staging_leads)) || '**';
+          SQL
+
+      - name: Remove ephemeral files
+        if: always()
+        shell: bash
+        run: rm -f "$BRONZE_SQL_OUT" "$BRONZE_MANIFEST_OUT"
