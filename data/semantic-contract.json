@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "contract_id": "atlasgr-intelligence-hub-semantic-minimum",
   "sprint": "02",
   "layer": "semantic",
@@ -9,7 +9,10 @@
     "data/governance-decisions.json",
     "js/entity-resolution.js",
     "js/staging-schema.js",
-    "db/migrations/001_staging_bronze.sql"
+    "db/migrations/001_staging_bronze.sql",
+    "db/migrations/002_bronze_ingestion_audit.sql",
+    "scripts/bronze-ingest.mjs",
+    ".github/workflows/bronze-ingestion-validation.yml"
   ],
   "live_data_verified": false,
   "governance": {
@@ -34,7 +37,7 @@
     {
       "entity_id": "deal",
       "layer": "staging",
-      "status": "schema_and_migration_validated_postgresql16_no_ingestion",
+      "status": "schema_migration_and_synthetic_ingestion_validated_postgresql16",
       "business_key": "staging_id",
       "source": "crm.deal.list",
       "persistence_target": "intelligence.staging_negocios",
@@ -43,11 +46,20 @@
     {
       "entity_id": "lead",
       "layer": "staging",
-      "status": "schema_and_migration_validated_postgresql16_no_ingestion",
+      "status": "schema_migration_and_synthetic_ingestion_validated_postgresql16",
       "business_key": "staging_id",
       "source": "crm.lead.list",
       "persistence_target": "intelligence.staging_leads",
       "master_entity_link": "resolved from COMPANY_ID/CONTACT_ID/name"
+    },
+    {
+      "entity_id": "ingestion_rejection",
+      "layer": "staging_audit",
+      "status": "schema_and_synthetic_quarantine_validated_postgresql16",
+      "business_key": "run_id + entity + source_fingerprint",
+      "source": "staging contract validation failures",
+      "persistence_target": "intelligence.ingestion_rejections",
+      "raw_payload_persisted": false
     },
     {
       "entity_id": "company",
@@ -236,7 +248,9 @@
     "runtime_database_validated": true,
     "runtime_database_validation_scope": "isolated_postgresql_16_github_actions",
     "production_database_validated": false,
-    "bronze_ingestion_validated": false,
+    "bronze_ingestion_pipeline_validated": true,
+    "bronze_ingestion_validation_scope": "synthetic_bitrix_envelope_to_postgresql16_github_actions",
+    "bronze_live_source_ingestion_validated": false,
     "bitrix_live_verified": false,
     "metric_owners_ratified": false,
     "pending_business_thresholds_resolved": false,
