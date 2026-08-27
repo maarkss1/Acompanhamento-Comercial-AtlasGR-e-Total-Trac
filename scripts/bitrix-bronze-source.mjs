@@ -49,6 +49,15 @@ export function normalizarWebhookBitrix(webhook) {
   return url.toString().replace(/\/$/, '');
 }
 
+function normalizarMaxRecords(maxRecords) {
+  if (maxRecords === null || maxRecords === undefined || maxRecords === '') return null;
+  const n = Number(maxRecords);
+  if (!Number.isInteger(n) || n < 1 || n > 20_000) {
+    throw erroSeguro('maxRecords deve ser inteiro entre 1 e 20000');
+  }
+  return n;
+}
+
 function construirBody(select, start) {
   const params = new URLSearchParams();
   for (const field of select) params.append('select[]', field);
@@ -129,10 +138,12 @@ export async function listarBitrixPaginado({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   retries = MAX_RETRIES,
   pageDelayMs = DEFAULT_PAGE_DELAY_MS,
+  maxRecords = null,
 }) {
   if (typeof fetchImpl !== 'function') throw erroSeguro('fetch indisponível para leitura Bitrix');
   const webhookBase = normalizarWebhookBitrix(webhook);
   if (!ALLOWED_METHODS.has(method)) throw erroSeguro(`método Bitrix não permitido no adaptador Bronze: ${method}`);
+  const limite = normalizarMaxRecords(maxRecords);
 
   let start = 0;
   const result = [];
@@ -146,6 +157,7 @@ export async function listarBitrixPaginado({
     const chunk = chunkResult(body);
     mergeUniqueById(result, chunk);
 
+    if (limite !== null && result.length >= limite) return result.slice(0, limite);
     if (body?.next === undefined || body?.next === null || chunk.length === 0) break;
     const next = Number(body.next);
     if (!Number.isFinite(next) || next < 0) throw erroSeguro('Bitrix retornou cursor de paginação inválido');
@@ -153,7 +165,7 @@ export async function listarBitrixPaginado({
     if (pageDelayMs > 0) await sleep(pageDelayMs);
   }
 
-  return result;
+  return limite === null ? result : result.slice(0, limite);
 }
 
 export async function criarEnvelopeBronzeDoBitrix({
@@ -164,14 +176,16 @@ export async function criarEnvelopeBronzeDoBitrix({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   retries = MAX_RETRIES,
   pageDelayMs = DEFAULT_PAGE_DELAY_MS,
+  maxRecords = null,
 }) {
   const portalNormalizado = String(portal || '').trim().toLowerCase();
   if (!['atlasgr', 'totaltrac'].includes(portalNormalizado)) throw erroSeguro('portal inválido para fonte Bitrix Bronze');
   normalizarWebhookBitrix(webhook);
+  const limite = normalizarMaxRecords(maxRecords);
 
   // Sequencial por desenho: reduz pressão sobre o rate limit e torna o run mais auditável.
-  const negocios = await listarBitrixPaginado({ webhook, method: 'crm.deal.list', fetchImpl, timeoutMs, retries, pageDelayMs });
-  const leads = await listarBitrixPaginado({ webhook, method: 'crm.lead.list', fetchImpl, timeoutMs, retries, pageDelayMs });
+  const negocios = await listarBitrixPaginado({ webhook, method: 'crm.deal.list', fetchImpl, timeoutMs, retries, pageDelayMs, maxRecords: limite });
+  const leads = await listarBitrixPaginado({ webhook, method: 'crm.lead.list', fetchImpl, timeoutMs, retries, pageDelayMs, maxRecords: limite });
 
   const timestamp = extraidoEm instanceof Date ? extraidoEm : new Date(extraidoEm);
   if (Number.isNaN(timestamp.getTime())) throw erroSeguro('extraidoEm inválido');
