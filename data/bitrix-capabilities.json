@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_id": "atlasgr-bitrix-capabilities",
+  "generated_from": "static_repository_evidence",
+  "live_api_verified": false,
+  "base_commit": "31c0b806943d2fa4d0af192fc9a141ba5f9cdbc2",
+  "status_legend": ["implemented", "partial", "not_verifiable"],
+  "tenants": {
+    "atlasgr": {
+      "connection": "manual_webhook_or_github_secret",
+      "known_pipeline_metadata": "hardcoded_fallback_plus_dynamic_discovery",
+      "metadata_confidence": "partial"
+    },
+    "totaltrac": {
+      "connection": "manual_webhook",
+      "known_pipeline_metadata": "shared_atlasgr_hardcoded_fallback",
+      "metadata_confidence": "not_verifiable_without_live_api"
+    }
+  },
+  "entities": [
+    {
+      "id": "deals",
+      "label": "Negócios",
+      "status": "implemented",
+      "list_method": "crm.deal.list",
+      "fields_method": "crm.deal.fields",
+      "dynamic_fields": true,
+      "key_field": "ID",
+      "write": { "supported": true, "method": "crm.item.update", "entity_type_id": 2 },
+      "related_methods": ["crm.deal.productrows.get", "crm.stagehistory.list", "crm.category.list", "crm.status.list"],
+      "known_fields": ["ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "OPPORTUNITY", "CURRENCY_ID", "DATE_CREATE", "DATE_MODIFY", "MOVED_TIME", "CLOSEDATE", "BEGINDATE", "UF_CRM_1770928318695", "ASSIGNED_BY_ID", "CREATED_BY_ID", "MODIFY_BY_ID", "MOVED_BY_ID", "COMPANY_ID", "CONTACT_ID", "SOURCE_ID", "CLOSED", "LEAD_ID", "STAGE_SEMANTIC_ID", "PROBABILITY", "UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN", "UTM_CONTENT", "UTM_TERM", "LAST_ACTIVITY_TIME", "LAST_ACTIVITY_BY"],
+      "pii_fields": ["TITLE"],
+      "relationships": ["COMPANY_ID->companies.ID", "CONTACT_ID->contacts.ID", "LEAD_ID->leads.ID", "ASSIGNED_BY_ID->users.ID"],
+      "history": "stage_history_available",
+      "evidence": ["js/config.js", "js/jornada.js", "js/catalogo-relatorios.js", "js/forecast.js", "js/cockpit.js"]
+    },
+    {
+      "id": "leads",
+      "label": "Leads",
+      "status": "implemented",
+      "list_method": "crm.lead.list",
+      "fields_method": "crm.lead.fields",
+      "dynamic_fields": true,
+      "key_field": "ID",
+      "write": { "supported": true, "method": "crm.item.update", "entity_type_id": 1 },
+      "known_fields": ["ID", "TITLE", "STATUS_ID", "SOURCE_ID", "OPPORTUNITY", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID", "COMPANY_ID", "COMPANY_TITLE", "CONTACT_ID", "NAME", "LAST_NAME", "PHONE", "EMAIL", "UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN", "UTM_CONTENT", "UTM_TERM", "CREATED_BY_ID", "DATE_CLOSED", "LAST_ACTIVITY_TIME", "LAST_ACTIVITY_BY"],
+      "pii_fields": ["TITLE", "COMPANY_TITLE", "NAME", "LAST_NAME", "PHONE", "EMAIL"],
+      "relationships": ["COMPANY_ID->companies.ID", "CONTACT_ID->contacts.ID", "ASSIGNED_BY_ID->users.ID"],
+      "history": "no_dedicated_history_persisted",
+      "evidence": ["js/config.js", "js/jornada.js", "js/sdr.js", "js/catalogo-relatorios.js"]
+    },
+    {
+      "id": "companies",
+      "label": "Empresas",
+      "status": "implemented",
+      "list_method": "crm.company.list",
+      "get_method": "crm.company.get",
+      "fields_method": "crm.company.fields",
+      "dynamic_fields": true,
+      "key_field": "ID",
+      "write": { "supported": true, "method": "crm.item.update", "entity_type_id": 4 },
+      "known_fields": ["ID", "TITLE", "COMPANY_TYPE", "INDUSTRY", "DATE_CREATE", "ASSIGNED_BY_ID", "PHONE", "EMAIL"],
+      "pii_fields": ["TITLE", "PHONE", "EMAIL"],
+      "relationships": ["ASSIGNED_BY_ID->users.ID"],
+      "history": "no_dedicated_history_persisted",
+      "evidence": ["js/config.js", "js/jornada.js", "js/catalogo-relatorios.js", "js/extrator.js"]
+    },
+    {
+      "id": "contacts",
+      "label": "Contatos",
+      "status": "implemented",
+      "list_method": "crm.contact.list",
+      "fields_method": "crm.contact.fields",
+      "dynamic_fields": true,
+      "key_field": "ID",
+      "write": { "supported": true, "method": "crm.item.update", "entity_type_id": 3 },
+      "known_fields": ["ID", "NAME", "LAST_NAME", "COMPANY_ID", "DATE_CREATE", "ASSIGNED_BY_ID", "PHONE", "EMAIL"],
+      "pii_fields": ["NAME", "LAST_NAME", "PHONE", "EMAIL"],
+      "relationships": ["COMPANY_ID->companies.ID", "ASSIGNED_BY_ID->users.ID"],
+      "history": "no_dedicated_history_persisted",
+      "evidence": ["js/config.js", "js/jornada.js", "js/sdr.js"]
+    },
+    {
+      "id": "activities",
+      "label": "Atividades",
+      "status": "implemented",
+      "list_method": "crm.activity.list",
+      "fields_method": "crm.activity.fields",
+      "dynamic_fields": true,
+      "key_field": "ID",
+      "write": { "supported": false, "method": null, "entity_type_id": null },
+      "known_fields": ["ID", "SUBJECT", "TYPE_ID", "PROVIDER_TYPE_ID", "DIRECTION", "COMPLETED", "STATUS", "RESPONSIBLE_ID", "OWNER_ID", "OWNER_TYPE_ID", "PRIORITY", "CREATED", "LAST_UPDATED", "START_TIME", "END_TIME", "DEADLINE", "DESCRIPTION"],
+      "pii_fields": ["SUBJECT", "DESCRIPTION"],
+      "relationships": ["RESPONSIBLE_ID->users.ID", "OWNER_ID+OWNER_TYPE_ID->crm_entity"],
+      "history": "current_activity_records_only",
+      "evidence": ["js/config.js", "js/sdr.js"]
+    },
+    {
+      "id": "users",
+      "label": "Usuários",
+      "status": "implemented",
+      "list_method": "user.get",
+      "fields_method": null,
+      "dynamic_fields": false,
+      "key_field": "ID",
+      "write": { "supported": false, "method": null, "entity_type_id": null },
+      "known_fields": ["ID", "XML_ID", "NAME", "LAST_NAME", "SECOND_NAME", "ACTIVE", "WORK_POSITION", "EMAIL", "LOGIN", "PERSONAL_PHONE", "PERSONAL_MOBILE", "PERSONAL_WWW", "PERSONAL_BIRTHDAY", "PERSONAL_PHOTO", "LAST_LOGIN", "DATE_REGISTER", "TIME_ZONE", "UF_DEPARTMENT", "IS_ONLINE"],
+      "pii_fields": ["NAME", "LAST_NAME", "SECOND_NAME", "EMAIL", "LOGIN", "PERSONAL_PHONE", "PERSONAL_MOBILE", "PERSONAL_BIRTHDAY", "PERSONAL_PHOTO"],
+      "relationships": [],
+      "history": "no_dedicated_history_persisted",
+      "evidence": ["js/config.js", "js/bitrix-api.js", "scripts/forecast-semanal.mjs"]
+    }
+  ],
+  "supporting_capabilities": [
+    { "id": "deal_categories", "status": "implemented", "method": "crm.category.list", "purpose": "discover_deal_pipelines", "evidence": ["js/jornada.js"] },
+    { "id": "deal_stages", "status": "implemented", "method": "crm.status.list", "purpose": "discover_deal_stages_and_sources", "evidence": ["js/jornada.js", "js/bitrix-api.js", "scripts/forecast-semanal.mjs"] },
+    { "id": "deal_stage_history", "status": "implemented", "method": "crm.stagehistory.list", "purpose": "historical_stage_events", "known_fields": ["ID", "OWNER_ID", "STAGE_ID", "CATEGORY_ID", "STAGE_SEMANTIC_ID", "CREATED_TIME"], "evidence": ["js/jornada.js"] },
+    { "id": "deal_product_rows", "status": "implemented", "method": "crm.deal.productrows.get", "purpose": "products_per_deal", "known_fields": ["PRODUCT_NAME", "QUANTITY", "MEASURE_NAME", "PRICE", "PRICE_ACCOUNT", "PRICE_BRUTTO", "PRICE_NETTO", "PRICE_EXCLUSIVE", "DISCOUNT_RATE", "DISCOUNT_SUM", "DISCOUNT_TYPE_ID", "TAX_RATE", "TAX_INCLUDED", "PRODUCT_ID", "ID", "TYPE", "SORT", "CUSTOMIZED"], "evidence": ["js/extrator.js", "js/cockpit.js"] },
+    { "id": "generic_crm_item_read", "status": "implemented", "methods": ["crm.item.get", "crm.item.fields"], "purpose": "generic_item_read_for_supported_core_entities", "evidence": ["js/ui.js"] },
+    { "id": "generic_crm_item_write", "status": "partial", "method": "crm.item.update", "purpose": "write_back_deal_lead_company_contact", "risk": "requires_explicit_permission_and_audit", "evidence": ["js/ui.js", "js/exportacoes.js"] }
+  ],
+  "not_verifiable_without_live_api": [
+    { "id": "smart_process_automation", "status": "not_verifiable", "reason": "no_custom_entity_type_id_reference_found_in_production_code" },
+    { "id": "invoices", "status": "not_verifiable", "reason": "no_invoice_method_reference_found_in_production_code" },
+    { "id": "quotes", "status": "not_verifiable", "reason": "no_quote_method_reference_found_in_production_code" },
+    { "id": "timeline_comments", "status": "not_verifiable", "reason": "no_timeline_comment_extraction_reference_found_in_production_code" },
+    { "id": "call_recordings", "status": "not_verifiable", "reason": "activity_metadata_exists_but_recording_binary_or_url_extraction_not_confirmed" },
+    { "id": "email_bodies_and_attachments", "status": "not_verifiable", "reason": "activity_metadata_exists_but_message_body_and_attachment_extraction_not_confirmed" }
+  ],
+  "known_gaps": [
+    "No live Bitrix schema snapshot is versioned.",
+    "Custom UF_CRM fields are discoverable dynamically but are not cataloged field-by-field in a persistent corporate dictionary.",
+    "Total Trac pipeline and stage labels are not independently verified; the UI fallback shares AtlasGR metadata.",
+    "There is no persistent history for leads, companies, contacts, activities or users.",
+    "Product row extraction is N+1 per deal.",
+    "Generic CRM write-back exists and requires stronger access governance and audit before broad use."
+  ]
+}
