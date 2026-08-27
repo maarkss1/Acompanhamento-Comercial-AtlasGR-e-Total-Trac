@@ -1,0 +1,186 @@
+name: Fix Forecast Fechado Financeiro
+
+on:
+  push:
+    branches:
+      - 'fix/forecast-node-fechado-financeiro'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[fechado-financeiro-generated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply focused Financeiro reconciliation patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/forecast-semanal.mjs')
+          text = path.read_text(encoding='utf-8')
+
+          marker = 'async function buscarMetadadosEstagiosComercial() {'
+          if text.count(marker) != 1:
+              raise SystemExit(f'marcador de metadados Comercial esperado 1x, encontrado {text.count(marker)}x')
+
+          helpers = '''function idsCategoriasFinanceiro(categorias) {
+            const ids = [];
+            for (const c of categorias || []) {
+              const id = c?.id ?? c?.ID;
+              const nome = normalizarTextoChave(c?.name || c?.NAME || "");
+              if (id !== undefined && id !== null && nome.includes("financeiro")) ids.push(String(id));
+            }
+            return [...new Set(ids)];
+          }
+
+          function ehFechadoFinanceiroForecastSemanal(d, metaStage) {
+            metaStage = metaStage || {};
+            const label = normalizarTextoChave(metaStage.label || "");
+            const semantica = classificarSemanticaForecastSemanal(d, metaStage);
+            return label.includes("contrato assinado") || (semantica === "success" && label.includes("assin"));
+          }
+
+          function dataFechamentoFinanceiroForecastSemanal(d) {
+            return parteDataISO(d?.MOVED_TIME) || parteDataISO(d?.DATE_CREATE);
+          }
+
+          function somarFechadosFinanceiroForecastSemanal(deals, metadadosPorCategoria, inicio, fim) {
+            return (deals || []).reduce((total, d) => {
+              const categoriaId = String(d?.CATEGORY_ID ?? "");
+              const metaStage = metadadosPorCategoria?.[categoriaId]?.[String(d?.STAGE_ID || "")] || {};
+              if (!ehFechadoFinanceiroForecastSemanal(d, metaStage)) return total;
+              const data = dataFechamentoFinanceiroForecastSemanal(d);
+              if (!dentroFaixa(data, inicio, fim)) return total;
+              return total + (Number(d?.OPPORTUNITY) || 0);
+            }, 0);
+          }
+
+          async function buscarCategoriasFinanceiro() {
+            try {
+              const corpo = await chamarBitrix("crm.category.list", { entityTypeId: 2 });
+              const bruto = corpo?.result?.categories ?? corpo?.result ?? [];
+              const categorias = Array.isArray(bruto) ? bruto : Object.values(bruto || {});
+              const ids = idsCategoriasFinanceiro(categorias);
+              if (ids.length) return ids;
+              console.warn('Nenhuma categoria com nome "Financeiro" foi encontrada via crm.category.list. Usando fallback conhecido CATEGORY_ID=20.');
+            } catch (e) {
+              console.warn(`Nao foi possivel descobrir categorias Financeiro (crm.category.list): ${e.message}. Usando fallback conhecido CATEGORY_ID=20.`);
+            }
+            return ["20"];
+          }
+
+          async function buscarMetadadosEstagiosCategorias(categoryIds) {
+            const metadados = {};
+            for (const categoryId of categoryIds || []) {
+              const cat = String(categoryId);
+              const entityId = Number(cat) === 0 ? "DEAL_STAGE" : `DEAL_STAGE_${cat}`;
+              try {
+                const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: entityId }, order: { SORT: "ASC" } });
+                metadados[cat] = {};
+                (corpo.result || []).forEach((st) => {
+                  metadados[cat][String(st.STATUS_ID)] = {
+                    label: st.NAME || st.STATUS_ID,
+                    semantics: st?.EXTRA?.SEMANTICS || st.SEMANTICS || "",
+                  };
+                });
+              } catch (e) {
+                console.warn(`Nao foi possivel buscar os estagios da categoria ${cat}: ${e.message}.`);
+                metadados[cat] = {};
+                if (cat === "20") {
+                  metadados[cat].WON = { label: "Contrato Assinado", semantics: "S" };
+                  metadados[cat].LOSE = { label: "Contrato Cancelado", semantics: "F" };
+                }
+              }
+            }
+            return metadados;
+          }
+
+          async function buscarDealsFinanceiro(categoryIds) {
+            const ids = [...new Set((categoryIds || []).map(String).filter(Boolean))];
+            if (!ids.length) return [];
+            const filtro = ids.length === 1 ? { CATEGORY_ID: ids[0] } : { "@CATEGORY_ID": ids };
+            const campos = [
+              "ID", "TITLE", "CATEGORY_ID", "STAGE_ID", "STAGE_SEMANTIC_ID", "OPPORTUNITY",
+              "ASSIGNED_BY_ID", "DATE_CREATE", "MOVED_TIME", "CLOSEDATE"
+            ];
+            return listarCompleto("crm.deal.list", { filter: filtro, select: campos, order: { ID: "ASC" } });
+          }
+
+          '''
+          text = text.replace(marker, helpers + marker)
+
+          users_anchor = '''  const metadadosEstagio = await buscarMetadadosEstagiosComercial();
+
+          let fechadoSemana = 0, fechadoMes = 0;
+          let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
+          '''
+          replacement = '''  const metadadosEstagio = await buscarMetadadosEstagiosComercial();
+
+            const categoriasFinanceiro = await buscarCategoriasFinanceiro();
+            const [dealsFinanceiro, metadadosFinanceiro] = await Promise.all([
+              buscarDealsFinanceiro(categoriasFinanceiro),
+              buscarMetadadosEstagiosCategorias(categoriasFinanceiro),
+            ]);
+            console.log(`Negocios nos funis Financeiro: ${dealsFinanceiro.length} | categorias: ${categoriasFinanceiro.join(", ")}`);
+
+            const fechadoSemana = somarFechadosFinanceiroForecastSemanal(
+              dealsFinanceiro, metadadosFinanceiro, inicioSemana, fimSemana
+            );
+            const fechadoMes = somarFechadosFinanceiroForecastSemanal(
+              dealsFinanceiro, metadadosFinanceiro, mesInicio, mesFim
+            );
+            let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
+          '''
+          if text.count(users_anchor) != 1:
+              raise SystemExit(f'bloco de inicialização esperado 1x, encontrado {text.count(users_anchor)}x')
+          text = text.replace(users_anchor, replacement)
+
+          success_block = '''    if (semantica === "success") {
+              if (dentroFaixa(d.CLOSEDATE, inicioSemana, fimSemana)) fechadoSemana += valor;
+              if (dentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) fechadoMes += valor;
+              continue;
+            }
+            if (semantica !== "process") continue;
+          '''
+          if text.count(success_block) != 1:
+              raise SystemExit(f'bloco antigo de fechado Comercial esperado 1x, encontrado {text.count(success_block)}x')
+          text = text.replace(success_block, '    if (semantica !== "process") continue;\n')
+
+          old_note = '_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Projeção = fechado + pipeline aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._'
+          new_note = '_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Entregue = negócios do Financeiro em “Contrato Assinado”, pela data de movimento (MOVED_TIME, fallback DATE_CREATE). Projeção = entregue + pipeline Comercial aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._'
+          if text.count(old_note) != 1:
+              raise SystemExit('nota explicativa antiga não encontrada exatamente 1x')
+          text = text.replace(old_note, new_note)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Commit validated fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/forecast-semanal.mjs tests/forecast-financeiro-node.test.mjs
+          git commit -m "fix: align Node forecast delivered revenue to Financeiro [fechado-financeiro-generated]"
+          git push origin HEAD:fix/forecast-node-fechado-financeiro
