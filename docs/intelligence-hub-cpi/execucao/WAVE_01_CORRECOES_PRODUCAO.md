@@ -141,6 +141,21 @@ cache local (TTL de 5 min) em vez de uma chamada de rede real.
 `atualizarRelogioCockpit()` acrescenta "⚠️ parcialmente do cache local (até
 5min)" ao rótulo "Última atualização" quando aplicável.
 
+## 7. `valoresMulticampo` chamada com 1 argumento em vez de 2 — CORRIGIDO (achado na Wave 2.1)
+
+**O que foi feito:** o Agente 03, ao formalizar o Data Trust Score na Wave 2.1
+(`docs/intelligence-hub-cpi/execucao/wave-02/03_DATA_TRUST_SCORE_FORMALIZADO.md`),
+encontrou que os relatórios `qualidade_crm` e `auditoria_sdr`
+(`js/catalogo-relatorios.js:341,365`) chamavam
+`valoresMulticampo(l.PHONE)`/`valoresMulticampo(l.EMAIL)` com um único
+argumento, enquanto a função é declarada como `valoresMulticampo(registro, campo)`
+(`js/jornada.js:59`). Com `campo` sempre `undefined`, o check "Telefone ou
+e-mail" desses dois relatórios **sempre reportava 100% dos Leads sem
+telefone/e-mail**, mesmo quando o dado estava de fato preenchido no Bitrix —
+um falso alarme de qualidade rodando em produção. Corrigido para
+`valoresMulticampo(l,"PHONE")`/`valoresMulticampo(l,"EMAIL")`, mesmo padrão de
+chamada já usado corretamente em `js/jornada.js:192,194,209,215`.
+
 ## Itens do diagnóstico da Wave 1 que permanecem em aberto (não são bugs pontuais)
 
 Os demais achados dos agentes 01-05 — ausência de camada de staging/histórico

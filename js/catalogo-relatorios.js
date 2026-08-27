@@ -338,7 +338,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
         {ENTIDADE:"Leads",CAMPO:"SOURCE_ID",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
         {ENTIDADE:"Leads",CAMPO:"ASSIGNED_BY_ID",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length},
         {ENTIDADE:"Leads",CAMPO:"Empresa / nome",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.COMPANY_TITLE||l.NAME||l.TITLE||"").trim()).length},
-        {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l.PHONE).length||valoresMulticampo(l.EMAIL).length)).length}
+        {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l,"PHONE").length||valoresMulticampo(l,"EMAIL").length)).length}
       ].map((x)=>({...x,COMPLETUDE_PCT:x.TOTAL?Math.round((1-x.FALTANTES/x.TOTAL)*10000)/100:100}));
       criarResultadoCatalogo(chave,"Qualidade do CRM & campos faltantes","Completude dos campos operacionais já mapeados.",
         [kpi("Negócios",ds.length),kpi("Leads",ls.length),kpi("Checks",checks.length),kpi("Ocorrências faltantes",checks.reduce((a,x)=>a+x.FALTANTES,0)),kpi("Deals sem cliente",checks[0].FALTANTES),kpi("Deals sem origem",checks[1].FALTANTES),kpi("Leads sem origem",checks[5].FALTANTES),kpi("Leads sem contato",checks[8].FALTANTES)],
@@ -362,7 +362,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
         {ENTIDADE:"Leads",CAMPO:"Ao menos 1 atividade vinculada",TOTAL:ls.length,FALTANTES:semAtividade.length},
         {ENTIDADE:"Atividades concluídas",CAMPO:"Assunto/resultado preenchido",TOTAL:a.dados.filter((x)=>x.COMPLETED==="Y").length,FALTANTES:concluidasSemAssunto.length},
         {ENTIDADE:"Leads em aberto",CAMPO:"Contato nos últimos 7 dias",TOTAL:abertos.length,FALTANTES:semContatoRecente.length},
-        {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l.PHONE).length||valoresMulticampo(l.EMAIL).length)).length},
+        {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l,"PHONE").length||valoresMulticampo(l,"EMAIL").length)).length},
         {ENTIDADE:"Leads",CAMPO:"Origem (SOURCE_ID)",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
         {ENTIDADE:"Leads",CAMPO:"Responsável atribuído",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length}
       ].map((x)=>({...x,COMPLETUDE_PCT:x.TOTAL?Math.round((1-x.FALTANTES/x.TOTAL)*10000)/100:100}));
