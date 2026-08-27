@@ -26,7 +26,12 @@
 
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 
-const WEBHOOK = process.env.BITRIX_WEBHOOK_URL || "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
+// Sem fallback fixo: o valor anterior estava em texto puro neste arquivo
+// versionado, ou seja, era uma credencial de producao exposta publicamente
+// (repositorio publico). O webhook precisa ser configurado exclusivamente
+// via o Secret BITRIX_WEBHOOK_URL do GitHub Actions (ja referenciado em
+// .github/workflows/forecast-semanal.yml).
+const WEBHOOK = process.env.BITRIX_WEBHOOK_URL;
 if (!WEBHOOK) {
   console.error("BITRIX_WEBHOOK_URL nao definido.");
   process.exit(1);

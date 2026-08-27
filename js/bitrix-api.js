@@ -4,7 +4,12 @@ function alternarVisibilidadeWebhook() {
 }
 
 
-const WEBHOOK_FIXO_PADRAO = "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
+// v28 — o valor fixo que existia aqui foi removido: estava em texto puro,
+// versionado em git e publicado no HTML servido via GitHub Pages (repositório
+// público), ou seja, era uma credencial de produção exposta publicamente. O
+// webhook precisa ser revogado/regenerado no Bitrix24 e colado manualmente
+// (mesmo fluxo que a Total Trac já usa, ver MARCAS.totaltrac em config.js).
+const WEBHOOK_FIXO_PADRAO = "";
 const CHAVE_WEBHOOK_LOCAL = "atlas-extrator-bitrix-webhook";
 
 // v27 — multi-empresa: cada marca (ver MARCAS em config.js) tem sua própria
@@ -554,6 +559,11 @@ function gerarHashSimples(str) {
 }
 
 window.FORCAR_ATUALIZACAO_BITRIX = false;
+// v29 — sinaliza se alguma chamada do ciclo de atualização atual foi servida
+// pelo cache local (até 5min de TTL, ver bitrixFetchComRetentativa abaixo),
+// em vez de dado fresco do Bitrix. Quem inicia um ciclo de atualização (ex.:
+// atualizarCockpit() em cockpit.js) deve zerar antes de disparar as buscas.
+window.ULTIMA_CARGA_TEVE_CACHE = false;
 window.limparCacheBitrix = function() {
   try {
     Object.keys(localStorage).filter(k => k.startsWith("atlas_cache_")).forEach(k => localStorage.removeItem(k));
@@ -583,6 +593,7 @@ async function bitrixFetchComRetentativa(url) {
       if (emCache) {
         const parseado = JSON.parse(emCache);
         if (Date.now() - parseado.ts < 5 * 60 * 1000) { // 5 minutos de TTL
+          window.ULTIMA_CARGA_TEVE_CACHE = true;
           return parseado.data;
         } else {
           localStorage.removeItem(chaveCache);

@@ -1,0 +1,19 @@
+MODEL_ID:
+Objetivo:
+Target:
+Horizonte:
+População:
+Features:
+Fonte:
+Janela de treino:
+Validação:
+Baseline:
+Métricas:
+Threshold:
+Intervalo de confiança:
+Bias checks:
+Drift:
+Explicabilidade:
+Fallback:
+Owner:
+Versão:

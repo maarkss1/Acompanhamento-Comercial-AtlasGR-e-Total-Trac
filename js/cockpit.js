@@ -22,6 +22,7 @@
 let cockpitState = {
   carregando: false,
   ultimaAtualizacao: null,
+  ultimaAtualizacaoDeCache: false,
   deals: [],           // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
   dealsFiltrados: [],  // após filtro de vendedor/origem
   // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
@@ -102,7 +103,7 @@ function cockpitTickerItens() {
     `Pipeline elegível: ${moedaRelatorio(c.saude.pipelineElegivel)}`,
     `Coverage: ${c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`)}`,
     `Pipeline criado no período: ${moedaRelatorio(c.saude.pipelineCriadoPeriodo)}`,
-    `Win Rate: ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
+    `Win Rate (coorte por fechamento): ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
   ];
   if (g) itens.push(`Ritmo de geração de pipeline: ${cockpitND(g.paceRitmoPct, (v) => `${v}%`)}`);
   const nAlertas = alertasInfo?.alertas?.length || 0;
@@ -151,7 +152,11 @@ function atualizarRelogioCockpit() {
   const d = cockpitState.ultimaAtualizacao;
   const dd = String(d.getDate()).padStart(2, "0"), mm = String(d.getMonth() + 1).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0"), mi = String(d.getMinutes()).padStart(2, "0");
-  el.textContent = `Última atualização: ${dd}/${mm}/${d.getFullYear()} ${hh}:${mi} · Fonte: Bitrix24`;
+  // v29 — sinaliza quando parte dos dados veio do cache local (até 5min)
+  // em vez de fresca do Bitrix, pra "Última atualização" não sugerir mais
+  // atualidade do que realmente existe.
+  const sufixoCache = cockpitState.ultimaAtualizacaoDeCache ? " · ⚠️ parcialmente do cache local (até 5min)" : "";
+  el.textContent = `Última atualização: ${dd}/${mm}/${d.getFullYear()} ${hh}:${mi} · Fonte: Bitrix24${sufixoCache}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +296,9 @@ async function atualizarCockpit() {
   if (btn) btn.disabled = true;
   cockpitRenderEstadoSkeleton();
   atualizarStatus("Cockpit: buscando negócios do funil Comercial...");
+  // v29 — zera antes do ciclo de busca pra saber, no fim, se alguma resposta
+  // deste carregamento veio do cache local (até 5min) em vez de fresca.
+  window.ULTIMA_CARGA_TEVE_CACHE = false;
   try {
     const base = await baseDealsCatalogo(webhook, true); // somenteComercial=true → CATEGORY_ID 0
     const enriquecidos = base.deals.map((d) => enriquecerDealCatalogo(d, base));
@@ -309,6 +317,7 @@ async function atualizarCockpit() {
 
     cockpitState.periodo = cockpitPeriodoFiltro();
     cockpitState.ultimaAtualizacao = new Date();
+    cockpitState.ultimaAtualizacaoDeCache = !!window.ULTIMA_CARGA_TEVE_CACHE;
     const filtroProduto = cockpitEl("cockpitProduto")?.value?.trim();
     if (filtroProduto) {
       await aplicarFiltroProdutoCockpit();
@@ -482,6 +491,14 @@ function cockpitGanhosFinanceiroPeriodo(periodo) {
     .map((d) => ({ ...d, _DIA_FECHAMENTO: cockpitDataFechamentoFinanceiro(d) }));
 }
 
+// v29 — usada nos tickets médios abaixo em vez de `lista.length`: um negócio
+// "ganho"/aberto com _VALOR ausente ou 0 (dado incompleto no Bitrix) contava
+// no denominador sem contribuir no numerador, deflacionando o ticket médio em
+// silêncio. Aqui ele só entra na média se tiver valor > 0.
+function cockpitContarComValor(lista) {
+  return (lista || []).filter((d) => (Number(d._VALOR) || 0) > 0).length;
+}
+
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = cockpitMesAtual();
@@ -493,7 +510,8 @@ function cockpitCalcular() {
   const metaMensal = Number(cockpitEl("cockpitMetaMensal")?.value) || 0;
   const pctMeta = metaMensal > 0 ? Math.round((fechadoMes / metaMensal) * 1000) / 10 : null;
   const gapMeta = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : null;
-  const ticketMedioMes = ganhosMes.length ? fechadoMes / ganhosMes.length : null;
+  const ticketMedioMesQtd = cockpitContarComValor(ganhosMes);
+  const ticketMedioMes = ticketMedioMesQtd ? fechadoMes / ticketMedioMesQtd : null;
   drill.resultadoMesFechado = ganhosMes;
   drill.resultadoMesGap = ganhosMes; // mesmo conjunto: o que falta é sobre o que já foi fechado
 
@@ -546,7 +564,8 @@ function cockpitCalcular() {
     ? Math.round((ganhosPeriodo.length / (ganhosPeriodo.length + perdidosPeriodo.length)) * 1000) / 10
     : null;
   const receitaGanhaPeriodo = ganhosPeriodo.reduce((a, d) => a + d._VALOR, 0);
-  const ticketMedioVendido = ganhosPeriodo.length ? receitaGanhaPeriodo / ganhosPeriodo.length : null;
+  const ticketMedioVendidoQtd = cockpitContarComValor(ganhosPeriodo);
+  const ticketMedioVendido = ticketMedioVendidoQtd ? receitaGanhaPeriodo / ticketMedioVendidoQtd : null;
   const ciclos = ganhosPeriodo.map((d) => Number(d._CICLO)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
   const cicloMedia = ciclos.length ? Math.round((ciclos.reduce((a, b) => a + b, 0) / ciclos.length) * 10) / 10 : null;
   const cicloMediana = ciclos.length ? (ciclos.length % 2 ? ciclos[(ciclos.length - 1) / 2] : Math.round(((ciclos[ciclos.length / 2 - 1] + ciclos[ciclos.length / 2]) / 2) * 10) / 10) : null;
@@ -588,7 +607,8 @@ function cockpitCalcular() {
   const coverageRecomendado = cockpitCoverageRecomendado(winRate);
   const criadosPeriodo = deals.filter((d) => dentroPeriodoCatalogo(d.DATE_CREATE, periodoFiltro));
   const pipelineCriadoPeriodo = criadosPeriodo.reduce((a, d) => a + d._VALOR, 0);
-  const ticketMedioPipeline = abertosTodos.length ? pipelineTotal / abertosTodos.length : null;
+  const ticketMedioPipelineQtd = cockpitContarComValor(abertosTodos);
+  const ticketMedioPipeline = ticketMedioPipelineQtd ? pipelineTotal / ticketMedioPipelineQtd : null;
   drill.pipelineTotal = abertosTodos;
   drill.pipelineElegivel = abertosElegiveis;
   drill.pipelineInelegivel = inelegiveisComMotivo;
@@ -667,7 +687,8 @@ function cockpitCalcular() {
   const ganhosMesAnterior = cockpitGanhosFinanceiroPeriodo(mesAnterior);
   const fechadoMesAnterior = ganhosMesAnterior.reduce((a, d) => a + d._VALOR, 0);
   const qtdAnterior = ganhosMesAnterior.length;
-  const ticketMedioMesAnterior = qtdAnterior ? fechadoMesAnterior / qtdAnterior : null;
+  const ticketMedioMesAnteriorQtd = cockpitContarComValor(ganhosMesAnterior);
+  const ticketMedioMesAnterior = ticketMedioMesAnteriorQtd ? fechadoMesAnterior / ticketMedioMesAnteriorQtd : null;
 
   function fmtMom(atual, ant) {
     if (!ant) return "";
@@ -1035,7 +1056,7 @@ function cockpitGerarSituacaoAgora() {
     ["Coverage atual (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
     ["Coverage recomendado (Win Rate histórico)", c.saude.coverageRecomendado != null ? `${c.saude.coverageRecomendado.toFixed(2)}x` : "não disponível"],
     ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
-    ["Win Rate", fmtPct(c.eficiencia.winRate)],
+    ["Win Rate (coorte por fechamento)", fmtPct(c.eficiencia.winRate)],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
     ["Oportunidades abertas", c.saude.qtdAberto],
     ["Oportunidades em risco (vencidas/aging alto)", `${emRiscoQtd}`],
@@ -1211,7 +1232,7 @@ function renderizarCockpit() {
     cockpitKpiCard("% da Meta", cockpitND(c.resultadoMes.pctMeta, (v) => `${v}%`), "resultadoMesFechado"),
     cockpitKpiCard("Gap para a meta", cockpitND(c.resultadoMes.gapMeta, moedaRelatorio), "resultadoMesGap"),
     cockpitKpiCard("Negócios ganhos", c.resultadoMes.qtd, "resultadoMesFechado", "", c.resultadoMes.qtdMom),
-    cockpitKpiCard("Ticket médio (mês)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
+    cockpitKpiCard("Ticket médio (mês, Financeiro)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
   ].join("");
 
   // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes).
@@ -1268,10 +1289,10 @@ function renderizarCockpit() {
 
   // F) Eficiência da Máquina
   cockpitEl("cockpitEficiencia").innerHTML = [
-    cockpitKpiCard("Win Rate", cockpitND(c.eficiencia.winRate, (v) => `${v}%`), "winRateGanhos"),
+    cockpitKpiCard("Win Rate (coorte por fechamento)", cockpitND(c.eficiencia.winRate, (v) => `${v}%`), "winRateGanhos"),
     cockpitKpiCard("Ganhos no período", c.eficiencia.ganhos, "winRateGanhos"),
     cockpitKpiCard("Perdidos no período", c.eficiencia.perdidos, "winRatePerdidos"),
-    cockpitKpiCard("Ticket médio vendido", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
+    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
     cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
     cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
   ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
@@ -1405,7 +1426,7 @@ function cockpitListaKpisExport(cache) {
   add("Resultado do Mês", "% da Meta", pct(c.resultadoMes.pctMeta), "%");
   add("Resultado do Mês", "Gap para a meta", moeda(c.resultadoMes.gapMeta), "R$");
   add("Resultado do Mês", "Negócios ganhos", num(c.resultadoMes.qtd), "qtd");
-  add("Resultado do Mês", "Ticket médio (mês)", moeda(c.resultadoMes.ticketMedioMes), "R$");
+  add("Resultado do Mês", "Ticket médio (mês, Financeiro)", moeda(c.resultadoMes.ticketMedioMes), "R$");
 
   add("Forecast", "Commit (valor cheio)", moeda(c.forecast.commit), "R$");
   add("Forecast", "Best Case (valor cheio)", moeda(c.forecast.bestCase), "R$");
@@ -1432,10 +1453,10 @@ function cockpitListaKpisExport(cache) {
     add("Proteção de Receita", `Recomendado (Win Rate) — ${p.label}`, p.coverageRecomendado != null ? String(Math.round(p.coverageRecomendado * 100) / 100) : null, "x");
   });
 
-  add("Eficiência da Máquina", "Win Rate", pct(c.eficiencia.winRate), "%");
+  add("Eficiência da Máquina", "Win Rate (coorte por fechamento)", pct(c.eficiencia.winRate), "%");
   add("Eficiência da Máquina", "Ganhos no período", num(c.eficiencia.ganhos), "qtd");
   add("Eficiência da Máquina", "Perdidos no período", num(c.eficiencia.perdidos), "qtd");
-  add("Eficiência da Máquina", "Ticket médio vendido", moeda(c.eficiencia.ticketMedioVendido), "R$");
+  add("Eficiência da Máquina", "Ticket médio vendido (Comercial)", moeda(c.eficiencia.ticketMedioVendido), "R$");
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
   add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
 
@@ -1639,7 +1660,9 @@ function cockpitRenderizarMetasDesdobradas(c) {
   const vendedores = [...new Set((c.deals || []).map(d => d._RESPONSAVEL || "Desconhecido"))];
   
   let salvo = {};
-  try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas")) || {}; } catch(e){}
+  // v29 — chave por empresa: sem isso, meta desdobrada de uma marca
+  // vazava/sobrescrevia a da outra no mesmo navegador.
+  try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""))) || {}; } catch(e){}
   
   let html = "";
   vendedores.forEach((v, i) => {
@@ -1660,7 +1683,7 @@ window.cockpitSalvarMetasIndividuais = function() {
   const inputs = document.querySelectorAll(".meta-vendedor");
   const metas = {};
   inputs.forEach(i => { metas[i.dataset.vendedor] = parseFloat(i.value) || 0; });
-  try { localStorage.setItem("atlas-metas-desdobradas", JSON.stringify(metas)); } catch(e){}
+  try { localStorage.setItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), JSON.stringify(metas)); } catch(e){}
   atualizarStatus("Metas individuais salvas localmente!");
   setTimeout(() => renderizarCockpit(), 500);
 };
@@ -1714,12 +1737,14 @@ function salvarOrdemLayout() {
   const container = document.querySelector('.cockpit-executivo');
   if (!container) return;
   const ids = [...container.querySelectorAll('.draggable-card')].map(el => el.id);
-  try { localStorage.setItem('atlas-layout-ordem', JSON.stringify(ids)); } catch(e){}
+  // v29 — chave por empresa: sem isso, a ordem do layout de uma marca
+  // vazava/sobrescrevia a da outra no mesmo navegador.
+  try { localStorage.setItem('atlas-layout-ordem' + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), JSON.stringify(ids)); } catch(e){}
 }
 
 function restaurarOrdemLayout() {
   try {
-    const salvo = JSON.parse(localStorage.getItem('atlas-layout-ordem'));
+    const salvo = JSON.parse(localStorage.getItem('atlas-layout-ordem' + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "")));
     if (!salvo) return;
     const container = document.querySelector('.cockpit-executivo');
     if (!container) return;

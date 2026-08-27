@@ -392,6 +392,18 @@ function diferencaDiasAteReferencia(valor, referenciaISO) {
   if (!d || !ref) return "";
   return Math.max(0, Math.floor((new Date(`${ref}T12:00:00`) - new Date(`${d}T12:00:00`)) / 86400000));
 }
+// v29 — versão sem clamp de diferencaDiasAteReferencia(): um resultado
+// negativo aqui significa data no futuro (ex.: MOVED_TIME/DATE_CREATE com
+// timezone/relógio errado no Bitrix), que o clamp em Math.max(0, ...) da
+// função acima esconde silenciosamente. Usada só onde o valor bruto importa
+// pra decisão (ver decisao_final_sdr em catalogo-relatorios.js) — os demais
+// usos de diferencaDiasAteReferencia (campos de exibição em forecast.js)
+// continuam clampados, sem mudança de comportamento.
+function diferencaDiasBrutaAteReferencia(valor, referenciaISO) {
+  const d = parteDataISO(valor), ref = parteDataISO(referenciaISO);
+  if (!d || !ref) return "";
+  return Math.floor((new Date(`${ref}T12:00:00`) - new Date(`${d}T12:00:00`)) / 86400000);
+}
 
 function dataDentroFaixa(valor, inicio, fim) {
   const d = parteDataISO(valor);

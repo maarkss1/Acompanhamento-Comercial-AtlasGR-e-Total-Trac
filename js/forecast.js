@@ -330,7 +330,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
     :`<p class="small-note">Sem negócios fechados no mesmo período do ano passado para comparar.</p>`;
   const pipelineEstagioHtml=renderBarModelo(r.pipeline_por_estagio||[],"Valor do pipeline aberto, por estágio","ESTAGIO");
   const statsAdicionaisHtml=`<div class="stats-grid">`+
-    `<div class="stat-item"><span class="stat-label">Ticket médio (fechados)</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.TICKET_MEDIO_FECHADOS)}</span></div>`+
+    `<div class="stat-item"><span class="stat-label">Ticket médio (fechados, Financeiro)</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.TICKET_MEDIO_FECHADOS)}</span></div>`+
     `<div class="stat-item"><span class="stat-label">Maior negócio fechado</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.MAIOR_FECHADO_VALOR)}</span><span class="stat-sub">${escapeHtmlRelatorio(r.resumo.MAIOR_FECHADO_CLIENTE||"—")}</span></div>`+
     `<div class="stat-item"><span class="stat-label">Ciclo médio até fechar</span><span class="stat-valor valor-pisca">${r.resumo.CICLO_MEDIO_FECHADOS_DIAS||0} dia(s)</span></div>`+
     `<div class="stat-item"><span class="stat-label">Dias médios parado · Pendentes</span><span class="stat-valor valor-pisca">${r.resumo.DIAS_MEDIO_PENDENTES||0} dia(s)</span></div>`+
@@ -671,9 +671,17 @@ function renderizarForecastSemanal() {
     `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))}.` +
     (r.meta.meta_mensal ? ` Meta mensal (${escapeHtmlRelatorio(mesAnoBR(r.meta.mes_inicio))}): <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
 
+  // v29 — "Fechado no mês" aqui usa a mesma base já alinhada em
+  // gerarHTMLForecastModelo() (r.modelo_visual.resumo.FECHADOS_VALOR:
+  // negócios no Financeiro em "Contrato assinado"), em vez de
+  // r.resumo.FECHADO_MES (só o funil Comercial marcado como ganho). Sem essa
+  // troca, este card e o card "Entregue" do relatório visual mostravam dois
+  // valores diferentes para o mesmo rótulo na mesma sessão de extração.
+  // Fallback pro valor antigo só se modelo_visual não tiver sido calculado.
+  const fechadoMesConsistente = Number(r.modelo_visual?.resumo?.FECHADOS_VALOR ?? r.resumo.FECHADO_MES) || 0;
   const kpis = [
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA), "forecastNegociosTabela"],
-    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES), "forecastNegociosTabela"],
+    ["Fechado no mês", moedaRelatorio(fechadoMesConsistente), "forecastNegociosTabela"],
     ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL), "forecastNegociosTabela"],
     ["Forecast total (mês)", moedaRelatorio(r.resumo.FORECAST_MES_TOTAL), "forecastNegociosTabela"],
     ["Commit", moedaRelatorio(r.resumo.COMMIT), "forecastNegociosTabela"],

@@ -14,7 +14,10 @@
   // pode ficar em localStorage. O webhook só persiste após ação explícita no botão Salvar webhook.
   (function () {
     try {
-      var salvo = localStorage.getItem("atlas-extrator-tema");
+      // v29 — chave por empresa (data-empresa), pra tema de uma marca
+      // nao vazar/sobrescrever o da outra no mesmo navegador.
+      var sufixoEmpresaTema = document.documentElement.getAttribute("data-empresa") === "totaltrac" ? "__totaltrac" : "";
+      var salvo = localStorage.getItem("atlas-extrator-tema" + sufixoEmpresaTema);
       var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
       document.documentElement.setAttribute("data-tema", tema);
     } catch (e) {
@@ -96,7 +99,7 @@
     <h2>🔑 Conexão rápida com o Bitrix</h2>
     <p class="rodape-nota" style="margin-top:-6px;">Só é necessária para o ticker acima atualizar sozinho e para testar a conexão por aqui. Cada relatório abaixo também pede o webhook na própria página, se ainda não estiver salvo.</p>
     <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
-    <input type="password" id="webhook" value="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
+    <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/.../" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
     <div class="row" style="margin-top:9px;align-items:center;">
       <div class="webhook-actions">
         <button type="button" class="toggle-eye" onclick="alternarVisibilidadeWebhook()">mostrar/ocultar</button>
@@ -106,7 +109,7 @@
         <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook fixo ativo</span></span>
       </div>
     </div>
-    <p class="rodape-nota">Webhook fixo padrão configurado para a AtlasGR. Se precisar usar uma credencial diferente, altere no campo acima ou salve no navegador.</p>
+    <p class="rodape-nota">Nenhum webhook padrão pré-configurado (removido por seguranca, ver AUDITORIA_ESTADO_ATUAL.md). Cole o webhook do Bitrix24 no campo acima e clique em "Salvar webhook" para ele ficar disponível neste navegador nas próximas visitas.</p>
   </div>
 
   <section class="workspace-intro" id="inicio">

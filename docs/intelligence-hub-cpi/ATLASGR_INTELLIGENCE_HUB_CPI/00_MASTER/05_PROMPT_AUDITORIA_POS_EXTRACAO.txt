@@ -1,0 +1,43 @@
+PROMPT — AUDITORIA APÓS RECEBER A EXTRAÇÃO COMPLETA
+
+Analise todos os arquivos extraídos.
+Crie inventário completo.
+Não assuma que nomes de colunas representam corretamente o negócio.
+Mapeie entidades, campos, relacionamentos, histórico e qualidade.
+Classifique cada dado como:
+UTILIZÁVEL
+UTILIZÁVEL COM TRATAMENTO
+INCONSISTENTE
+SEM HISTÓRICO
+SEM DEFINIÇÃO
+INSUFICIENTE
+SENSÍVEL
+DUPLICADO
+
+Depois produza:
+1. Matriz dado → indicador.
+2. Matriz dado → relatório.
+3. Matriz dado → previsão possível.
+4. Matriz dado → alerta possível.
+5. Matriz dado → departamento.
+6. Matriz lacunas.
+7. Backlog revisado.
+8. Sprints replanejadas com base no dado real.
+
+
+PRINCÍPIOS OBRIGATÓRIOS
+1. Dados reais antes de dashboards.
+2. Nenhum indicador sem definição, fonte, fórmula, granularidade, periodicidade e owner.
+3. Toda métrica deve permitir rastrear origem e evidência.
+4. Diferenciar claramente fato, inferência, previsão e recomendação.
+5. Nunca inventar dados ausentes.
+6. Toda previsão deve informar janela temporal, método, premissas e confiança.
+7. Toda recomendação deve apontar impacto esperado, prioridade e forma de validação.
+8. Nenhuma área deve operar como silo quando houver relação observável com outras áreas.
+9. O sistema deve detectar deterioração, risco e oportunidade antes do KPI final.
+10. Toda tela executiva deve responder: o que aconteceu, melhorou/piorou, por quê, o que tende a acontecer, o que fazer agora.
+11. A camada de IA não pode esconder incerteza.
+12. Segurança, RLS, segregação por perfil e auditabilidade são requisitos de produto.
+13. Performance e custo fazem parte da arquitetura.
+14. O Bitrix é uma fonte importante, não necessariamente a única.
+15. O projeto deve evoluir por ondas, com gates de qualidade entre elas.

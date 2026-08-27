@@ -1,0 +1,62 @@
+CATÁLOGO MESTRE DE RELATÓRIOS
+
+01. Vendido x Faturado mês a mês
+02. Vendido x Realizado ano a ano
+03. Ano/Mês x Ano/Mês
+04. Vendido x Faturado x Realizado x Recebido
+05. Growth MoM
+06. Growth QoQ
+07. Growth YoY
+08. Growth YTD
+09. Growth Decomposition
+10. Product Performance 360
+11. Product Mix Evolution
+12. Seller Performance 360
+13. Evolução Individual do Vendedor
+14. Performance Relativa
+15. Ticket Médio
+16. Ticket Mediano
+17. Ticket x Win Rate
+18. Churn Logo
+19. Revenue Churn
+20. NRR
+21. GRR
+22. Expansion Revenue
+23. Customer Lifecycle
+24. Sales Cycle
+25. Time to Revenue
+26. Time to Value
+27. LTV
+28. LTV x CAC
+29. Cohort de Clientes
+30. Churn Risk
+31. Revenue at Risk
+32. Revenue Momentum
+33. Leading Indicator Dashboard
+34. Early Warning System
+35. Trend & Deterioration Detection
+36. Forecast 30/60/90/180
+37. What-if Simulator
+38. Driver Analysis
+39. Executive Intelligence Report
+40. Pipeline & Coverage
+41. Pipeline Movement Waterfall
+42. Sales Velocity
+43. Funnel Leakage
+44. Forecast Accuracy & Bias
+45. Revenue Leakage
+46. Deal Risk / Stalled Deals
+47. Conversão por Coorte
+48. Qualidade das Origens
+49. Next Best Action
+50. Customer 360
+51. Data Trust Center
+52. SDR Command Center
+53. SDR Quality & Recovery
+54. Forecast & Revenue Intelligence
+55. Pipeline Intelligence
+56. Acquisition Intelligence
+57. Retention & Churn Center
+58. Action Center
+
+Cada relatório deve ter owner, fonte, fórmula, filtros, granularidade, atualização, alertas, comparativos, drill-down, testes e evidência.

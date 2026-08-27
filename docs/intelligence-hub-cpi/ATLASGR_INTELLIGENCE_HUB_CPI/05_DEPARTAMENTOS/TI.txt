@@ -1,0 +1,54 @@
+DEPARTAMENTO — TI
+
+OBJETIVO
+Construir uma visão de gestão que combine situação atual, tendência, diagnóstico, previsão, risco, oportunidade e ação.
+
+KPIS / TEMAS INICIAIS
+- Uptime
+- Incidentes
+- MTTR
+- Integrações
+- Erros
+- Jobs
+- APIs
+- Filas
+- Segurança
+- Performance
+- Custos
+
+TODO CARD DA HOME DEVE TER
+- 4 a 8 KPIs essenciais
+- Health Score
+- tendência
+- alertas
+- riscos
+- oportunidades
+- data freshness
+- link para drill-down
+
+TODO DASHBOARD DA ÁREA DEVE RESPONDER
+1. O que aconteceu?
+2. Melhorou ou piorou?
+3. Por quê?
+4. O que está mudando?
+5. O que provavelmente acontecerá?
+6. Qual o impacto nas outras áreas?
+7. O que fazer agora?
+
+
+PRINCÍPIOS OBRIGATÓRIOS
+1. Dados reais antes de dashboards.
+2. Nenhum indicador sem definição, fonte, fórmula, granularidade, periodicidade e owner.
+3. Toda métrica deve permitir rastrear origem e evidência.
+4. Diferenciar claramente fato, inferência, previsão e recomendação.
+5. Nunca inventar dados ausentes.
+6. Toda previsão deve informar janela temporal, método, premissas e confiança.
+7. Toda recomendação deve apontar impacto esperado, prioridade e forma de validação.
+8. Nenhuma área deve operar como silo quando houver relação observável com outras áreas.
+9. O sistema deve detectar deterioração, risco e oportunidade antes do KPI final.
+10. Toda tela executiva deve responder: o que aconteceu, melhorou/piorou, por quê, o que tende a acontecer, o que fazer agora.
+11. A camada de IA não pode esconder incerteza.
+12. Segurança, RLS, segregação por perfil e auditabilidade são requisitos de produto.
+13. Performance e custo fazem parte da arquitetura.
+14. O Bitrix é uma fonte importante, não necessariamente a única.
+15. O projeto deve evoluir por ondas, com gates de qualidade entre elas.

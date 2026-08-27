@@ -1,0 +1,21 @@
+METRIC_ID:
+Nome:
+Descrição:
+Objetivo:
+Fórmula:
+Numerador:
+Denominador:
+Filtros:
+Exclusões:
+Granularidade:
+Dimensões:
+Data de referência:
+Fonte:
+Owner:
+Versão:
+Freshness:
+Regras de nulo:
+Regras de duplicidade:
+Testes:
+Dashboards:
+Riscos:
