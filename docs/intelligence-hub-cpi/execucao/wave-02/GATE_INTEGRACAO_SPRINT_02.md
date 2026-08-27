@@ -8,33 +8,36 @@ Base: `main` (`31c0b806943d2fa4d0af192fc9a141ba5f9cdbc2`)
 
 Validar em conjunto as entregas técnicas do Sprint 02 antes de qualquer integração em `main` e antes de iniciar o Executive Command Center como produto executivo.
 
-Este documento não autoriza merge nem deploy. Ele registra o estado técnico verificável no GitHub e mantém explícitas as dependências que exigem dado real, ambiente alvo ou decisão humana.
+Este documento **não autoriza merge nem deploy**. Ele registra apenas fatos reproduzíveis e mantém separados: teste sintético, validação de runtime, ambiente corporativo e decisões humanas.
 
-## Componentes integrados na branch
+## Componentes integrados
 
 ### Forecast e cálculo
 
-- reconciliação da semântica Node × navegador quando `STAGE_SEMANTIC_ID` está vazio;
-- Entregue/Fechado do forecast Node alinhado ao Financeiro em `Contrato Assinado`, com `MOVED_TIME` e fallback `DATE_CREATE`;
-- pipeline projetado continua baseado no Comercial e preserva regras existentes de piloto/probabilidade.
+- reconciliação Node × navegador quando `STAGE_SEMANTIC_ID` está vazio;
+- Entregue/Fechado Node alinhado ao Financeiro em `Contrato Assinado`, usando `MOVED_TIME` e fallback `DATE_CREATE`;
+- pipeline projetado continua baseado no Comercial, preservando regras existentes de piloto/probabilidade.
 
 ### Segurança e CI
 
-- Nodemailer atualizado para `9.0.5`;
-- `npm audit --audit-level=high` é bloqueante no workflow `Quality`;
-- `npm test` é bloqueante;
-- workflow tem somente `contents: read`;
-- nenhuma credencial/webhook foi adicionada.
+- Nodemailer `9.0.5`;
+- `npm audit --audit-level=high` bloqueante;
+- `npm test` bloqueante;
+- workflows com `contents: read`;
+- nenhum webhook/secret adicionado.
 
-### Data Foundation
+### Data Foundation / Bronze
 
-- contrato Bronze/Staging já existente em `js/staging-schema.js` permanece como base;
-- migração `db/migrations/001_staging_bronze.sql` integrada;
-- RLS habilitado e fechado por padrão, sem policies permissivas na migração-base;
+- `js/staging-schema.js` como contrato canônico de transformação;
+- `db/migrations/001_staging_bronze.sql` para runs, snapshots, índices e views `latest`;
+- `db/migrations/002_bronze_ingestion_audit.sql` para quarentena auditável;
+- RLS deny-by-default, sem policy permissiva na base;
 - chave `staging_id = portal:bitrix_id`;
-- views `latest` determinísticas;
-- teste estático dedicado para estrutura e segurança da migração;
-- workflow `Database Validation` executa a migração em **PostgreSQL 16 real isolado** e valida o comportamento em runtime.
+- `scripts/bronze-ingest.mjs` para preparação e geração transacional de ingestão;
+- reexecução idempotente para a mesma extração;
+- rejeições guardam motivos + fingerprint SHA-256, **sem payload bruto**;
+- workflow `Database Validation` executa as migrations em PostgreSQL 16 real e isolado;
+- workflow `Bronze Ingestion Validation` executa o fluxo sintético ponta a ponta.
 
 ### Bitrix Discovery
 
@@ -45,105 +48,136 @@ Este documento não autoriza merge nem deploy. Ele registra o estado técnico ve
 
 ### CORE / Entity Resolution
 
-- `js/entity-resolution.js` integrado exatamente a partir do trabalho já validado na PR #9;
+- `js/entity-resolution.js` integrado a partir do trabalho validado na PR #9;
 - `MASTER_ENTITY_ID` formalizado;
 - hierarquia de resolução e níveis de confiança testados;
 - revisão manual obrigatória para baixa confiança/ambiguidade.
 
-### Camada Semântica mínima
+### Camada Semântica e Governança
 
 - `data/semantic-contract.json`;
+- `data/governance-decisions.json`;
 - candidatos executivos referenciam somente `METRIC_ID`s existentes no catálogo oficial;
-- owners continuam `proposed`, nunca falsamente `ratified`;
+- owners continuam `proposed`;
 - thresholds não ratificados bloqueiam elegibilidade executiva;
-- métricas Bitrix continuam não verificadas ao vivo;
 - variantes de Forecast/Bucket/Coverage permanecem separadas;
 - Faturado/Realizado/Recebido permanecem `absent_from_current_model`;
-- validação de banco isolado é registrada separadamente de produção e de ingestão.
+- banco isolado, ingestão sintética, produção e Bitrix real possuem flags separadas.
 
-## Evidência de CI da integração
-
-A branch foi construída incrementalmente e testada a cada bloco relevante:
+## Evidência acumulada de CI
 
 | GitHub Actions run | Estado acumulado | Testes | Suítes | Falhas | Vulnerabilidades |
 |---|---|---:|---:|---:|---:|
 | `33086949741` | Forecast + segurança + Bitrix catalog | 82 | 26 | 0 | 0 |
 | `33087142393` | + `MASTER_ENTITY_ID` | 100 | 32 | 0 | 0 |
-| `33087305626` | + Bronze/Staging migration gate estático | 108 | 33 | 0 | 0 |
-| `33087757057` | + camada semântica mínima | **119** | **34** | **0** | **0** |
-| `33087902030` | Quality no contexto real da PR #16 → main | **119** | **34** | **0** | **0** |
+| `33087305626` | + Bronze/Staging gate estático | 108 | 33 | 0 | 0 |
+| `33087757057` | + camada semântica mínima | 119 | 34 | 0 | 0 |
+| `33088751476` | + governança formalizada | 129 | 35 | 0 | 0 |
+| `33089662008` | + pipeline/quarentena Bronze | **137** | **36** | **0** | **0** |
 
-No gate de qualidade consolidado:
+Último Quality confirmado, run **`33089662008`**:
 
-- `npm ci` → sucesso;
-- `npm audit --audit-level=high` → **0 vulnerabilities**;
-- `npm test` → **119 pass / 0 fail / 0 skipped / 0 todo**.
+- `npm ci`: sucesso;
+- `npm audit --audit-level=high`: **0 vulnerabilities**;
+- `npm test`: **137 pass / 0 fail / 0 skipped / 0 todo**.
 
-## Validação real da migração em PostgreSQL 16
+## PostgreSQL 16 — migrations validadas em runtime
 
-O workflow `.github/workflows/database-validation.yml` sobe um container descartável `postgres:16`, aplica a migração com `psql -v ON_ERROR_STOP=1` e executa provas comportamentais.
+O workflow `.github/workflows/database-validation.yml` usa um `postgres:16` descartável.
 
-O run de pull request **`33088050969`** concluiu com sucesso em todos os passos:
+Último run confirmado: **`33089662033`**, resultado **success**.
 
-1. inicialização do PostgreSQL 16;
-2. aplicação de `001_staging_bronze.sql`;
-3. confirmação das três tabelas do schema `intelligence`;
-4. confirmação de RLS nas três tabelas;
-5. confirmação de ausência de policy permissiva na base;
-6. confirmação das views `staging_negocios_latest` e `staging_leads_latest`;
-7. rejeição de portal inválido;
-8. rejeição de URL em `extraido_via`;
-9. rejeição de `staging_id` incompatível com `portal:bitrix_id`;
-10. prova de que a view `latest` escolhe o snapshot mais recente;
-11. prova de deny-by-default do RLS para um papel não-owner.
+Provas executadas:
 
-Portanto, a migração deixou de estar apenas “validada estaticamente”. Ela está **runtime-validada em PostgreSQL 16 isolado no GitHub Actions**.
+1. todas as migrations `db/migrations/*.sql` aplicadas em ordem;
+2. quatro tabelas esperadas no schema `intelligence`;
+3. RLS habilitado em todas;
+4. nenhuma policy permissiva criada pela base;
+5. views `staging_negocios_latest` e `staging_leads_latest` presentes;
+6. constraints de portal, webhook/URL e business key funcionando;
+7. quarentena `ingestion_rejections` operante;
+8. deny-by-default comprovado também para a quarentena.
 
-Esta evidência não equivale a produção: nenhuma conexão com banco corporativo, PII real ou ingestão Bitrix foi utilizada.
+Isso comprova **compatibilidade/runtime em PostgreSQL 16 isolado**. Não equivale a banco corporativo/produção.
 
-## Falha intermediária tratada corretamente
+## Bronze Ingestion — validação E2E sintética
 
-Os runs `33087614680` e `33087684599` falharam depois da introdução do primeiro teste semântico. A causa não era fórmula nem produção: o regex do próprio teste aceitava IDs maiúsculos mas truncava sufixos oficiais minúsculos, como `FECHADO_MES-01a` e `FORECAST_TOTAL-01b`.
+Workflow `.github/workflows/bronze-ingestion-validation.yml`.
 
-A correção mudou o parser do teste para capturar literalmente tokens alfanuméricos/underscore/hífen após `METRIC_ID:`. O gate seguinte passou integralmente. A falha intermediária é preservada como evidência de que o CI efetivamente bloqueia inconsistências em vez de apenas registrar sucesso.
+Run confirmado: **`33089661965`**, resultado **success**.
+
+Fluxo exercitado:
+
+`envelope Bitrix sintético → jornada.js/staging-schema.js → bronze-ingest.mjs → SQL → PostgreSQL 16 → snapshots + quarentena → views latest`
+
+O mesmo SQL foi executado **duas vezes**, comprovando idempotência para a mesma extração.
+
+Resultado validado:
+
+| Medida | Resultado |
+|---|---:|
+| Registros lidos | 4 |
+| Válidos | 2 |
+| Inválidos | 2 |
+| Runs | 2 |
+| Runs parciais | 2 |
+| Snapshot negócio válido | 1 |
+| Snapshot lead válido | 1 |
+| Rejeições auditadas | 2 |
+| Duplicações após reexecução | 0 |
+
+A quarentena não contém coluna de payload bruto e exige fingerprint SHA-256 válido.
+
+Documento detalhado: `07_BRONZE_INGESTION_E2E.md`.
 
 ## Resultado técnico atual
 
 ### PASSA no escopo verificável dentro do GitHub
 
-- não há regressão conhecida na suíte atual;
-- as duas divergências de forecast tratadas nesta wave estão corrigidas na branch;
-- dependência com vulnerabilidade alta foi removida da branch;
-- audit de alta severidade está bloqueante e verde;
-- catálogo Bitrix tem limites de confiança explícitos;
-- Bronze tem estrutura SQL testada estaticamente **e executada com sucesso em PostgreSQL 16 real isolado**;
-- RLS deny-by-default, constraints e views foram comprovados em runtime;
-- CORE inicial tem chave canônica e resolução de entidades;
-- camada semântica mínima existe e não promove propostas a fatos;
-- Quality também passou no evento `pull_request` da PR #16 para `main`;
-- nenhuma credencial real foi necessária para os testes.
+- suíte atual sem regressão conhecida;
+- divergências de forecast tratadas nesta wave corrigidas;
+- dependência de alta severidade removida;
+- audit de alta severidade bloqueante e verde;
+- catálogo Bitrix com limites de confiança explícitos;
+- migrations executadas em PostgreSQL 16 real isolado;
+- RLS, constraints, views e quarentena comprovados em runtime;
+- pipeline Bronze sintético comprovado ponta a ponta;
+- reexecução idempotente comprovada;
+- rejeições não são descartadas silenciosamente;
+- quarentena não persiste payload bruto;
+- CORE inicial com chave canônica e resolução de entidades;
+- camada semântica e contrato de decisões formalizados;
+- nenhuma credencial real necessária para esses testes.
 
 ### NÃO PASSA ainda como liberação de produção/Sprint 03 executivo
 
-1. **Banco alvo/produção não validado**: a migração passou em PostgreSQL 16 isolado, mas não foi aplicada a um banco corporativo escolhido.
-2. **Ingestão real não implementada/validada**: o Bronze ainda não recebe snapshots reais do Bitrix por backend.
-3. **Bitrix ao vivo não verificado nesta execução**: `live_api_verified=false` continua correto, inclusive para AtlasGR/Total Trac.
-4. **Owners não ratificados**: o catálogo oficial continua declarando ausência de owner formal para as métricas.
-5. **Thresholds pendentes**: coverage 2x/3x, aging crítico/alto de 45 dias e regra de pipeline necessário continuam decisões de negócio.
-6. **Metodologia executiva ainda precisa escolha**: Forecast Total, Bucket e Coverage possuem variantes distintas que não devem ser fundidas automaticamente.
-7. **Faturado/Realizado/Recebido ainda não existem no modelo**: o Executive Command Center deve omiti-los até modelagem real.
+1. **Banco corporativo/produção não validado**: PostgreSQL 16 isolado passou, mas nenhum banco alvo recebeu a estrutura.
+2. **Ingestão Bitrix real não validada**: o pipeline está funcional com envelope sintético, mas ainda não foi alimentado por AtlasGR ou Total Trac ao vivo.
+3. **Bitrix ao vivo não verificado**: `live_api_verified=false` continua correto.
+4. **Owners não ratificados**: o catálogo ainda não possui owner formal para os KPIs.
+5. **Thresholds pendentes**: coverage 2x/3x, aging de 45 dias e regra de pipeline necessário continuam decisões humanas.
+6. **Metodologia executiva pendente**: Forecast Total, Bucket e Coverage possuem variantes que precisam de escolha explícita.
+7. **Faturado/Realizado/Recebido não modelados**: devem continuar omitidos do Command Center.
 
-## Critério recomendado para próxima transição
+## Estado do contrato semântico
 
-O núcleo técnico que pode ser validado **somente dentro do GitHub** avançou mais um nível: schema, migration runtime, forecast, segurança, CORE e contrato semântico estão cobertos por gates automáticos.
+O contrato agora registra, separadamente:
 
-Os próximos blockers se dividem em duas classes:
+- `runtime_database_validated=true`;
+- `runtime_database_validation_scope=isolated_postgresql_16_github_actions`;
+- `production_database_validated=false`;
+- `bronze_ingestion_pipeline_validated=true`;
+- `bronze_ingestion_validation_scope=synthetic_bitrix_envelope_to_postgresql16_github_actions`;
+- `bronze_live_source_ingestion_validated=false`;
+- `bitrix_live_verified=false`;
+- `sprint_03_release_ready=false`.
 
-- **dados/ambiente corporativo**: banco alvo, ingestão Bronze e validação Bitrix ao vivo;
-- **decisão humana de governança**: ratificar owners, thresholds e metodologia executiva.
+## Próxima transição
 
-Até lá, `data/semantic-contract.json` mantém `sprint_03_release_ready=false` por desenho.
+O **pipeline Bronze em si deixou de ser o blocker principal**. O próximo passo técnico exige conectar uma fonte Bitrix real autorizada ao envelope já validado, sem versionar segredo ou PII e mantendo leitura controlada.
+
+Em paralelo, as decisões humanas de owners, thresholds e metodologia executiva continuam independentes do trabalho técnico.
 
 ## Segurança operacional
 
-A branch de integração deve permanecer revisável. Não efetuar merge na `main` nem deploy automático como consequência deste gate sem autorização explícita, pois a `main` contém automações de produção e histórico de publicação.
+A branch e a PR #16 devem permanecer revisáveis. Não efetuar merge na `main` nem deploy como consequência deste gate sem autorização explícita.
