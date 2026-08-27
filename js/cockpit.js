@@ -103,7 +103,7 @@ function cockpitTickerItens() {
     `Pipeline elegível: ${moedaRelatorio(c.saude.pipelineElegivel)}`,
     `Coverage: ${c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`)}`,
     `Pipeline criado no período: ${moedaRelatorio(c.saude.pipelineCriadoPeriodo)}`,
-    `Win Rate: ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
+    `Win Rate (coorte por fechamento): ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
   ];
   if (g) itens.push(`Ritmo de geração de pipeline: ${cockpitND(g.paceRitmoPct, (v) => `${v}%`)}`);
   const nAlertas = alertasInfo?.alertas?.length || 0;
@@ -1056,7 +1056,7 @@ function cockpitGerarSituacaoAgora() {
     ["Coverage atual (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
     ["Coverage recomendado (Win Rate histórico)", c.saude.coverageRecomendado != null ? `${c.saude.coverageRecomendado.toFixed(2)}x` : "não disponível"],
     ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
-    ["Win Rate", fmtPct(c.eficiencia.winRate)],
+    ["Win Rate (coorte por fechamento)", fmtPct(c.eficiencia.winRate)],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
     ["Oportunidades abertas", c.saude.qtdAberto],
     ["Oportunidades em risco (vencidas/aging alto)", `${emRiscoQtd}`],
@@ -1232,7 +1232,7 @@ function renderizarCockpit() {
     cockpitKpiCard("% da Meta", cockpitND(c.resultadoMes.pctMeta, (v) => `${v}%`), "resultadoMesFechado"),
     cockpitKpiCard("Gap para a meta", cockpitND(c.resultadoMes.gapMeta, moedaRelatorio), "resultadoMesGap"),
     cockpitKpiCard("Negócios ganhos", c.resultadoMes.qtd, "resultadoMesFechado", "", c.resultadoMes.qtdMom),
-    cockpitKpiCard("Ticket médio (mês)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
+    cockpitKpiCard("Ticket médio (mês, Financeiro)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
   ].join("");
 
   // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes).
@@ -1289,10 +1289,10 @@ function renderizarCockpit() {
 
   // F) Eficiência da Máquina
   cockpitEl("cockpitEficiencia").innerHTML = [
-    cockpitKpiCard("Win Rate", cockpitND(c.eficiencia.winRate, (v) => `${v}%`), "winRateGanhos"),
+    cockpitKpiCard("Win Rate (coorte por fechamento)", cockpitND(c.eficiencia.winRate, (v) => `${v}%`), "winRateGanhos"),
     cockpitKpiCard("Ganhos no período", c.eficiencia.ganhos, "winRateGanhos"),
     cockpitKpiCard("Perdidos no período", c.eficiencia.perdidos, "winRatePerdidos"),
-    cockpitKpiCard("Ticket médio vendido", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
+    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
     cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
     cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
   ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
@@ -1426,7 +1426,7 @@ function cockpitListaKpisExport(cache) {
   add("Resultado do Mês", "% da Meta", pct(c.resultadoMes.pctMeta), "%");
   add("Resultado do Mês", "Gap para a meta", moeda(c.resultadoMes.gapMeta), "R$");
   add("Resultado do Mês", "Negócios ganhos", num(c.resultadoMes.qtd), "qtd");
-  add("Resultado do Mês", "Ticket médio (mês)", moeda(c.resultadoMes.ticketMedioMes), "R$");
+  add("Resultado do Mês", "Ticket médio (mês, Financeiro)", moeda(c.resultadoMes.ticketMedioMes), "R$");
 
   add("Forecast", "Commit (valor cheio)", moeda(c.forecast.commit), "R$");
   add("Forecast", "Best Case (valor cheio)", moeda(c.forecast.bestCase), "R$");
@@ -1453,10 +1453,10 @@ function cockpitListaKpisExport(cache) {
     add("Proteção de Receita", `Recomendado (Win Rate) — ${p.label}`, p.coverageRecomendado != null ? String(Math.round(p.coverageRecomendado * 100) / 100) : null, "x");
   });
 
-  add("Eficiência da Máquina", "Win Rate", pct(c.eficiencia.winRate), "%");
+  add("Eficiência da Máquina", "Win Rate (coorte por fechamento)", pct(c.eficiencia.winRate), "%");
   add("Eficiência da Máquina", "Ganhos no período", num(c.eficiencia.ganhos), "qtd");
   add("Eficiência da Máquina", "Perdidos no período", num(c.eficiencia.perdidos), "qtd");
-  add("Eficiência da Máquina", "Ticket médio vendido", moeda(c.eficiencia.ticketMedioVendido), "R$");
+  add("Eficiência da Máquina", "Ticket médio vendido (Comercial)", moeda(c.eficiencia.ticketMedioVendido), "R$");
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
   add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
 

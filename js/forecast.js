@@ -330,7 +330,7 @@ function gerarHTMLForecastModelo(resultado,tipo="semanal") {
     :`<p class="small-note">Sem negócios fechados no mesmo período do ano passado para comparar.</p>`;
   const pipelineEstagioHtml=renderBarModelo(r.pipeline_por_estagio||[],"Valor do pipeline aberto, por estágio","ESTAGIO");
   const statsAdicionaisHtml=`<div class="stats-grid">`+
-    `<div class="stat-item"><span class="stat-label">Ticket médio (fechados)</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.TICKET_MEDIO_FECHADOS)}</span></div>`+
+    `<div class="stat-item"><span class="stat-label">Ticket médio (fechados, Financeiro)</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.TICKET_MEDIO_FECHADOS)}</span></div>`+
     `<div class="stat-item"><span class="stat-label">Maior negócio fechado</span><span class="stat-valor valor-pisca">${moedaRelatorio(r.resumo.MAIOR_FECHADO_VALOR)}</span><span class="stat-sub">${escapeHtmlRelatorio(r.resumo.MAIOR_FECHADO_CLIENTE||"—")}</span></div>`+
     `<div class="stat-item"><span class="stat-label">Ciclo médio até fechar</span><span class="stat-valor valor-pisca">${r.resumo.CICLO_MEDIO_FECHADOS_DIAS||0} dia(s)</span></div>`+
     `<div class="stat-item"><span class="stat-label">Dias médios parado · Pendentes</span><span class="stat-valor valor-pisca">${r.resumo.DIAS_MEDIO_PENDENTES||0} dia(s)</span></div>`+
