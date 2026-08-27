@@ -32,8 +32,8 @@ A lacuna era a ausência de um contrato que dissesse, de forma automatizável:
 O contrato registra nove tipos semânticos:
 
 1. `master_entity` — CORE, chave `master_entity_id`, implementada em `js/entity-resolution.js`;
-2. `deal` — Staging, `staging_id`, destino projetado `intelligence.staging_negocios`;
-3. `lead` — Staging, `staging_id`, destino projetado `intelligence.staging_leads`;
+2. `deal` — Staging, `staging_id`, destino `intelligence.staging_negocios`;
+3. `lead` — Staging, `staging_id`, destino `intelligence.staging_leads`;
 4. `company` — leitura suportada, ainda sem persistência canônica própria;
 5. `contact` — leitura suportada, ainda sem persistência canônica própria;
 6. `activity` — leitura suportada, ainda sem persistência canônica própria;
@@ -41,7 +41,30 @@ O contrato registra nove tipos semânticos:
 8. `pipeline_stage` — metadata semântica descoberta via `crm.category.list` + `crm.status.list`;
 9. `product_row` — fonte de apoio por negócio, ainda com padrão N+1 e sem dimensão canônica persistida.
 
-Isso não declara que todo domínio corporativo está concluído. O contrato diferencia explicitamente `implemented_in_code_not_persisted`, `schema_and_migration_defined_not_runtime_validated` e `read_supported_not_canonical_persisted`.
+Isso não declara que todo domínio corporativo está concluído. O contrato distingue o que está implementado em código, o que foi validado em banco isolado e o que ainda depende de ingestão/produção.
+
+## Validação PostgreSQL 16
+
+A migração Bronze/Staging deixou de ser apenas SQL revisado estaticamente.
+
+O workflow `.github/workflows/database-validation.yml` sobe um serviço **PostgreSQL 16 real e descartável** no GitHub Actions e aplica `db/migrations/001_staging_bronze.sql` com `ON_ERROR_STOP=1`.
+
+No run **`33088050969`**, todos os passos concluíram com sucesso. Foram verificados em runtime:
+
+- criação do schema `intelligence`;
+- criação de `ingestion_runs`, `staging_negocios` e `staging_leads`;
+- RLS habilitado nas três tabelas;
+- ausência de policies permissivas na migração-base;
+- criação das duas views `latest`;
+- rejeição de portal inválido;
+- rejeição de URL em `extraido_via`;
+- rejeição de `staging_id` incompatível com `portal:bitrix_id`;
+- seleção do snapshot mais recente pela view `staging_negocios_latest`;
+- comportamento deny-by-default do RLS para um papel não-owner (`cpi_reader`).
+
+Por isso, o contrato agora registra `runtime_database_validated=true` com escopo `isolated_postgresql_16_github_actions`.
+
+Isso **não** significa banco de produção validado. Continuam `production_database_validated=false` e `bronze_ingestion_validated=false`.
 
 ## KPIs executivos candidatos
 
@@ -126,14 +149,16 @@ O contrato semântico registra esses conceitos como `absent_from_current_model`.
 - métricas Bitrix não podem ser marcadas como live-verified enquanto `data/bitrix-capabilities.json` estiver com `live_api_verified=false`;
 - variantes metodológicas permanecem separadas;
 - Faturado/Realizado/Recebido não podem aparecer como KPIs inventados;
-- o gate do Sprint 03 continua fechado enquanto DB, Bitrix, owners e thresholds estiverem pendentes;
+- PostgreSQL isolado validado não pode ser confundido com produção ou ingestão real;
+- o gate do Sprint 03 continua fechado enquanto Bitrix, ingestão, owners e thresholds estiverem pendentes;
 - nenhum webhook literal pode aparecer no contrato.
 
 ## Estado do gate após esta entrega
 
-### Implementado no GitHub
+### Implementado e validado no GitHub
 
 - Bronze/Staging: schema JS + migração SQL + teste estático;
+- migração aplicada e validada em **PostgreSQL 16 real isolado** no GitHub Actions;
 - CORE inicial: `MASTER_ENTITY_ID` + confiança + revisão manual;
 - Semântica mínima: contrato de entidades + KPIs candidatos + governança;
 - Bitrix capability catalog;
@@ -144,7 +169,7 @@ O contrato semântico registra esses conceitos como `absent_from_current_model`.
 
 ### Ainda não pode ser declarado concluído
 
-- execução real da migração PostgreSQL em banco isolado;
+- escolha/validação do banco alvo de produção;
 - ingestão real Bronze;
 - validação Bitrix ao vivo AtlasGR e Total Trac;
 - ratificação de owners;
