@@ -1,0 +1,62 @@
+{
+  "portal": "atlasgr",
+  "extraido_em": "2026-08-27T15:40:00Z",
+  "extraido_via": "synthetic:github-actions",
+  "negocios": [
+    {
+      "ID": "7001",
+      "TITLE": "CLIENTE FICTICIO ALFA",
+      "STAGE_ID": "C1:NEW",
+      "CATEGORY_ID": "1",
+      "OPPORTUNITY": "12500.50",
+      "CURRENCY_ID": "BRL",
+      "DATE_CREATE": "2026-08-20T10:00:00-03:00",
+      "DATE_MODIFY": "2026-08-27T09:00:00-03:00",
+      "MOVED_TIME": "2026-08-26T14:30:00-03:00",
+      "ASSIGNED_BY_ID": "101",
+      "COMPANY_ID": "501",
+      "CONTACT_ID": "0",
+      "LEAD_ID": "0",
+      "SOURCE_ID": "WEB",
+      "CLOSED": "N"
+    },
+    {
+      "ID": "",
+      "TITLE": "NEGOCIO FICTICIO REJEITADO",
+      "STAGE_ID": "C1:NEW",
+      "CATEGORY_ID": "1",
+      "OPPORTUNITY": "0",
+      "DATE_CREATE": "2026-08-27T10:00:00-03:00"
+    }
+  ],
+  "leads": [
+    {
+      "ID": "8001",
+      "TITLE": "LEAD FICTICIO BETA",
+      "STATUS_ID": "NEW",
+      "SOURCE_ID": "CALL",
+      "OPPORTUNITY": "3500",
+      "DATE_CREATE": "2026-08-25T11:00:00-03:00",
+      "DATE_MODIFY": "2026-08-27T08:00:00-03:00",
+      "ASSIGNED_BY_ID": "102",
+      "COMPANY_ID": "0",
+      "CONTACT_ID": "601",
+      "COMPANY_TITLE": "EMPRESA FICTICIA BETA",
+      "NAME": "Pessoa",
+      "LAST_NAME": "Teste",
+      "PHONE": [
+        { "VALUE": "+55 16 90000-0000", "VALUE_TYPE": "WORK" }
+      ],
+      "EMAIL": [
+        { "VALUE": "pessoa.teste@example.invalid", "VALUE_TYPE": "WORK" }
+      ]
+    },
+    {
+      "ID": "8002",
+      "TITLE": "LEAD FICTICIO SEM STATUS",
+      "STATUS_ID": "",
+      "DATE_CREATE": "2026-08-27T12:00:00-03:00",
+      "ASSIGNED_BY_ID": "102"
+    }
+  ]
+}
