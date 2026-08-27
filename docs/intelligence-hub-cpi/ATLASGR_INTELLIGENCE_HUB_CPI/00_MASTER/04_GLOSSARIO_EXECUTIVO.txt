@@ -1,0 +1,21 @@
+GLOSSÁRIO EXECUTIVO INICIAL
+
+Vendido: valor comercial reconhecido como venda conforme regra oficial a ser definida.
+Faturado: valor efetivamente faturado conforme fonte financeira/fiscal disponível.
+Realizado: valor efetivamente realizado conforme definição financeira corporativa.
+Recebido: valor efetivamente recebido/baixado.
+Pipeline: valor de oportunidades abertas elegíveis conforme escopo.
+Coverage: pipeline elegível / meta restante ou meta total, conforme contexto.
+Forecast: projeção de resultado futuro.
+Commit: parcela do forecast com maior confiança operacional.
+Best Case: cenário possível acima do Commit.
+Win Rate: ganhos / oportunidades elegíveis.
+Ticket Médio: valor médio por unidade analítica definida.
+Churn Logo: percentual de clientes perdidos.
+Revenue Churn: percentual de receita recorrente perdida.
+NRR: retenção líquida de receita incluindo expansão e contração.
+GRR: retenção bruta de receita sem expansão.
+Sales Cycle: tempo entre marcos comerciais definidos.
+Customer Lifecycle: ciclo completo do cliente.
+Time to Revenue: tempo entre aquisição/lead e início efetivo de receita.
+Health Score: score composto com pesos versionados e explicáveis.

@@ -1,0 +1,37 @@
+COMPARATIVOS TEMPORAIS
+
+Suportar:
+- mês x mês
+- ano x ano
+- ano/mês x ano/mês
+- YTD x YTD
+- trimestre x trimestre
+- janela móvel
+- período customizado
+
+Para cada KPI:
+valor A
+valor B
+diferença absoluta
+diferença percentual
+tendência
+significância quando aplicável
+comentário automático
+
+
+PRINCÍPIOS OBRIGATÓRIOS
+1. Dados reais antes de dashboards.
+2. Nenhum indicador sem definição, fonte, fórmula, granularidade, periodicidade e owner.
+3. Toda métrica deve permitir rastrear origem e evidência.
+4. Diferenciar claramente fato, inferência, previsão e recomendação.
+5. Nunca inventar dados ausentes.
+6. Toda previsão deve informar janela temporal, método, premissas e confiança.
+7. Toda recomendação deve apontar impacto esperado, prioridade e forma de validação.
+8. Nenhuma área deve operar como silo quando houver relação observável com outras áreas.
+9. O sistema deve detectar deterioração, risco e oportunidade antes do KPI final.
+10. Toda tela executiva deve responder: o que aconteceu, melhorou/piorou, por quê, o que tende a acontecer, o que fazer agora.
+11. A camada de IA não pode esconder incerteza.
+12. Segurança, RLS, segregação por perfil e auditabilidade são requisitos de produto.
+13. Performance e custo fazem parte da arquitetura.
+14. O Bitrix é uma fonte importante, não necessariamente a única.
+15. O projeto deve evoluir por ondas, com gates de qualidade entre elas.

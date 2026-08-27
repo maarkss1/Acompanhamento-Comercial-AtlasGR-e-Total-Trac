@@ -1,0 +1,62 @@
+ATLASGR INTELLIGENCE HUB — CPI DE CONSTRUÇÃO COMPLETA
+
+OBJETIVO
+Transformar a Central de Inteligência Comercial em uma plataforma corporativa de inteligência para Diretoria e Gestão, cobrindo Comercial, Financeiro, Marketing, CS, Implantação, Atendimento, TI, Produto, Inovação, Pessoas, Operações, Administrativo, Risco e áreas futuras.
+
+VISÃO
+Não construir apenas dashboards. Construir um sistema operacional de gestão:
+
+DADOS
+→ CONFIABILIDADE
+→ MÉTRICAS
+→ ANÁLISE
+→ DIAGNÓSTICO
+→ PREVISÃO
+→ RISCO
+→ OPORTUNIDADE
+→ RECOMENDAÇÃO
+→ AÇÃO
+→ APRENDIZADO
+
+ESTRUTURA DO PACOTE
+00_MASTER                visão, prompt mestre e governança geral
+01_ARQUITETURA           arquitetura funcional, técnica e informação
+02_DADOS_E_BITRIX        inventário, extração, modelo e qualidade
+03_SPRINTS               plano completo de implementação
+04_AGENTES               agentes especialistas e seus prompts
+05_DEPARTAMENTOS         escopo e inteligência por área
+06_RELATORIOS_E_METRICAS catálogo de relatórios e indicadores
+07_IA_E_PREVISAO         previsão, risco, anomalias, recomendação
+08_UX_E_DESIGN           navegação, cards, drill-down e experiência
+09_GOVERNANCA_E_SEGURANCA controles, evidência, acesso e confiança
+10_QA_E_RELEASE          testes, reconciliação e gates
+11_OPERACAO_E_EVOLUCAO   rotina, observabilidade, melhoria contínua
+12_TEMPLATES             modelos prontos de especificação
+99_CONSOLIDADO           prompt mestre consolidado
+
+
+PRINCÍPIOS OBRIGATÓRIOS
+1. Dados reais antes de dashboards.
+2. Nenhum indicador sem definição, fonte, fórmula, granularidade, periodicidade e owner.
+3. Toda métrica deve permitir rastrear origem e evidência.
+4. Diferenciar claramente fato, inferência, previsão e recomendação.
+5. Nunca inventar dados ausentes.
+6. Toda previsão deve informar janela temporal, método, premissas e confiança.
+7. Toda recomendação deve apontar impacto esperado, prioridade e forma de validação.
+8. Nenhuma área deve operar como silo quando houver relação observável com outras áreas.
+9. O sistema deve detectar deterioração, risco e oportunidade antes do KPI final.
+10. Toda tela executiva deve responder: o que aconteceu, melhorou/piorou, por quê, o que tende a acontecer, o que fazer agora.
+11. A camada de IA não pode esconder incerteza.
+12. Segurança, RLS, segregação por perfil e auditabilidade são requisitos de produto.
+13. Performance e custo fazem parte da arquitetura.
+14. O Bitrix é uma fonte importante, não necessariamente a única.
+15. O projeto deve evoluir por ondas, com gates de qualidade entre elas.
+
+
+COMO USAR
+1. Comece por 00_MASTER.
+2. Faça a extração completa do Bitrix conforme 02_DADOS_E_BITRIX.
+3. Execute Sprint 0 e Sprint 1 antes de produzir previsões.
+4. Use os agentes especialistas por domínio.
+5. Registre toda definição de KPI no catálogo oficial.
+6. Implemente em waves, com evidências e testes.

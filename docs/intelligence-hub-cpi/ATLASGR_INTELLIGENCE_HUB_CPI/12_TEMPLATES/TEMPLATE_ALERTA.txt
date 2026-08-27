@@ -1,0 +1,17 @@
+ALERT_ID:
+Nome:
+Área:
+Tipo:
+Severidade:
+Condição:
+Baseline:
+Evidência:
+Impacto estimado:
+Áreas afetadas:
+Owner:
+Ação sugerida:
+Confiança:
+Validade:
+Cooldown:
+Status:
+Feedback:

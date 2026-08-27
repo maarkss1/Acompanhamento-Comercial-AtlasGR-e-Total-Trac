@@ -1,0 +1,19 @@
+ORDEM E DEPENDÊNCIAS
+
+Fundação:
+Sprint 0 → 1 → 2
+
+Produto executivo inicial:
+Sprint 3
+
+Domínios:
+4,5,6,7,8,9,10,11,12,13 podem avançar em paralelo após a base mínima.
+
+Inteligência avançada:
+14 depende de histórico e definições estáveis.
+15 depende de KPIs confiáveis.
+16 depende de séries com qualidade.
+17 depende de sinais de múltiplas áreas.
+18 depende de Customer/Product/Commercial.
+19 depende de modelos e fórmulas versionadas.
+20 depende da camada semântica, evidências e políticas de IA.

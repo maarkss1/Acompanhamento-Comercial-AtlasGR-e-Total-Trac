@@ -1,0 +1,12 @@
+DECISION_ID:
+Contexto:
+Evidências:
+Alternativas:
+Recomendação:
+Impacto esperado:
+Risco:
+Owner:
+Prazo:
+Métrica de sucesso:
+Resultado:
+Aprendizado:

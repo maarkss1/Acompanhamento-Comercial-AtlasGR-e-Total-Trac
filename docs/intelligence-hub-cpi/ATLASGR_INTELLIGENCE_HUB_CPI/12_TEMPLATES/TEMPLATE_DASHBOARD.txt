@@ -1,0 +1,18 @@
+DASHBOARD_ID:
+Nome:
+Área:
+Persona:
+Pergunta de negócio:
+KPIs:
+Filtros:
+Comparativos:
+Visualizações:
+Drill-down:
+Alertas:
+Forecast:
+Recomendações:
+Fontes:
+Freshness:
+RLS:
+Testes:
+Owner:

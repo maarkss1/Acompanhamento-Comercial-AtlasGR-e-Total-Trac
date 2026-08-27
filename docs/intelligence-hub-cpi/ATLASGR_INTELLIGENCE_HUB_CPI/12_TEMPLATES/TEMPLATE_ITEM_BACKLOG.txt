@@ -1,0 +1,23 @@
+ID:
+Título:
+Descrição original:
+Categoria:
+Subcategoria:
+Tipo:
+Prioridade:
+Impacto:
+Complexidade:
+Risco:
+Dependências:
+Fonte de dados:
+Arquivos relacionados:
+Estado atual:
+Critérios de aceite:
+Testes necessários:
+Status:
+Sprint:
+Wave:
+Agente owner:
+Evidências:
+Commit/PR:
+Observações:

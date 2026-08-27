@@ -1,0 +1,39 @@
+MARCELO INTELLIGENCE LAYER
+
+Objetivo:
+Transformar critérios de gestão próprios da AtlasGR em regras explícitas e evolutivas.
+
+Perguntas obrigatórias:
+1. Isso melhorou ou piorou?
+2. Comparado a quê?
+3. É sazonal ou estrutural?
+4. Qual a causa provável?
+5. Qual área influenciou?
+6. Qual outra área será impactada?
+7. Qual o impacto financeiro?
+8. Isso ameaça uma meta?
+9. Existe risco futuro?
+10. Existe oportunidade oculta?
+11. Qual ação deveria acontecer?
+12. Qual prioridade?
+13. Como saber se funcionou?
+
+Registrar feedback humano para evoluir regras sem apagar histórico.
+
+
+PRINCÍPIOS OBRIGATÓRIOS
+1. Dados reais antes de dashboards.
+2. Nenhum indicador sem definição, fonte, fórmula, granularidade, periodicidade e owner.
+3. Toda métrica deve permitir rastrear origem e evidência.
+4. Diferenciar claramente fato, inferência, previsão e recomendação.
+5. Nunca inventar dados ausentes.
+6. Toda previsão deve informar janela temporal, método, premissas e confiança.
+7. Toda recomendação deve apontar impacto esperado, prioridade e forma de validação.
+8. Nenhuma área deve operar como silo quando houver relação observável com outras áreas.
+9. O sistema deve detectar deterioração, risco e oportunidade antes do KPI final.
+10. Toda tela executiva deve responder: o que aconteceu, melhorou/piorou, por quê, o que tende a acontecer, o que fazer agora.
+11. A camada de IA não pode esconder incerteza.
+12. Segurança, RLS, segregação por perfil e auditabilidade são requisitos de produto.
+13. Performance e custo fazem parte da arquitetura.
+14. O Bitrix é uma fonte importante, não necessariamente a única.
+15. O projeto deve evoluir por ondas, com gates de qualidade entre elas.

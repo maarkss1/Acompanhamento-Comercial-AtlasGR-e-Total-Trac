@@ -1,0 +1,20 @@
+DEFINITION OF DONE GLOBAL
+
+Um item só pode ser considerado concluído quando:
+- requisito estiver rastreado por ID;
+- fonte de dados estiver identificada;
+- regra de negócio estiver documentada;
+- cálculo estiver reproduzível;
+- tratamento de nulos/duplicidades estiver explícito;
+- permissões estiverem verificadas;
+- teste unitário existir quando aplicável;
+- teste de integração existir quando aplicável;
+- reconciliação com fonte tiver sido feita;
+- UX estiver validada;
+- acessibilidade essencial estiver atendida;
+- performance mínima tiver sido verificada;
+- logging/telemetria estiverem disponíveis;
+- evidência tiver sido registrada;
+- riscos conhecidos estiverem documentados;
+- documentação tiver sido atualizada;
+- o item não quebrar relatórios existentes.
