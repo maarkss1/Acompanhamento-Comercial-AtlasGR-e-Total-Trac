@@ -25,9 +25,12 @@ describe('bitrix-bronze-live-probe.yml — safety contract', () => {
     assert.doesNotMatch(workflow, /contents:\s*write/i);
   });
 
-  test('usa arquivos efêmeros do runner e não publica artifacts', () => {
-    assert.match(workflow, /runner\.temp/);
+  test('usa arquivos efêmeros fora do workspace e não publica artifacts', () => {
+    assert.match(workflow, /RUNNER_TEMP/);
+    assert.match(workflow, /GITHUB_ENV/);
+    assert.match(workflow, /Prepare ephemeral output paths/);
     assert.match(workflow, /Remove ephemeral files/);
+    assert.doesNotMatch(workflow, /runner\.temp/);
     assert.doesNotMatch(workflow, /actions\/upload-artifact/i);
   });
 
