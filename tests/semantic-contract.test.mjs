@@ -101,9 +101,22 @@ describe("data/semantic-contract.json — contrato semântico mínimo", () => {
     assert.doesNotMatch(semanticNames, /faturado|realizado|recebido/);
   });
 
-  test("gate do Sprint 03 permanece fechado até DB, Bitrix, owners e thresholds serem validados", () => {
+  test("migração Bronze está validada em PostgreSQL 16 isolado, sem fingir produção ou ingestão real", () => {
+    assert.equal(contract.gate.runtime_database_validated, true);
+    assert.equal(contract.gate.runtime_database_validation_scope, "isolated_postgresql_16_github_actions");
+    assert.equal(contract.gate.production_database_validated, false);
+    assert.equal(contract.gate.bronze_ingestion_validated, false);
+
+    const stagingEntities = (contract.canonical_entities || []).filter((e) => e.layer === "staging");
+    assert.ok(stagingEntities.length >= 2);
+    for (const entity of stagingEntities) {
+      assert.equal(entity.status, "schema_and_migration_validated_postgresql16_no_ingestion");
+    }
+  });
+
+  test("gate do Sprint 03 permanece fechado por Bitrix, ingestão, owners e thresholds", () => {
     assert.equal(contract.gate.semantic_contract_implemented, true);
-    assert.equal(contract.gate.runtime_database_validated, false);
+    assert.equal(contract.gate.bronze_ingestion_validated, false);
     assert.equal(contract.gate.bitrix_live_verified, false);
     assert.equal(contract.gate.metric_owners_ratified, false);
     assert.equal(contract.gate.pending_business_thresholds_resolved, false);
