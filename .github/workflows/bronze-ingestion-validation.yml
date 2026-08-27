@@ -10,6 +10,7 @@ on:
       - 'js/staging-schema.js'
       - 'db/migrations/**'
       - 'tests/fixtures/bronze-ingestion.synthetic.json'
+      - 'tests/fixtures/bronze-ingestion.totaltrac.synthetic.json'
       - 'tests/bronze-ingestion.test.mjs'
       - '.github/workflows/bronze-ingestion-validation.yml'
   pull_request:
@@ -21,6 +22,7 @@ on:
       - 'js/staging-schema.js'
       - 'db/migrations/**'
       - 'tests/fixtures/bronze-ingestion.synthetic.json'
+      - 'tests/fixtures/bronze-ingestion.totaltrac.synthetic.json'
       - 'tests/bronze-ingestion.test.mjs'
       - '.github/workflows/bronze-ingestion-validation.yml'
   workflow_dispatch:
@@ -81,20 +83,27 @@ jobs:
             psql -v ON_ERROR_STOP=1 -f "${migration}"
           done
 
-      - name: Generate Bronze ingestion SQL from synthetic Bitrix envelope
+      - name: Generate AtlasGR and Total Trac Bronze SQL from synthetic envelopes
         run: |
           node scripts/bronze-ingest.mjs \
             --input tests/fixtures/bronze-ingestion.synthetic.json \
-            --sql "$RUNNER_TEMP/bronze-ingestion.sql" \
-            --manifest "$RUNNER_TEMP/bronze-manifest.json"
-          cat "$RUNNER_TEMP/bronze-manifest.json"
+            --sql "$RUNNER_TEMP/bronze-atlasgr.sql" \
+            --manifest "$RUNNER_TEMP/bronze-atlasgr-manifest.json"
+          node scripts/bronze-ingest.mjs \
+            --input tests/fixtures/bronze-ingestion.totaltrac.synthetic.json \
+            --sql "$RUNNER_TEMP/bronze-totaltrac.sql" \
+            --manifest "$RUNNER_TEMP/bronze-totaltrac-manifest.json"
+          cat "$RUNNER_TEMP/bronze-atlasgr-manifest.json"
+          cat "$RUNNER_TEMP/bronze-totaltrac-manifest.json"
 
-      - name: Execute ingestion twice to prove idempotency
+      - name: Execute both ingestions twice to prove idempotency and tenant isolation
         run: |
-          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-ingestion.sql"
-          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-ingestion.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-atlasgr.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-totaltrac.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-atlasgr.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-totaltrac.sql"
 
-      - name: Validate end-to-end Bronze state
+      - name: Validate end-to-end Bronze state and portal isolation
         shell: bash
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'
@@ -109,7 +118,7 @@ jobs:
               INTO n, lidos, validos, invalidos
             FROM intelligence.ingestion_runs
             WHERE extraido_via = 'synthetic:github-actions';
-            IF n <> 2 OR lidos <> 4 OR validos <> 2 OR invalidos <> 2 THEN
+            IF n <> 4 OR lidos <> 6 OR validos <> 4 OR invalidos <> 2 THEN
               RAISE EXCEPTION 'unexpected run audit: runs %, read %, valid %, invalid %', n, lidos, validos, invalidos;
             END IF;
 
@@ -117,17 +126,24 @@ jobs:
             FROM intelligence.ingestion_runs
             WHERE extraido_via = 'synthetic:github-actions' AND status = 'partial';
             IF n <> 2 THEN
-              RAISE EXCEPTION 'expected both synthetic runs partial, found %', n;
+              RAISE EXCEPTION 'expected two partial AtlasGR runs, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.ingestion_runs
+            WHERE extraido_via = 'synthetic:github-actions' AND status = 'success';
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected two successful Total Trac runs, found %', n;
             END IF;
 
             SELECT count(*) INTO n FROM intelligence.staging_negocios WHERE extraido_via = 'synthetic:github-actions';
-            IF n <> 1 THEN
-              RAISE EXCEPTION 'expected one valid deal snapshot after idempotent rerun, found %', n;
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected two valid deal snapshots across portals, found %', n;
             END IF;
 
             SELECT count(*) INTO n FROM intelligence.staging_leads WHERE extraido_via = 'synthetic:github-actions';
-            IF n <> 1 THEN
-              RAISE EXCEPTION 'expected one valid lead snapshot after idempotent rerun, found %', n;
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected two valid lead snapshots across portals, found %', n;
             END IF;
 
             SELECT count(*) INTO n
@@ -135,7 +151,7 @@ jobs:
             JOIN intelligence.ingestion_runs ir ON ir.run_id = r.run_id
             WHERE ir.extraido_via = 'synthetic:github-actions';
             IF n <> 2 THEN
-              RAISE EXCEPTION 'expected two rejection audit rows after idempotent rerun, found %', n;
+              RAISE EXCEPTION 'expected two rejection audit rows after idempotent reruns, found %', n;
             END IF;
 
             SELECT count(*) INTO n
@@ -161,18 +177,34 @@ jobs:
           BEGIN
             SELECT count(*) INTO n
             FROM intelligence.staging_negocios_latest
-            WHERE portal = 'atlasgr' AND bitrix_id = '7001' AND valor = 12500.50;
-            IF n <> 1 THEN
-              RAISE EXCEPTION 'valid deal missing from latest view';
+            WHERE bitrix_id = '7001'
+              AND ((portal = 'atlasgr' AND staging_id = 'atlasgr:7001' AND valor = 12500.50)
+                OR (portal = 'totaltrac' AND staging_id = 'totaltrac:7001' AND valor = 9100.25));
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'same Bitrix deal ID did not remain isolated across both portals';
             END IF;
 
             SELECT count(*) INTO n
             FROM intelligence.staging_leads_latest
-            WHERE portal = 'atlasgr'
-              AND bitrix_id = '8001'
-              AND 'pessoa.teste@example.invalid' = ANY(emails);
-            IF n <> 1 THEN
-              RAISE EXCEPTION 'valid synthetic lead missing from latest view';
+            WHERE bitrix_id = '8001'
+              AND ((portal = 'atlasgr' AND staging_id = 'atlasgr:8001' AND 'pessoa.teste@example.invalid' = ANY(emails))
+                OR (portal = 'totaltrac' AND staging_id = 'totaltrac:8001' AND 'totaltrac.teste@example.invalid' = ANY(emails)));
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'same Bitrix lead ID did not remain isolated across both portals';
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.staging_negocios_latest
+            WHERE bitrix_id = '7001';
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected exactly two latest deal rows for shared Bitrix ID, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.staging_leads_latest
+            WHERE bitrix_id = '8001';
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected exactly two latest lead rows for shared Bitrix ID, found %', n;
             END IF;
           END $$;
           SQL
