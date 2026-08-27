@@ -1,0 +1,178 @@
+name: Bronze Ingestion Validation
+
+on:
+  push:
+    branches:
+      - 'cpi-*'
+    paths:
+      - 'scripts/bronze-ingest.mjs'
+      - 'js/jornada.js'
+      - 'js/staging-schema.js'
+      - 'db/migrations/**'
+      - 'tests/fixtures/bronze-ingestion.synthetic.json'
+      - 'tests/bronze-ingestion.test.mjs'
+      - '.github/workflows/bronze-ingestion-validation.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/bronze-ingest.mjs'
+      - 'js/jornada.js'
+      - 'js/staging-schema.js'
+      - 'db/migrations/**'
+      - 'tests/fixtures/bronze-ingestion.synthetic.json'
+      - 'tests/bronze-ingestion.test.mjs'
+      - '.github/workflows/bronze-ingestion-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bronze-e2e:
+    name: bronze-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cpi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cpi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: cpi_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in db/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
+
+      - name: Generate Bronze ingestion SQL from synthetic Bitrix envelope
+        run: |
+          node scripts/bronze-ingest.mjs \
+            --input tests/fixtures/bronze-ingestion.synthetic.json \
+            --sql "$RUNNER_TEMP/bronze-ingestion.sql" \
+            --manifest "$RUNNER_TEMP/bronze-manifest.json"
+          cat "$RUNNER_TEMP/bronze-manifest.json"
+
+      - name: Execute ingestion twice to prove idempotency
+        run: |
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-ingestion.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/bronze-ingestion.sql"
+
+      - name: Validate end-to-end Bronze state
+        shell: bash
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            n integer;
+            lidos bigint;
+            validos bigint;
+            invalidos bigint;
+          BEGIN
+            SELECT count(*), sum(registros_lidos), sum(registros_validos), sum(registros_invalidos)
+              INTO n, lidos, validos, invalidos
+            FROM intelligence.ingestion_runs
+            WHERE extraido_via = 'synthetic:github-actions';
+            IF n <> 2 OR lidos <> 4 OR validos <> 2 OR invalidos <> 2 THEN
+              RAISE EXCEPTION 'unexpected run audit: runs %, read %, valid %, invalid %', n, lidos, validos, invalidos;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.ingestion_runs
+            WHERE extraido_via = 'synthetic:github-actions' AND status = 'partial';
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected both synthetic runs partial, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n FROM intelligence.staging_negocios WHERE extraido_via = 'synthetic:github-actions';
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'expected one valid deal snapshot after idempotent rerun, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n FROM intelligence.staging_leads WHERE extraido_via = 'synthetic:github-actions';
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'expected one valid lead snapshot after idempotent rerun, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.ingestion_rejections r
+            JOIN intelligence.ingestion_runs ir ON ir.run_id = r.run_id
+            WHERE ir.extraido_via = 'synthetic:github-actions';
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected two rejection audit rows after idempotent rerun, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM information_schema.columns
+            WHERE table_schema = 'intelligence'
+              AND table_name = 'ingestion_rejections'
+              AND column_name IN ('payload', 'raw', 'source_payload', 'payload_bruto');
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'rejection quarantine must not contain raw payload columns';
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.ingestion_rejections
+            WHERE source_fingerprint !~ '^[a-f0-9]{64}$';
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'invalid rejection fingerprints found: %', n;
+            END IF;
+          END $$;
+
+          DO $$
+          DECLARE
+            n integer;
+          BEGIN
+            SELECT count(*) INTO n
+            FROM intelligence.staging_negocios_latest
+            WHERE portal = 'atlasgr' AND bitrix_id = '7001' AND valor = 12500.50;
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'valid deal missing from latest view';
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM intelligence.staging_leads_latest
+            WHERE portal = 'atlasgr'
+              AND bitrix_id = '8001'
+              AND 'pessoa.teste@example.invalid' = ANY(emails);
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'valid synthetic lead missing from latest view';
+            END IF;
+          END $$;
+          SQL
