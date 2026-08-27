@@ -34,8 +34,11 @@ function iniciar() {
   atualizarIconeTema();
 
   // Restaurar filtros globais e plugar persistência
+  // v29 — chave por empresa: sem isso, filtro salvo de uma marca
+  // vazava/sobrescrevia o da outra no mesmo navegador.
+  const chaveFiltrosGlobais = "atlas-filtros-globais" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "");
   try {
-    const salvo = localStorage.getItem("atlas-filtros-globais");
+    const salvo = localStorage.getItem(chaveFiltrosGlobais);
     if (salvo) {
       const f = JSON.parse(salvo);
       if (f.inicio && document.getElementById("dataInicio")) document.getElementById("dataInicio").value = f.inicio;
@@ -53,7 +56,7 @@ function iniciar() {
         preset: document.getElementById("periodoPreset")?.value || "",
         meta: document.getElementById("cockpitMetaMensal")?.value || ""
       };
-      localStorage.setItem("atlas-filtros-globais", JSON.stringify(f));
+      localStorage.setItem(chaveFiltrosGlobais, JSON.stringify(f));
     } catch(e) {}
   };
 
@@ -70,7 +73,10 @@ function alternarTema() {
   const novo = atual === "escuro" ? "claro" : "escuro";
   document.documentElement.setAttribute("data-tema", novo);
   try {
-    localStorage.setItem("atlas-extrator-tema", novo);
+    // v29 — mesma chave por empresa lida no script inline de <head> de cada
+    // página (data-empresa), pra o tema salvo bater com o que é lido antes
+    // da primeira pintura.
+    localStorage.setItem("atlas-extrator-tema" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), novo);
   } catch (e) {
     // localStorage indisponível (modo privado, etc.) — tema só não persiste entre sessões.
   }
@@ -629,7 +635,9 @@ function atualizarBotaoSync(){const ok=document.getElementById("syncHabilitarEsc
 // substituto de um audit trail real (é local e pode ser limpo pelo próprio
 // usuário), mas dá visibilidade imediata de "o que foi alterado, quando e
 // com qual resultado" — ver seção "Riscos de segurança" da auditoria do repo.
-const CHAVE_AUDITORIA_SYNC_LOCAL="atlas-extrator-auditoria-sync";
+// v29 — chave por empresa: sem isso, a auditoria de sync de uma marca
+// vazava/sobrescrevia a da outra no mesmo navegador.
+const CHAVE_AUDITORIA_SYNC_LOCAL="atlas-extrator-auditoria-sync"+(typeof marcaAtiva==="function"?marcaAtiva().sufixoStorage:"");
 function carregarAuditoriaSync(){try{return JSON.parse(localStorage.getItem(CHAVE_AUDITORIA_SYNC_LOCAL)||"[]");}catch(e){return [];}}
 function registrarAuditoriaSync(entrada){
   try{
@@ -691,7 +699,9 @@ let v10FontesPivotDisponiveis = {};
 let v10PivotResultadoAtual = [];
 let v10ChatHistorico = [];
 let v10ChatEnviando = false;
-const CHAVE_IA_LOCAL = "atlas-extrator-chave-ia";
+// v29 — chave por empresa: sem isso, a chave de IA de uma marca
+// vazava/sobrescrevia a da outra no mesmo navegador.
+const CHAVE_IA_LOCAL = "atlas-extrator-chave-ia" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "");
 
 function abrirAbaV10(nome) {
   ["radar", "funil", "construtor", "ia"].forEach((n) => {

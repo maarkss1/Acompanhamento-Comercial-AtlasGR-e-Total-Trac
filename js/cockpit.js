@@ -1639,7 +1639,9 @@ function cockpitRenderizarMetasDesdobradas(c) {
   const vendedores = [...new Set((c.deals || []).map(d => d._RESPONSAVEL || "Desconhecido"))];
   
   let salvo = {};
-  try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas")) || {}; } catch(e){}
+  // v29 — chave por empresa: sem isso, meta desdobrada de uma marca
+  // vazava/sobrescrevia a da outra no mesmo navegador.
+  try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""))) || {}; } catch(e){}
   
   let html = "";
   vendedores.forEach((v, i) => {
@@ -1660,7 +1662,7 @@ window.cockpitSalvarMetasIndividuais = function() {
   const inputs = document.querySelectorAll(".meta-vendedor");
   const metas = {};
   inputs.forEach(i => { metas[i.dataset.vendedor] = parseFloat(i.value) || 0; });
-  try { localStorage.setItem("atlas-metas-desdobradas", JSON.stringify(metas)); } catch(e){}
+  try { localStorage.setItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), JSON.stringify(metas)); } catch(e){}
   atualizarStatus("Metas individuais salvas localmente!");
   setTimeout(() => renderizarCockpit(), 500);
 };
@@ -1714,12 +1716,14 @@ function salvarOrdemLayout() {
   const container = document.querySelector('.cockpit-executivo');
   if (!container) return;
   const ids = [...container.querySelectorAll('.draggable-card')].map(el => el.id);
-  try { localStorage.setItem('atlas-layout-ordem', JSON.stringify(ids)); } catch(e){}
+  // v29 — chave por empresa: sem isso, a ordem do layout de uma marca
+  // vazava/sobrescrevia a da outra no mesmo navegador.
+  try { localStorage.setItem('atlas-layout-ordem' + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), JSON.stringify(ids)); } catch(e){}
 }
 
 function restaurarOrdemLayout() {
   try {
-    const salvo = JSON.parse(localStorage.getItem('atlas-layout-ordem'));
+    const salvo = JSON.parse(localStorage.getItem('atlas-layout-ordem' + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : "")));
     if (!salvo) return;
     const container = document.querySelector('.cockpit-executivo');
     if (!container) return;

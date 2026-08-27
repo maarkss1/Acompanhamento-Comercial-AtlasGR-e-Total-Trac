@@ -671,9 +671,17 @@ function renderizarForecastSemanal() {
     `<strong>${escapeHtmlRelatorio(r.meta.pipeline)}</strong> • ${escapeHtmlRelatorio(formatarDataBR(r.meta.inicio))} até ${escapeHtmlRelatorio(formatarDataBR(r.meta.fim))}.` +
     (r.meta.meta_mensal ? ` Meta mensal (${escapeHtmlRelatorio(mesAnoBR(r.meta.mes_inicio))}): <strong>${moedaRelatorio(r.meta.meta_mensal)}</strong>.` : " Meta mensal não informada.");
 
+  // v29 — "Fechado no mês" aqui usa a mesma base já alinhada em
+  // gerarHTMLForecastModelo() (r.modelo_visual.resumo.FECHADOS_VALOR:
+  // negócios no Financeiro em "Contrato assinado"), em vez de
+  // r.resumo.FECHADO_MES (só o funil Comercial marcado como ganho). Sem essa
+  // troca, este card e o card "Entregue" do relatório visual mostravam dois
+  // valores diferentes para o mesmo rótulo na mesma sessão de extração.
+  // Fallback pro valor antigo só se modelo_visual não tiver sido calculado.
+  const fechadoMesConsistente = Number(r.modelo_visual?.resumo?.FECHADOS_VALOR ?? r.resumo.FECHADO_MES) || 0;
   const kpis = [
     ["Fechado na semana", moedaRelatorio(r.resumo.FECHADO_SEMANA), "forecastNegociosTabela"],
-    ["Fechado no mês", moedaRelatorio(r.resumo.FECHADO_MES), "forecastNegociosTabela"],
+    ["Fechado no mês", moedaRelatorio(fechadoMesConsistente), "forecastNegociosTabela"],
     ["Forecast total (semana)", moedaRelatorio(r.resumo.FORECAST_TOTAL), "forecastNegociosTabela"],
     ["Forecast total (mês)", moedaRelatorio(r.resumo.FORECAST_MES_TOTAL), "forecastNegociosTabela"],
     ["Commit", moedaRelatorio(r.resumo.COMMIT), "forecastNegociosTabela"],

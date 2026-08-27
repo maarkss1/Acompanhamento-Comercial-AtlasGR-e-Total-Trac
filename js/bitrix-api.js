@@ -4,7 +4,12 @@ function alternarVisibilidadeWebhook() {
 }
 
 
-const WEBHOOK_FIXO_PADRAO = "https://atlasgr.bitrix24.com.br/rest/450/gr94fas79p1nizci/";
+// v28 — o valor fixo que existia aqui foi removido: estava em texto puro,
+// versionado em git e publicado no HTML servido via GitHub Pages (repositório
+// público), ou seja, era uma credencial de produção exposta publicamente. O
+// webhook precisa ser revogado/regenerado no Bitrix24 e colado manualmente
+// (mesmo fluxo que a Total Trac já usa, ver MARCAS.totaltrac em config.js).
+const WEBHOOK_FIXO_PADRAO = "";
 const CHAVE_WEBHOOK_LOCAL = "atlas-extrator-bitrix-webhook";
 
 // v27 — multi-empresa: cada marca (ver MARCAS em config.js) tem sua própria
