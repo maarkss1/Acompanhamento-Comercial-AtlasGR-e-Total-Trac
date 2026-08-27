@@ -46,7 +46,8 @@ jobs:
           forecast_path = Path('scripts/forecast-semanal.mjs')
           forecast = forecast_path.read_text(encoding='utf-8')
 
-          new_meta = '''function classificarSemanticaForecastSemanal(d, metaStage = {}) {
+          new_meta = '''function classificarSemanticaForecastSemanal(d, metaStage) {
+            metaStage = metaStage || {};
             const semantic = String(d?.STAGE_SEMANTIC_ID || metaStage?.semantics || "").toLowerCase();
             return semantic === "s" || semantic === "success" ? "success"
               : semantic === "f" || semantic === "failure" || semantic === "apology" ? "failure"
