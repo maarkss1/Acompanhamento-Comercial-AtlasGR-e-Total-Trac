@@ -127,48 +127,44 @@ jobs:
           '''
           text = text.replace(marker, helpers + marker)
 
-          users_anchor = '''  const metadadosEstagio = await buscarMetadadosEstagiosComercial();
-
-          let fechadoSemana = 0, fechadoMes = 0;
-          let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
-          '''
+          init_start_marker = '  const metadadosEstagio = await buscarMetadadosEstagiosComercial();'
+          init_end_marker = '  let pipelinePonderadoMes = 0;'
+          start = text.find(init_start_marker)
+          end = text.find(init_end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('bloco de inicialização do forecast não localizado')
           replacement = '''  const metadadosEstagio = await buscarMetadadosEstagiosComercial();
 
-            const categoriasFinanceiro = await buscarCategoriasFinanceiro();
-            const [dealsFinanceiro, metadadosFinanceiro] = await Promise.all([
-              buscarDealsFinanceiro(categoriasFinanceiro),
-              buscarMetadadosEstagiosCategorias(categoriasFinanceiro),
-            ]);
-            console.log(`Negocios nos funis Financeiro: ${dealsFinanceiro.length} | categorias: ${categoriasFinanceiro.join(", ")}`);
+          const categoriasFinanceiro = await buscarCategoriasFinanceiro();
+          const [dealsFinanceiro, metadadosFinanceiro] = await Promise.all([
+            buscarDealsFinanceiro(categoriasFinanceiro),
+            buscarMetadadosEstagiosCategorias(categoriasFinanceiro),
+          ]);
+          console.log(`Negocios nos funis Financeiro: ${dealsFinanceiro.length} | categorias: ${categoriasFinanceiro.join(", ")}`);
 
-            const fechadoSemana = somarFechadosFinanceiroForecastSemanal(
-              dealsFinanceiro, metadadosFinanceiro, inicioSemana, fimSemana
-            );
-            const fechadoMes = somarFechadosFinanceiroForecastSemanal(
-              dealsFinanceiro, metadadosFinanceiro, mesInicio, mesFim
-            );
-            let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
+          const fechadoSemana = somarFechadosFinanceiroForecastSemanal(
+            dealsFinanceiro, metadadosFinanceiro, inicioSemana, fimSemana
+          );
+          const fechadoMes = somarFechadosFinanceiroForecastSemanal(
+            dealsFinanceiro, metadadosFinanceiro, mesInicio, mesFim
+          );
+          let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
           '''
-          if text.count(users_anchor) != 1:
-              raise SystemExit(f'bloco de inicialização esperado 1x, encontrado {text.count(users_anchor)}x')
-          text = text.replace(users_anchor, replacement)
+          text = text[:start] + replacement + text[end:]
 
-          success_block = '''    if (semantica === "success") {
-              if (dentroFaixa(d.CLOSEDATE, inicioSemana, fimSemana)) fechadoSemana += valor;
-              if (dentroFaixa(d.CLOSEDATE, mesInicio, mesFim)) fechadoMes += valor;
-              continue;
-            }
-            if (semantica !== "process") continue;
-          '''
-          if text.count(success_block) != 1:
-              raise SystemExit(f'bloco antigo de fechado Comercial esperado 1x, encontrado {text.count(success_block)}x')
-          text = text.replace(success_block, '    if (semantica !== "process") continue;\n')
+          success_start = text.find('    if (semantica === "success") {', text.find('  for (const d of deals) {'))
+          stage_label_marker = '    const stageLabel = metaStage.label || "";'
+          success_end = text.find(stage_label_marker, success_start)
+          if success_start == -1 or success_end == -1:
+              raise SystemExit('bloco antigo de fechado Comercial não localizado')
+          text = text[:success_start] + '    if (semantica !== "process") continue;\n' + text[success_end:]
 
-          old_note = '_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Projeção = fechado + pipeline aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._'
-          new_note = '_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Entregue = negócios do Financeiro em “Contrato Assinado”, pela data de movimento (MOVED_TIME, fallback DATE_CREATE). Projeção = entregue + pipeline Comercial aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._'
-          if text.count(old_note) != 1:
-              raise SystemExit('nota explicativa antiga não encontrada exatamente 1x')
-          text = text.replace(old_note, new_note)
+          note_start = text.find('  linhas.push(`_Meta semanal = meta mensal ÷')
+          note_end = text.find('\n', note_start)
+          if note_start == -1 or note_end == -1:
+              raise SystemExit('nota explicativa do forecast não localizada')
+          new_note_line = '  linhas.push(`_Meta semanal = meta mensal ÷ ${semanasNoMes} semana(s) do mês. Entregue = negócios do Financeiro em “Contrato Assinado”, pela data de movimento (MOVED_TIME, fallback DATE_CREATE). Projeção = entregue + pipeline Comercial aberto ponderado (sem estágios "Piloto"). Tendência considera o entregue OU a projeção — qualquer um dos dois batendo a meta já marca 🟢._`);'
+          text = text[:note_start] + new_note_line + text[note_end:]
 
           path.write_text(text, encoding='utf-8')
           PY
