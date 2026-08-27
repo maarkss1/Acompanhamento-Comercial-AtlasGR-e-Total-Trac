@@ -65,11 +65,7 @@ GitHub Actions:
 - Bronze Ingestion Validation `33097450932`: **success**, incluindo AtlasGR + Total Trac e isolamento por portal;
 - Database Validation `33097450916`: **success** em PostgreSQL 16 efêmero.
 
-O estado consolidado também está refletido em:
-
-- `GATE_INTEGRACAO_SPRINT_02.md`;
-- Issue #15;
-- PR #16.
+O estado consolidado também está refletido em `GATE_INTEGRACAO_SPRINT_02.md` e na Issue #15.
 
 ## Blocker exato para a próxima execução
 
