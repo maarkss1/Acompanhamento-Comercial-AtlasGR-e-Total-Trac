@@ -6,6 +6,7 @@
   "generated_from": [
     "docs/intelligence-hub-cpi/execucao/wave-02/05_CATALOGO_OFICIAL_DE_METRICAS.md",
     "data/bitrix-capabilities.json",
+    "data/governance-decisions.json",
     "js/entity-resolution.js",
     "js/staging-schema.js",
     "db/migrations/001_staging_bronze.sql"
@@ -16,7 +17,8 @@
     "current_owner_status": "proposed_only",
     "threshold_policy": "metric with pending business threshold cannot be executive_eligible until ratified or threshold-dependent presentation is removed",
     "live_source_policy": "Bitrix-backed executive metrics remain not live-verified until read-only validation is executed for each portal",
-    "facts_vs_proposals": "fields ending in _status distinguish implemented facts from pending business decisions"
+    "facts_vs_proposals": "fields ending in _status distinguish implemented facts from pending business decisions",
+    "decision_contract": "data/governance-decisions.json"
   },
   "canonical_entities": [
     {
@@ -229,6 +231,8 @@
   ],
   "gate": {
     "semantic_contract_implemented": true,
+    "governance_decisions_formalized": true,
+    "governance_decisions_pending": 9,
     "runtime_database_validated": true,
     "runtime_database_validation_scope": "isolated_postgresql_16_github_actions",
     "production_database_validated": false,
