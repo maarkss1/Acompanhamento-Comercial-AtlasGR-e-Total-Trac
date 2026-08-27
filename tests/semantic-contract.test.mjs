@@ -14,8 +14,11 @@ const catalogText = readFileSync(
 );
 const bitrixCapabilities = JSON.parse(readFileSync(path.join(ROOT, "data", "bitrix-capabilities.json"), "utf8"));
 
+// METRIC_IDs oficiais podem terminar em variantes minúsculas, ex. -01a/-01b.
+// Capturamos literalmente o token inteiro após "METRIC_ID:" em vez de impor
+// uma gramática que poderia rejeitar IDs já existentes no catálogo humano.
 const metricIdsFromCatalog = new Set(
-  [...catalogText.matchAll(/METRIC_ID:\s*([A-Z0-9_-]+(?:-[0-9]+[a-z]?)?)/g)].map((m) => m[1])
+  [...catalogText.matchAll(/METRIC_ID:\s*([A-Za-z0-9_-]+)/g)].map((m) => m[1])
 );
 
 describe("data/semantic-contract.json — contrato semântico mínimo", () => {
