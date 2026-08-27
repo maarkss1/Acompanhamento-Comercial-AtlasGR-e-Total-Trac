@@ -55,8 +55,14 @@ jobs:
           sudo apt-get install -y postgresql-client
           psql --version
 
-      - name: Apply Bronze/Staging migration
-        run: psql -v ON_ERROR_STOP=1 -f db/migrations/001_staging_bronze.sql
+      - name: Apply all Bronze/Staging migrations in order
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in db/migrations/*.sql; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
 
       - name: Validate schema, RLS, constraints and latest views
         shell: bash
@@ -69,26 +75,26 @@ jobs:
             SELECT count(*) INTO n
             FROM information_schema.tables
             WHERE table_schema = 'intelligence'
-              AND table_name IN ('ingestion_runs', 'staging_negocios', 'staging_leads');
-            IF n <> 3 THEN
-              RAISE EXCEPTION 'expected 3 intelligence tables, found %', n;
+              AND table_name IN ('ingestion_runs', 'staging_negocios', 'staging_leads', 'ingestion_rejections');
+            IF n <> 4 THEN
+              RAISE EXCEPTION 'expected 4 intelligence tables, found %', n;
             END IF;
 
             SELECT count(*) INTO n
             FROM pg_class c
             JOIN pg_namespace ns ON ns.oid = c.relnamespace
             WHERE ns.nspname = 'intelligence'
-              AND c.relname IN ('ingestion_runs', 'staging_negocios', 'staging_leads')
+              AND c.relname IN ('ingestion_runs', 'staging_negocios', 'staging_leads', 'ingestion_rejections')
               AND c.relrowsecurity = true;
-            IF n <> 3 THEN
-              RAISE EXCEPTION 'RLS must be enabled on all 3 tables, found %', n;
+            IF n <> 4 THEN
+              RAISE EXCEPTION 'RLS must be enabled on all 4 tables, found %', n;
             END IF;
 
             SELECT count(*) INTO n
             FROM pg_policies
             WHERE schemaname = 'intelligence';
             IF n <> 0 THEN
-              RAISE EXCEPTION 'base migration must not create permissive policies, found %', n;
+              RAISE EXCEPTION 'base migrations must not create permissive policies, found %', n;
             END IF;
 
             SELECT count(*) INTO n
@@ -152,9 +158,29 @@ jobs:
             END IF;
           END $$;
 
+          INSERT INTO intelligence.ingestion_runs
+            (run_id, portal, entidade, schema_version, extraido_via, iniciado_em, status)
+          VALUES
+            ('rejection-proof', 'atlasgr', 'leads', '1.0.0', 'github-actions', now(), 'partial');
+
+          INSERT INTO intelligence.ingestion_rejections
+            (run_id, portal, entidade, bitrix_id, staging_id, campos_ausentes, inconsistencias, source_fingerprint)
+          VALUES
+            ('rejection-proof', 'atlasgr', 'leads', '700', 'atlasgr:700', ARRAY['estagio_id'], ARRAY['sem_contato'], repeat('a', 64));
+
+          DO $$
+          DECLARE
+            n integer;
+          BEGIN
+            SELECT count(*) INTO n FROM intelligence.ingestion_rejections WHERE run_id = 'rejection-proof';
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'rejection audit row missing';
+            END IF;
+          END $$;
+
           CREATE ROLE cpi_reader NOLOGIN;
           GRANT USAGE ON SCHEMA intelligence TO cpi_reader;
-          GRANT SELECT ON intelligence.ingestion_runs TO cpi_reader;
+          GRANT SELECT ON intelligence.ingestion_runs, intelligence.ingestion_rejections TO cpi_reader;
 
           INSERT INTO intelligence.ingestion_runs
             (run_id, portal, entidade, schema_version, extraido_via, iniciado_em, status)
@@ -168,7 +194,11 @@ jobs:
           BEGIN
             SELECT count(*) INTO n FROM intelligence.ingestion_runs;
             IF n <> 0 THEN
-              RAISE EXCEPTION 'RLS deny-by-default failed for non-owner role: visible rows %', n;
+              RAISE EXCEPTION 'RLS deny-by-default failed for non-owner role: visible runs %', n;
+            END IF;
+            SELECT count(*) INTO n FROM intelligence.ingestion_rejections;
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'RLS deny-by-default failed for rejection audit: visible rows %', n;
             END IF;
           END $$;
           RESET ROLE;
