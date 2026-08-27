@@ -14,9 +14,6 @@ const catalogText = readFileSync(
 );
 const bitrixCapabilities = JSON.parse(readFileSync(path.join(ROOT, "data", "bitrix-capabilities.json"), "utf8"));
 
-// METRIC_IDs oficiais podem terminar em variantes minúsculas, ex. -01a/-01b.
-// Capturamos literalmente o token inteiro após "METRIC_ID:" em vez de impor
-// uma gramática que poderia rejeitar IDs já existentes no catálogo humano.
 const metricIdsFromCatalog = new Set(
   [...catalogText.matchAll(/METRIC_ID:\s*([A-Za-z0-9_-]+)/g)].map((m) => m[1])
 );
@@ -38,6 +35,14 @@ describe("data/semantic-contract.json — contrato semântico mínimo", () => {
     assert.equal(master.layer, "core");
     assert.equal(master.business_key, "master_entity_id");
     assert.equal(master.manual_review_supported, true);
+  });
+
+  test("quarentena Bronze está formalizada sem persistir payload bruto", () => {
+    const rejection = (contract.canonical_entities || []).find((e) => e.entity_id === "ingestion_rejection");
+    assert.ok(rejection, "ingestion_rejection ausente");
+    assert.equal(rejection.layer, "staging_audit");
+    assert.equal(rejection.raw_payload_persisted, false);
+    assert.equal(rejection.persistence_target, "intelligence.ingestion_rejections");
   });
 
   test("todo KPI candidato referencia um METRIC_ID já existente no catálogo oficial", () => {
@@ -101,22 +106,32 @@ describe("data/semantic-contract.json — contrato semântico mínimo", () => {
     assert.doesNotMatch(semanticNames, /faturado|realizado|recebido/);
   });
 
-  test("migração Bronze está validada em PostgreSQL 16 isolado, sem fingir produção ou ingestão real", () => {
+  test("migrações Bronze estão validadas em PostgreSQL 16 isolado, sem fingir produção", () => {
     assert.equal(contract.gate.runtime_database_validated, true);
     assert.equal(contract.gate.runtime_database_validation_scope, "isolated_postgresql_16_github_actions");
     assert.equal(contract.gate.production_database_validated, false);
-    assert.equal(contract.gate.bronze_ingestion_validated, false);
+  });
+
+  test("pipeline Bronze sintético está validado ponta a ponta, mas fonte Bitrix real continua pendente", () => {
+    assert.equal(contract.gate.bronze_ingestion_pipeline_validated, true);
+    assert.equal(
+      contract.gate.bronze_ingestion_validation_scope,
+      "synthetic_bitrix_envelope_to_postgresql16_github_actions"
+    );
+    assert.equal(contract.gate.bronze_live_source_ingestion_validated, false);
+    assert.equal(contract.gate.bitrix_live_verified, false);
 
     const stagingEntities = (contract.canonical_entities || []).filter((e) => e.layer === "staging");
     assert.ok(stagingEntities.length >= 2);
     for (const entity of stagingEntities) {
-      assert.equal(entity.status, "schema_and_migration_validated_postgresql16_no_ingestion");
+      assert.equal(entity.status, "schema_migration_and_synthetic_ingestion_validated_postgresql16");
     }
   });
 
-  test("gate do Sprint 03 permanece fechado por Bitrix, ingestão, owners e thresholds", () => {
+  test("gate do Sprint 03 permanece fechado por Bitrix real, owners e thresholds", () => {
     assert.equal(contract.gate.semantic_contract_implemented, true);
-    assert.equal(contract.gate.bronze_ingestion_validated, false);
+    assert.equal(contract.gate.bronze_ingestion_pipeline_validated, true);
+    assert.equal(contract.gate.bronze_live_source_ingestion_validated, false);
     assert.equal(contract.gate.bitrix_live_verified, false);
     assert.equal(contract.gate.metric_owners_ratified, false);
     assert.equal(contract.gate.pending_business_thresholds_resolved, false);
