@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "contract_id": "atlasgr-intelligence-hub-semantic-minimum",
   "sprint": "02",
   "layer": "semantic",
@@ -12,7 +12,10 @@
     "db/migrations/001_staging_bronze.sql",
     "db/migrations/002_bronze_ingestion_audit.sql",
     "scripts/bronze-ingest.mjs",
-    ".github/workflows/bronze-ingestion-validation.yml"
+    "scripts/bitrix-bronze-source.mjs",
+    "scripts/bitrix-bronze-live-probe.mjs",
+    ".github/workflows/bronze-ingestion-validation.yml",
+    ".github/workflows/bitrix-bronze-live-probe.yml"
   ],
   "live_data_verified": false,
   "governance": {
@@ -250,6 +253,12 @@
     "production_database_validated": false,
     "bronze_ingestion_pipeline_validated": true,
     "bronze_ingestion_validation_scope": "synthetic_bitrix_envelope_to_postgresql16_github_actions",
+    "bitrix_source_adapter_implemented": true,
+    "bitrix_source_adapter_tested_with_mock": true,
+    "bitrix_live_probe_workflow_prepared": true,
+    "bitrix_live_probe_manual_only": true,
+    "bitrix_live_probe_sample_bounded": true,
+    "bitrix_live_probe_executed": false,
     "bronze_live_source_ingestion_validated": false,
     "bitrix_live_verified": false,
     "metric_owners_ratified": false,
