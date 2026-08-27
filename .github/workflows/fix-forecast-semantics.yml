@@ -1,0 +1,187 @@
+name: Fix Forecast Semantics
+
+on:
+  push:
+    branches:
+      - 'fix/forecast-node-semantics'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[forecast-semantics-generated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply focused reconciliation patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          forecast_path = Path('scripts/forecast-semanal.mjs')
+          forecast = forecast_path.read_text(encoding='utf-8')
+
+          old_meta = '''async function buscarLabelsEstagiosComercial() {
+            try {
+              const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } });
+              const labels = {};
+              (corpo.result || []).forEach((st) => { labels[String(st.STATUS_ID)] = st.NAME || st.STATUS_ID; });
+              return labels;
+            } catch (e) {
+              console.warn(`Nao foi possivel buscar os labels dos estagios (crm.status.list): ${e.message}. Fallback de probabilidade usara "" como label (equivale ao default de 30%).`);
+              return {};
+            }
+          }
+          '''
+
+          new_meta = '''function classificarSemanticaForecastSemanal(d, metaStage = {}) {
+            const semantic = String(d?.STAGE_SEMANTIC_ID || metaStage?.semantics || "").toLowerCase();
+            return semantic === "s" || semantic === "success" ? "success"
+              : semantic === "f" || semantic === "failure" || semantic === "apology" ? "failure"
+              : "process";
+          }
+
+          async function buscarMetadadosEstagiosComercial() {
+            try {
+              const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } });
+              const metadados = {};
+              (corpo.result || []).forEach((st) => {
+                metadados[String(st.STATUS_ID)] = {
+                  label: st.NAME || st.STATUS_ID,
+                  semantics: st?.EXTRA?.SEMANTICS || st.SEMANTICS || "",
+                };
+              });
+              return metadados;
+            } catch (e) {
+              console.warn(`Nao foi possivel buscar os metadados dos estagios (crm.status.list): ${e.message}. Fallback de semantica usara STAGE_SEMANTIC_ID do negocio e fallback de probabilidade usara label vazio.`);
+              return {};
+            }
+          }
+          '''
+
+          if forecast.count(old_meta) != 1:
+            raise SystemExit(f'Bloco buscarLabelsEstagiosComercial esperado 1x, encontrado {forecast.count(old_meta)}x')
+          forecast = forecast.replace(old_meta, new_meta)
+
+          old_loader = '  const labelsEstagio = await buscarLabelsEstagiosComercial();'
+          new_loader = '  const metadadosEstagio = await buscarMetadadosEstagiosComercial();'
+          if forecast.count(old_loader) != 1:
+            raise SystemExit('Linha de carregamento de labels não encontrada exatamente 1x')
+          forecast = forecast.replace(old_loader, new_loader)
+
+          old_loop = '''  for (const d of deals) {
+            const semantic = String(d.STAGE_SEMANTIC_ID || "").toLowerCase();
+            const semantica = semantic === "s" || semantic === "success" ? "success"
+              : semantic === "f" || semantic === "failure" || semantic === "apology" ? "failure"
+              : "process";
+            const valor = Number(d.OPPORTUNITY) || 0;
+          '''
+          new_loop = '''  for (const d of deals) {
+            const metaStage = metadadosEstagio[String(d.STAGE_ID)] || {};
+            const semantica = classificarSemanticaForecastSemanal(d, metaStage);
+            const valor = Number(d.OPPORTUNITY) || 0;
+          '''
+          if forecast.count(old_loop) != 1:
+            raise SystemExit('Bloco inline de semântica não encontrado exatamente 1x')
+          forecast = forecast.replace(old_loop, new_loop)
+
+          old_label = '    const stageLabel = labelsEstagio[String(d.STAGE_ID)] || "";'
+          new_label = '    const stageLabel = metaStage.label || "";'
+          if forecast.count(old_label) != 1:
+            raise SystemExit('Linha stageLabel não encontrada exatamente 1x')
+          forecast = forecast.replace(old_label, new_label)
+          forecast_path.write_text(forecast, encoding='utf-8')
+
+          test_path = Path('tests/reconciliacao-forecast.test.mjs')
+          test_text = test_path.read_text(encoding='utf-8')
+
+          old_extract = '''// A classificação de semântica em forecast-semanal.mjs não é uma função
+          // nomeada isolada — é um `const` calculado inline dentro do laço de
+          // main() (linhas ~288-291 no arquivo real). Extraímos esse trecho literal
+          // por âncoras e envolvemos numa função só para poder chamá-lo isoladamente
+          // no teste; a lógica em si não é reescrita, é copiada do arquivo.
+          const trechoSemantica = extrairTrechoEntreAncoras(
+            codigoForecastSemanal,
+            'const semantic = String(d.STAGE_SEMANTIC_ID',
+            ': "process";'
+          );
+          const fnClassificarSemantica = `function classificarSemanticaForecastSemanal(d) {\\n  ${trechoSemantica}\\n  return semantica;\\n}`;
+          '''
+          new_extract = '''// A classificação de semântica agora é uma função pura nomeada no script Node,
+          // para que a mesma regra possa ser reconciliada diretamente com
+          // semanticaDeal() do navegador sem copiar um trecho inline do main().
+          const fnClassificarSemantica = extrairTextoFuncao(codigoForecastSemanal, "classificarSemanticaForecastSemanal");
+          '''
+          if test_text.count(old_extract) != 1:
+            raise SystemExit(f'Bloco de extração semântica esperado 1x, encontrado {test_text.count(old_extract)}x')
+          test_text = test_text.replace(old_extract, new_extract)
+
+          marker = 'describe("Reconciliação — classificação de semântica: caso em que STAGE_SEMANTIC_ID está AUSENTE (DIVERGÊNCIA DOCUMENTADA)"'
+          idx = test_text.find(marker)
+          if idx == -1:
+            raise SystemExit('Describe de divergência documentada não encontrado')
+          replacement = '''describe("Reconciliação — classificação de semântica: STAGE_SEMANTIC_ID ausente usa metadata do estágio (CONCORDÂNCIA)", () => {
+            const negocioFicticioSemStageSemanticId = {
+              ID: "fixture-4",
+              STAGE_SEMANTIC_ID: "",
+              _label: "estágio sem semantic id no negócio",
+            };
+
+            test("fallback de ganho: navegador e Node classificam como success via metaStage.semantics", () => {
+              const metaStage = { label: "Contrato Assinado (Financeiro)", semantics: "S" };
+              const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+              const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
+              assert.equal(doNavegador, "success");
+              assert.equal(doNode, "success");
+              assert.equal(doNavegador, doNode);
+            });
+
+            test("fallback de perda: navegador e Node classificam como failure via metaStage.semantics", () => {
+              const metaStage = { label: "Negócio Perdido", semantics: "F" };
+              const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+              const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
+              assert.equal(doNavegador, "failure");
+              assert.equal(doNode, "failure");
+              assert.equal(doNavegador, doNode);
+            });
+
+            test("sem semantic id no negócio nem metadata do estágio, os dois mantêm default process", () => {
+              const metaStage = { label: "Etapa sem semântica", semantics: "" };
+              const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+              const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
+              assert.equal(doNavegador, "process");
+              assert.equal(doNode, "process");
+            });
+          });
+          '''
+          test_text = test_text[:idx] + replacement
+          test_path.write_text(test_text, encoding='utf-8')
+          PY
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Commit validated fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/forecast-semanal.mjs tests/reconciliacao-forecast.test.mjs
+          git commit -m "fix: reconcile Node forecast stage semantics [forecast-semantics-generated]"
+          git push origin HEAD:fix/forecast-node-semantics
