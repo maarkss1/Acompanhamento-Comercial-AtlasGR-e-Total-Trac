@@ -323,7 +323,11 @@ function calcularDiasParadoNoEstagio() {
       return;
     }
     const dias = Math.floor((agora - new Date(registro.MOVED_TIME).getTime()) / 86400000);
+    // v29 — MOVED_TIME no futuro (dado suspeito) antes virava 0 em silêncio;
+    // mantém o campo exibido em 0 (compatibilidade), mas preserva o sinal em
+    // um campo extra pra quem quiser auditar, em vez de esconder o problema.
     registro[CAMPO] = dias >= 0 ? dias : 0;
+    if (dias < 0) registro[CAMPO + "_ANOMALO"] = true;
   });
   if (!camposExtraidos.includes(CAMPO)) {
     camposExtraidos = [...camposExtraidos, CAMPO];

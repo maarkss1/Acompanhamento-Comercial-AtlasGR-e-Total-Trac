@@ -22,6 +22,7 @@
 let cockpitState = {
   carregando: false,
   ultimaAtualizacao: null,
+  ultimaAtualizacaoDeCache: false,
   deals: [],           // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
   dealsFiltrados: [],  // após filtro de vendedor/origem
   // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
@@ -151,7 +152,11 @@ function atualizarRelogioCockpit() {
   const d = cockpitState.ultimaAtualizacao;
   const dd = String(d.getDate()).padStart(2, "0"), mm = String(d.getMonth() + 1).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0"), mi = String(d.getMinutes()).padStart(2, "0");
-  el.textContent = `Última atualização: ${dd}/${mm}/${d.getFullYear()} ${hh}:${mi} · Fonte: Bitrix24`;
+  // v29 — sinaliza quando parte dos dados veio do cache local (até 5min)
+  // em vez de fresca do Bitrix, pra "Última atualização" não sugerir mais
+  // atualidade do que realmente existe.
+  const sufixoCache = cockpitState.ultimaAtualizacaoDeCache ? " · ⚠️ parcialmente do cache local (até 5min)" : "";
+  el.textContent = `Última atualização: ${dd}/${mm}/${d.getFullYear()} ${hh}:${mi} · Fonte: Bitrix24${sufixoCache}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +296,9 @@ async function atualizarCockpit() {
   if (btn) btn.disabled = true;
   cockpitRenderEstadoSkeleton();
   atualizarStatus("Cockpit: buscando negócios do funil Comercial...");
+  // v29 — zera antes do ciclo de busca pra saber, no fim, se alguma resposta
+  // deste carregamento veio do cache local (até 5min) em vez de fresca.
+  window.ULTIMA_CARGA_TEVE_CACHE = false;
   try {
     const base = await baseDealsCatalogo(webhook, true); // somenteComercial=true → CATEGORY_ID 0
     const enriquecidos = base.deals.map((d) => enriquecerDealCatalogo(d, base));
@@ -309,6 +317,7 @@ async function atualizarCockpit() {
 
     cockpitState.periodo = cockpitPeriodoFiltro();
     cockpitState.ultimaAtualizacao = new Date();
+    cockpitState.ultimaAtualizacaoDeCache = !!window.ULTIMA_CARGA_TEVE_CACHE;
     const filtroProduto = cockpitEl("cockpitProduto")?.value?.trim();
     if (filtroProduto) {
       await aplicarFiltroProdutoCockpit();
@@ -482,6 +491,14 @@ function cockpitGanhosFinanceiroPeriodo(periodo) {
     .map((d) => ({ ...d, _DIA_FECHAMENTO: cockpitDataFechamentoFinanceiro(d) }));
 }
 
+// v29 — usada nos tickets médios abaixo em vez de `lista.length`: um negócio
+// "ganho"/aberto com _VALOR ausente ou 0 (dado incompleto no Bitrix) contava
+// no denominador sem contribuir no numerador, deflacionando o ticket médio em
+// silêncio. Aqui ele só entra na média se tiver valor > 0.
+function cockpitContarComValor(lista) {
+  return (lista || []).filter((d) => (Number(d._VALOR) || 0) > 0).length;
+}
+
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = cockpitMesAtual();
@@ -493,7 +510,8 @@ function cockpitCalcular() {
   const metaMensal = Number(cockpitEl("cockpitMetaMensal")?.value) || 0;
   const pctMeta = metaMensal > 0 ? Math.round((fechadoMes / metaMensal) * 1000) / 10 : null;
   const gapMeta = metaMensal > 0 ? Math.max(0, metaMensal - fechadoMes) : null;
-  const ticketMedioMes = ganhosMes.length ? fechadoMes / ganhosMes.length : null;
+  const ticketMedioMesQtd = cockpitContarComValor(ganhosMes);
+  const ticketMedioMes = ticketMedioMesQtd ? fechadoMes / ticketMedioMesQtd : null;
   drill.resultadoMesFechado = ganhosMes;
   drill.resultadoMesGap = ganhosMes; // mesmo conjunto: o que falta é sobre o que já foi fechado
 
@@ -546,7 +564,8 @@ function cockpitCalcular() {
     ? Math.round((ganhosPeriodo.length / (ganhosPeriodo.length + perdidosPeriodo.length)) * 1000) / 10
     : null;
   const receitaGanhaPeriodo = ganhosPeriodo.reduce((a, d) => a + d._VALOR, 0);
-  const ticketMedioVendido = ganhosPeriodo.length ? receitaGanhaPeriodo / ganhosPeriodo.length : null;
+  const ticketMedioVendidoQtd = cockpitContarComValor(ganhosPeriodo);
+  const ticketMedioVendido = ticketMedioVendidoQtd ? receitaGanhaPeriodo / ticketMedioVendidoQtd : null;
   const ciclos = ganhosPeriodo.map((d) => Number(d._CICLO)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
   const cicloMedia = ciclos.length ? Math.round((ciclos.reduce((a, b) => a + b, 0) / ciclos.length) * 10) / 10 : null;
   const cicloMediana = ciclos.length ? (ciclos.length % 2 ? ciclos[(ciclos.length - 1) / 2] : Math.round(((ciclos[ciclos.length / 2 - 1] + ciclos[ciclos.length / 2]) / 2) * 10) / 10) : null;
@@ -588,7 +607,8 @@ function cockpitCalcular() {
   const coverageRecomendado = cockpitCoverageRecomendado(winRate);
   const criadosPeriodo = deals.filter((d) => dentroPeriodoCatalogo(d.DATE_CREATE, periodoFiltro));
   const pipelineCriadoPeriodo = criadosPeriodo.reduce((a, d) => a + d._VALOR, 0);
-  const ticketMedioPipeline = abertosTodos.length ? pipelineTotal / abertosTodos.length : null;
+  const ticketMedioPipelineQtd = cockpitContarComValor(abertosTodos);
+  const ticketMedioPipeline = ticketMedioPipelineQtd ? pipelineTotal / ticketMedioPipelineQtd : null;
   drill.pipelineTotal = abertosTodos;
   drill.pipelineElegivel = abertosElegiveis;
   drill.pipelineInelegivel = inelegiveisComMotivo;
@@ -667,7 +687,8 @@ function cockpitCalcular() {
   const ganhosMesAnterior = cockpitGanhosFinanceiroPeriodo(mesAnterior);
   const fechadoMesAnterior = ganhosMesAnterior.reduce((a, d) => a + d._VALOR, 0);
   const qtdAnterior = ganhosMesAnterior.length;
-  const ticketMedioMesAnterior = qtdAnterior ? fechadoMesAnterior / qtdAnterior : null;
+  const ticketMedioMesAnteriorQtd = cockpitContarComValor(ganhosMesAnterior);
+  const ticketMedioMesAnterior = ticketMedioMesAnteriorQtd ? fechadoMesAnterior / ticketMedioMesAnteriorQtd : null;
 
   function fmtMom(atual, ant) {
     if (!ant) return "";

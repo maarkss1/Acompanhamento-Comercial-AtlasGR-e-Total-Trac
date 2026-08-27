@@ -383,9 +383,18 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const candidatos=lb.leads.filter((l)=>semanticaLead(l)==="process").map((l)=>{
         const atividadesLead=by[String(l.ID)]||[],tentativas=atividadesLead.length;
         const refParado=parteDataISO(l.MOVED_TIME)||parteDataISO(l.DATE_CREATE);
-        const diasParado=refParado?Math.max(0,Math.floor((agora-new Date(`${refParado}T12:00:00`))/86400000)):"";
+        // v29 — antes, um MOVED_TIME/DATE_CREATE no futuro (dado suspeito)
+        // virava diasParado=0 pelo Math.max(0,...), o que SEMPRE é <diasLimite
+        // e faz o lead ser descartado em silêncio pelo filter() abaixo — o
+        // problema não aparecia nem como "manter em nutrição", simplesmente
+        // sumia do relatório. Agora o valor bruto (sem clamp) é preservado
+        // pra detectar isso e sinalizar como ação própria, em vez de mascarar.
+        const diasParadoBruto=refParado?Math.floor((agora-new Date(`${refParado}T12:00:00`))/86400000):null;
+        const diasParadoAnomalo=diasParadoBruto!==null&&diasParadoBruto<0;
+        const diasParado=diasParadoBruto===null?"":Math.max(0,diasParadoBruto);
         let acao="Manter em nutrição";
-        if(diasParado===""||diasParado<diasLimite)acao=null;
+        if(diasParadoAnomalo)acao="⚠️ Revisar dado (MOVED_TIME/DATE_CREATE no futuro)";
+        else if(diasParado===""||diasParado<diasLimite)acao=null;
         else if(tentativas===0)acao="Recontatar";
         else if(diasParado>diasLimite*3)acao="Desqualificar";
         else if(tentativas>=3||Number(l.OPPORTUNITY)>0)acao="Escalar para Comercial";

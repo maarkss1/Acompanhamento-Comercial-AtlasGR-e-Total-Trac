@@ -559,6 +559,11 @@ function gerarHashSimples(str) {
 }
 
 window.FORCAR_ATUALIZACAO_BITRIX = false;
+// v29 — sinaliza se alguma chamada do ciclo de atualização atual foi servida
+// pelo cache local (até 5min de TTL, ver bitrixFetchComRetentativa abaixo),
+// em vez de dado fresco do Bitrix. Quem inicia um ciclo de atualização (ex.:
+// atualizarCockpit() em cockpit.js) deve zerar antes de disparar as buscas.
+window.ULTIMA_CARGA_TEVE_CACHE = false;
 window.limparCacheBitrix = function() {
   try {
     Object.keys(localStorage).filter(k => k.startsWith("atlas_cache_")).forEach(k => localStorage.removeItem(k));
@@ -588,6 +593,7 @@ async function bitrixFetchComRetentativa(url) {
       if (emCache) {
         const parseado = JSON.parse(emCache);
         if (Date.now() - parseado.ts < 5 * 60 * 1000) { // 5 minutos de TTL
+          window.ULTIMA_CARGA_TEVE_CACHE = true;
           return parseado.data;
         } else {
           localStorage.removeItem(chaveCache);

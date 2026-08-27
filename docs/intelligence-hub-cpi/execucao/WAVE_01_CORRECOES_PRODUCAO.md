@@ -97,6 +97,50 @@ sync local) será lida como vazia uma única vez — a pessoa só precisa
 reconfigurar essas preferências de UI (não é perda de dado de negócio, é
 preferência local do navegador).
 
+## 4. Clamp silencioso de dias negativos/futuros — CORRIGIDO (parcialmente, com foco no maior risco)
+
+**O que foi feito:**
+- `js/catalogo-relatorios.js` (`decisao_final_sdr`): esta era a instância de
+  maior risco — um `MOVED_TIME`/`DATE_CREATE` no futuro virava
+  `diasParado=0`, que é **sempre** `< diasLimite` (mínimo 1), então o lead
+  era descartado em silêncio pelo `filter()` do relatório, sem aparecer nem
+  como "manter em nutrição". Agora o valor bruto (sem clamp) é checado antes
+  do clamp; quando negativo, o lead aparece no relatório com a ação
+  `⚠️ Revisar dado (MOVED_TIME/DATE_CREATE no futuro)` em vez de sumir.
+- `js/extrator.js` (`calcularDiasParadoNoEstagio`): mantém o campo exibido
+  `DIAS_PARADO_NO_ESTAGIO` clampado em 0 (compatibilidade com o que já é
+  exibido hoje), mas adiciona um campo irmão `DIAS_PARADO_NO_ESTAGIO_ANOMALO`
+  quando o valor bruto é negativo, disponível pra quem quiser auditar/filtrar.
+- `js/jornada.js`: adicionada `diferencaDiasBrutaAteReferencia()` (sem
+  clamp) ao lado da função original (`diferencaDiasAteReferencia`, que
+  continua clampada e inalterada) — infraestrutura pronta pra outros
+  relatórios adotarem o mesmo padrão de auditoria quando fizer sentido.
+
+**Não alterado nesta sessão:** os 2 outros usos de `diferencaDiasAteReferencia`
+(`js/forecast.js:154,160` — campos de exibição `DIAS_NO_ESTAGIO`/`CICLO_DIAS`)
+continuam clampados sem sinalização de anomalia. Diferente de
+`decisao_final_sdr`, eles alimentam apenas exibição, não uma decisão que
+descarta silenciosamente o registro — risco menor, deixado para a Wave 2.
+
+## 5. Ticket médio deflacionado por negócios com valor zero/ausente — CORRIGIDO
+
+**O que foi feito:** adicionado `cockpitContarComValor()` em `js/cockpit.js`,
+usado como denominador (em vez de `lista.length`) nos 4 cálculos de ticket
+médio (Resultado do Mês, Win Rate/Vendido, Pipeline, Resultado do Mês
+Anterior). Um negócio "ganho"/aberto com `_VALOR` ausente ou 0 no Bitrix
+deixa de contar no denominador da média, sem deixar de contar nas demais
+métricas (contagem de negócios, win rate, comparativo mês a mês), que
+continuam usando `.length` normalmente — só o ticket médio muda.
+
+## 6. "Última atualização" não distinguia dado de rede de dado em cache — CORRIGIDO
+
+**O que foi feito:** `bitrixFetchComRetentativa()` (`js/bitrix-api.js`) agora
+marca `window.ULTIMA_CARGA_TEVE_CACHE = true` sempre que responde a partir do
+cache local (TTL de 5 min) em vez de uma chamada de rede real.
+`atualizarCockpit()` zera essa flag antes do ciclo de busca e
+`atualizarRelogioCockpit()` acrescenta "⚠️ parcialmente do cache local (até
+5min)" ao rótulo "Última atualização" quando aplicável.
+
 ## Itens do diagnóstico da Wave 1 que permanecem em aberto (não são bugs pontuais)
 
 Os demais achados dos agentes 01-05 — ausência de camada de staging/histórico
