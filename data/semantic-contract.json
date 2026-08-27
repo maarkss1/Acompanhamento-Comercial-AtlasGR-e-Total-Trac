@@ -32,7 +32,7 @@
     {
       "entity_id": "deal",
       "layer": "staging",
-      "status": "schema_and_migration_defined_not_runtime_validated",
+      "status": "schema_and_migration_validated_postgresql16_no_ingestion",
       "business_key": "staging_id",
       "source": "crm.deal.list",
       "persistence_target": "intelligence.staging_negocios",
@@ -41,7 +41,7 @@
     {
       "entity_id": "lead",
       "layer": "staging",
-      "status": "schema_and_migration_defined_not_runtime_validated",
+      "status": "schema_and_migration_validated_postgresql16_no_ingestion",
       "business_key": "staging_id",
       "source": "crm.lead.list",
       "persistence_target": "intelligence.staging_leads",
@@ -229,7 +229,10 @@
   ],
   "gate": {
     "semantic_contract_implemented": true,
-    "runtime_database_validated": false,
+    "runtime_database_validated": true,
+    "runtime_database_validation_scope": "isolated_postgresql_16_github_actions",
+    "production_database_validated": false,
+    "bronze_ingestion_validated": false,
     "bitrix_live_verified": false,
     "metric_owners_ratified": false,
     "pending_business_thresholds_resolved": false,
