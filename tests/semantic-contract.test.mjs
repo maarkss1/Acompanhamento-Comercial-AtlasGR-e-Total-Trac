@@ -128,9 +128,22 @@ describe("data/semantic-contract.json — contrato semântico mínimo", () => {
     }
   });
 
+  test("adaptador Bitrix e probe podem estar preparados sem declarar execução ao vivo", () => {
+    assert.equal(contract.gate.bitrix_source_adapter_implemented, true);
+    assert.equal(contract.gate.bitrix_source_adapter_tested_with_mock, true);
+    assert.equal(contract.gate.bitrix_live_probe_workflow_prepared, true);
+    assert.equal(contract.gate.bitrix_live_probe_manual_only, true);
+    assert.equal(contract.gate.bitrix_live_probe_sample_bounded, true);
+    assert.equal(contract.gate.bitrix_live_probe_executed, false);
+    assert.equal(contract.gate.bronze_live_source_ingestion_validated, false);
+    assert.equal(contract.gate.bitrix_live_verified, false);
+  });
+
   test("gate do Sprint 03 permanece fechado por Bitrix real, owners e thresholds", () => {
     assert.equal(contract.gate.semantic_contract_implemented, true);
     assert.equal(contract.gate.bronze_ingestion_pipeline_validated, true);
+    assert.equal(contract.gate.bitrix_live_probe_workflow_prepared, true);
+    assert.equal(contract.gate.bitrix_live_probe_executed, false);
     assert.equal(contract.gate.bronze_live_source_ingestion_validated, false);
     assert.equal(contract.gate.bitrix_live_verified, false);
     assert.equal(contract.gate.metric_owners_ratified, false);
