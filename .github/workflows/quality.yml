@@ -66,8 +66,6 @@ jobs:
       BITRIX_PORTAL: atlasgr
       BITRIX_MAX_RECORDS: '100'
       BITRIX_LIVE_PROBE_CONFIRMATION: READ_ONLY_LIVE_PROBE
-      BRONZE_SQL_OUT: ${{ runner.temp }}/bitrix-bronze-live.sql
-      BRONZE_MANIFEST_OUT: ${{ runner.temp }}/bitrix-bronze-live-manifest.json
       BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
 
     steps:
@@ -84,6 +82,13 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$BITRIX_WEBHOOK_URL"
+
+      - name: Prepare ephemeral output paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "BRONZE_SQL_OUT=$RUNNER_TEMP/bitrix-bronze-live.sql" >> "$GITHUB_ENV"
+          echo "BRONZE_MANIFEST_OUT=$RUNNER_TEMP/bitrix-bronze-live-manifest.json" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v4
