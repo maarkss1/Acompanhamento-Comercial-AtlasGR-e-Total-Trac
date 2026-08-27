@@ -102,6 +102,28 @@ describe('scripts/bitrix-bronze-source.mjs — fonte read-only', () => {
     assert.deepEqual(calls.map((c) => c.start), [0, 50]);
   });
 
+  test('maxRecords interrompe a leitura assim que a amostra fica suficiente', async () => {
+    const { fetchImpl, calls } = mockBitrix();
+    const deals = await listarBitrixPaginado({
+      webhook: WEBHOOK_FICTICIO,
+      method: 'crm.deal.list',
+      fetchImpl,
+      pageDelayMs: 0,
+      maxRecords: 1,
+    });
+    assert.deepEqual(deals.map((d) => d.ID), ['10']);
+    assert.equal(calls.length, 1, 'probe limitado não deveria abrir uma segunda página');
+  });
+
+  test('maxRecords inválido é rejeitado antes de ler o Bitrix', async () => {
+    const { fetchImpl, calls } = mockBitrix();
+    await assert.rejects(
+      listarBitrixPaginado({ webhook: WEBHOOK_FICTICIO, method: 'crm.deal.list', fetchImpl, maxRecords: 0 }),
+      /entre 1 e 20000/i
+    );
+    assert.equal(calls.length, 0);
+  });
+
   test('bloqueia qualquer método fora da allowlist de leitura Bronze', async () => {
     const { fetchImpl } = mockBitrix();
     await assert.rejects(
