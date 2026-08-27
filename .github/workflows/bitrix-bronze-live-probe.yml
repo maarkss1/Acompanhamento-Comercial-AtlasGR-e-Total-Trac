@@ -60,8 +60,6 @@ jobs:
       BITRIX_PORTAL: ${{ inputs.portal }}
       BITRIX_MAX_RECORDS: ${{ inputs.max_records }}
       BITRIX_LIVE_PROBE_CONFIRMATION: ${{ inputs.confirmation }}
-      BRONZE_SQL_OUT: ${{ runner.temp }}/bitrix-bronze-live.sql
-      BRONZE_MANIFEST_OUT: ${{ runner.temp }}/bitrix-bronze-live-manifest.json
       BITRIX_WEBHOOK_ATLASGR: ${{ secrets.BITRIX_WEBHOOK_URL }}
       BITRIX_WEBHOOK_TOTALTRAC: ${{ secrets.BITRIX_TOTALTRAC_WEBHOOK_URL }}
 
@@ -74,6 +72,13 @@ jobs:
             echo "::error::Live probe blocked: explicit READ_ONLY_LIVE_PROBE confirmation is required."
             exit 1
           fi
+
+      - name: Prepare ephemeral output paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "BRONZE_SQL_OUT=$RUNNER_TEMP/bitrix-bronze-live.sql" >> "$GITHUB_ENV"
+          echo "BRONZE_MANIFEST_OUT=$RUNNER_TEMP/bitrix-bronze-live-manifest.json" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,8 +112,8 @@ jobs:
 
       - name: Install PostgreSQL client
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y postgresql-client >/dev/null
 
       - name: Apply Bronze migrations to ephemeral PostgreSQL
         shell: bash
@@ -157,4 +162,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "$BRONZE_SQL_OUT" "$BRONZE_MANIFEST_OUT"
+          rm -f "${BRONZE_SQL_OUT:-}" "${BRONZE_MANIFEST_OUT:-}"
