@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "atlasgr-cpi-sprint02-governance-decisions",
+  "sprint": "02",
+  "generated_from": [
+    "docs/intelligence-hub-cpi/execucao/wave-02/05_CATALOGO_OFICIAL_DE_METRICAS.md",
+    "data/semantic-contract.json",
+    "docs/intelligence-hub-cpi/execucao/wave-02/GATE_INTEGRACAO_SPRINT_02.md"
+  ],
+  "policy": {
+    "ratification_rule": "status may become ratified only by an explicit human business decision",
+    "default_for_unratified_metric": "not_executive_eligible",
+    "default_for_absent_business_concept": "omit_from_executive_ui_until_modeled",
+    "no_silent_defaults": true
+  },
+  "decisions": [
+    {
+      "decision_id": "GOV-OWNER-EXECUTIVE-KPIS",
+      "category": "metric_owner",
+      "title": "Ratificar owners dos KPIs executivos",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "scope_metric_ids": [
+        "META_MENSAL-01",
+        "FECHADO_MES-01a",
+        "FORECAST_TOTAL-01a",
+        "FORECAST_TOTAL-01b",
+        "PIPELINE_TOTAL-01",
+        "PIPELINE_ELEGIVEL-01",
+        "COVERAGE-01a",
+        "WIN_RATE-01a",
+        "AGING-01"
+      ],
+      "proposal_source": "Owner fields marked PROPOSTO in 05_CATALOGO_OFICIAL_DE_METRICAS.md",
+      "blocking": true,
+      "release_effect": "candidate metrics remain executive_eligible=false"
+    },
+    {
+      "decision_id": "GOV-THRESHOLD-COVERAGE",
+      "category": "threshold",
+      "title": "Ratificar faixas executivas de Coverage",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "current_proposal": {
+        "critical": "<2x",
+        "attention": "2x_to_<3x",
+        "healthy": ">=3x"
+      },
+      "scope_metric_ids": ["COVERAGE-01a"],
+      "blocking": true,
+      "release_effect": "Coverage may be shown numerically, but threshold-based executive status must remain disabled"
+    },
+    {
+      "decision_id": "GOV-THRESHOLD-PIPELINE-ELIGIBILITY-AGING",
+      "category": "threshold",
+      "title": "Ratificar aging crítico para Pipeline Elegível",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "current_proposal": {
+        "days": 45
+      },
+      "scope_metric_ids": ["PIPELINE_ELEGIVEL-01"],
+      "blocking": true,
+      "release_effect": "eligibility methodology remains provisional"
+    },
+    {
+      "decision_id": "GOV-THRESHOLD-AGING-ALERT",
+      "category": "threshold",
+      "title": "Ratificar aging alto para alerta executivo",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "current_proposal": {
+        "days": 45
+      },
+      "scope_metric_ids": ["AGING-01"],
+      "blocking": true,
+      "release_effect": "AGING-01 may exist as raw days, but high-aging alert remains provisional"
+    },
+    {
+      "decision_id": "GOV-THRESHOLD-PIPELINE-NECESSARIO",
+      "category": "threshold_or_formula",
+      "title": "Ratificar fórmula de Pipeline Necessário",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "current_proposal": "Meta M+1 / Win Rate",
+      "scope_metric_ids": [],
+      "blocking": true,
+      "release_effect": "do not present Pipeline Necessário as an official executive rule"
+    },
+    {
+      "decision_id": "GOV-METHOD-FORECAST-TOTAL",
+      "category": "methodology",
+      "title": "Escolher metodologia executiva primária de Forecast Total",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "allowed_values": ["FORECAST_TOTAL-01a", "FORECAST_TOTAL-01b"],
+      "blocking": true,
+      "release_effect": "variants remain distinct and neither is promoted as the single enterprise forecast"
+    },
+    {
+      "decision_id": "GOV-METHOD-FORECAST-BUCKET",
+      "category": "methodology",
+      "title": "Definir política executiva para buckets de forecast",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "allowed_values": ["BUCKET_FORECAST-01a", "BUCKET_FORECAST-01b", "keep_contextual_variants"],
+      "blocking": true,
+      "release_effect": "80/50 and 70/40/10+Upside remain separately identified"
+    },
+    {
+      "decision_id": "GOV-METHOD-COVERAGE",
+      "category": "methodology",
+      "title": "Escolher definição executiva primária de Coverage",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "allowed_values": ["COVERAGE-01a", "COVERAGE-01b", "COVERAGE-01c", "keep_contextual_variants"],
+      "blocking": true,
+      "release_effect": "coverage variants remain distinct and must be labeled by methodology"
+    },
+    {
+      "decision_id": "GOV-SCOPE-FINANCIAL-STATES",
+      "category": "data_model_scope",
+      "title": "Modelar ou adiar Faturado, Realizado e Recebido",
+      "status": "pending_human_ratification",
+      "selected_value": null,
+      "allowed_values": ["model_now", "defer_and_omit_from_initial_executive_center"],
+      "safe_default_until_decision": "omit_from_executive_ui_until_modeled",
+      "concepts": ["faturado", "realizado", "recebido"],
+      "blocking": false,
+      "release_effect": "Sprint 03 may proceed only if these cards are omitted until real modeling exists"
+    }
+  ],
+  "summary": {
+    "total_decisions": 9,
+    "pending_human_ratification": 9,
+    "ratified": 0,
+    "blocking_pending": 8,
+    "sprint_03_governance_ready": false
+  }
+}

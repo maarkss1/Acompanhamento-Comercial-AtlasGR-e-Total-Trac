@@ -1,0 +1,205 @@
+name: Database Validation
+
+on:
+  push:
+    branches:
+      - 'cpi-*'
+    paths:
+      - 'db/migrations/**'
+      - '.github/workflows/database-validation.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'db/migrations/**'
+      - '.github/workflows/database-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-migration:
+    name: postgres-migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cpi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cpi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: cpi_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql --version
+
+      - name: Apply all Bronze/Staging migrations in order
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in db/migrations/*.sql; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
+
+      - name: Validate schema, RLS, constraints and latest views
+        shell: bash
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            n integer;
+          BEGIN
+            SELECT count(*) INTO n
+            FROM information_schema.tables
+            WHERE table_schema = 'intelligence'
+              AND table_name IN ('ingestion_runs', 'staging_negocios', 'staging_leads', 'ingestion_rejections');
+            IF n <> 4 THEN
+              RAISE EXCEPTION 'expected 4 intelligence tables, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM pg_class c
+            JOIN pg_namespace ns ON ns.oid = c.relnamespace
+            WHERE ns.nspname = 'intelligence'
+              AND c.relname IN ('ingestion_runs', 'staging_negocios', 'staging_leads', 'ingestion_rejections')
+              AND c.relrowsecurity = true;
+            IF n <> 4 THEN
+              RAISE EXCEPTION 'RLS must be enabled on all 4 tables, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM pg_policies
+            WHERE schemaname = 'intelligence';
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'base migrations must not create permissive policies, found %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM information_schema.views
+            WHERE table_schema = 'intelligence'
+              AND table_name IN ('staging_negocios_latest', 'staging_leads_latest');
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'expected 2 latest views, found %', n;
+            END IF;
+          END $$;
+
+          DO $$
+          BEGIN
+            BEGIN
+              INSERT INTO intelligence.ingestion_runs
+                (run_id, portal, entidade, schema_version, extraido_via, iniciado_em)
+              VALUES
+                ('invalid-portal', 'outro', 'negocios', '1.0.0', 'github-actions', now());
+              RAISE EXCEPTION 'portal constraint did not reject invalid value';
+            EXCEPTION WHEN check_violation THEN
+              NULL;
+            END;
+
+            BEGIN
+              INSERT INTO intelligence.ingestion_runs
+                (run_id, portal, entidade, schema_version, extraido_via, iniciado_em)
+              VALUES
+                ('invalid-webhook', 'atlasgr', 'negocios', '1.0.0', 'https://example.invalid/rest/1/token', now());
+              RAISE EXCEPTION 'extraido_via URL constraint did not reject URL';
+            EXCEPTION WHEN check_violation THEN
+              NULL;
+            END;
+
+            BEGIN
+              INSERT INTO intelligence.staging_negocios
+                (staging_id, bitrix_id, portal, estagio_id, extraido_em, extraido_via, schema_version)
+              VALUES
+                ('atlasgr:999', '998', 'atlasgr', 'NEW', now(), 'github-actions', '1.0.0');
+              RAISE EXCEPTION 'staging business-key constraint did not reject mismatch';
+            EXCEPTION WHEN check_violation THEN
+              NULL;
+            END;
+          END $$;
+
+          INSERT INTO intelligence.staging_negocios
+            (staging_id, bitrix_id, portal, estagio_id, valor, extraido_em, extraido_via, schema_version)
+          VALUES
+            ('atlasgr:501', '501', 'atlasgr', 'NEW', 100.00, '2026-08-27T10:00:00Z', 'github-actions', '1.0.0'),
+            ('atlasgr:501', '501', 'atlasgr', 'NEW', 250.00, '2026-08-27T11:00:00Z', 'github-actions', '1.0.0');
+
+          DO $$
+          DECLARE
+            n integer;
+            v numeric;
+          BEGIN
+            SELECT count(*), max(valor) INTO n, v
+            FROM intelligence.staging_negocios_latest
+            WHERE portal = 'atlasgr' AND bitrix_id = '501';
+            IF n <> 1 OR v <> 250.00 THEN
+              RAISE EXCEPTION 'latest view did not select newest snapshot: count %, value %', n, v;
+            END IF;
+          END $$;
+
+          INSERT INTO intelligence.ingestion_runs
+            (run_id, portal, entidade, schema_version, extraido_via, iniciado_em, status)
+          VALUES
+            ('rejection-proof', 'atlasgr', 'leads', '1.0.0', 'github-actions', now(), 'partial');
+
+          INSERT INTO intelligence.ingestion_rejections
+            (run_id, portal, entidade, bitrix_id, staging_id, campos_ausentes, inconsistencias, source_fingerprint)
+          VALUES
+            ('rejection-proof', 'atlasgr', 'leads', '700', 'atlasgr:700', ARRAY['estagio_id'], ARRAY['sem_contato'], repeat('a', 64));
+
+          DO $$
+          DECLARE
+            n integer;
+          BEGIN
+            SELECT count(*) INTO n FROM intelligence.ingestion_rejections WHERE run_id = 'rejection-proof';
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'rejection audit row missing';
+            END IF;
+          END $$;
+
+          CREATE ROLE cpi_reader NOLOGIN;
+          GRANT USAGE ON SCHEMA intelligence TO cpi_reader;
+          GRANT SELECT ON intelligence.ingestion_runs, intelligence.ingestion_rejections TO cpi_reader;
+
+          INSERT INTO intelligence.ingestion_runs
+            (run_id, portal, entidade, schema_version, extraido_via, iniciado_em, status)
+          VALUES
+            ('rls-proof', 'atlasgr', 'negocios', '1.0.0', 'github-actions', now(), 'success');
+
+          SET ROLE cpi_reader;
+          DO $$
+          DECLARE
+            n integer;
+          BEGIN
+            SELECT count(*) INTO n FROM intelligence.ingestion_runs;
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'RLS deny-by-default failed for non-owner role: visible runs %', n;
+            END IF;
+            SELECT count(*) INTO n FROM intelligence.ingestion_rejections;
+            IF n <> 0 THEN
+              RAISE EXCEPTION 'RLS deny-by-default failed for rejection audit: visible rows %', n;
+            END IF;
+          END $$;
+          RESET ROLE;
+          SQL

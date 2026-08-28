@@ -1,0 +1,268 @@
+{
+  "schema_version": "1.2.0",
+  "contract_id": "atlasgr-intelligence-hub-semantic-minimum",
+  "sprint": "02",
+  "layer": "semantic",
+  "generated_from": [
+    "docs/intelligence-hub-cpi/execucao/wave-02/05_CATALOGO_OFICIAL_DE_METRICAS.md",
+    "data/bitrix-capabilities.json",
+    "data/governance-decisions.json",
+    "js/entity-resolution.js",
+    "js/staging-schema.js",
+    "db/migrations/001_staging_bronze.sql",
+    "db/migrations/002_bronze_ingestion_audit.sql",
+    "scripts/bronze-ingest.mjs",
+    "scripts/bitrix-bronze-source.mjs",
+    "scripts/bitrix-bronze-live-probe.mjs",
+    ".github/workflows/bronze-ingestion-validation.yml",
+    ".github/workflows/bitrix-bronze-live-probe.yml"
+  ],
+  "live_data_verified": false,
+  "governance": {
+    "metric_owner_policy": "owner must be formally ratified before executive_eligible=true",
+    "current_owner_status": "proposed_only",
+    "threshold_policy": "metric with pending business threshold cannot be executive_eligible until ratified or threshold-dependent presentation is removed",
+    "live_source_policy": "Bitrix-backed executive metrics remain not live-verified until read-only validation is executed for each portal",
+    "facts_vs_proposals": "fields ending in _status distinguish implemented facts from pending business decisions",
+    "decision_contract": "data/governance-decisions.json"
+  },
+  "canonical_entities": [
+    {
+      "entity_id": "master_entity",
+      "layer": "core",
+      "status": "implemented_in_code_not_persisted",
+      "business_key": "master_entity_id",
+      "source": "js/entity-resolution.js",
+      "resolution_priority": ["COMPANY_ID", "CONTACT_ID", "LEAD_ID", "normalized_name", "isolated_record_id"],
+      "confidence_levels": ["ALTA", "MEDIA", "BAIXA"],
+      "manual_review_supported": true
+    },
+    {
+      "entity_id": "deal",
+      "layer": "staging",
+      "status": "schema_migration_and_synthetic_ingestion_validated_postgresql16",
+      "business_key": "staging_id",
+      "source": "crm.deal.list",
+      "persistence_target": "intelligence.staging_negocios",
+      "master_entity_link": "resolved from COMPANY_ID/CONTACT_ID/LEAD_ID/name"
+    },
+    {
+      "entity_id": "lead",
+      "layer": "staging",
+      "status": "schema_migration_and_synthetic_ingestion_validated_postgresql16",
+      "business_key": "staging_id",
+      "source": "crm.lead.list",
+      "persistence_target": "intelligence.staging_leads",
+      "master_entity_link": "resolved from COMPANY_ID/CONTACT_ID/name"
+    },
+    {
+      "entity_id": "ingestion_rejection",
+      "layer": "staging_audit",
+      "status": "schema_and_synthetic_quarantine_validated_postgresql16",
+      "business_key": "run_id + entity + source_fingerprint",
+      "source": "staging contract validation failures",
+      "persistence_target": "intelligence.ingestion_rejections",
+      "raw_payload_persisted": false
+    },
+    {
+      "entity_id": "company",
+      "layer": "source_catalog",
+      "status": "read_supported_not_canonical_persisted",
+      "business_key": "ID scoped by portal",
+      "source": "crm.company.list"
+    },
+    {
+      "entity_id": "contact",
+      "layer": "source_catalog",
+      "status": "read_supported_not_canonical_persisted",
+      "business_key": "ID scoped by portal",
+      "source": "crm.contact.list"
+    },
+    {
+      "entity_id": "activity",
+      "layer": "source_catalog",
+      "status": "read_supported_not_canonical_persisted",
+      "business_key": "ID scoped by portal",
+      "source": "crm.activity.list"
+    },
+    {
+      "entity_id": "user",
+      "layer": "source_catalog",
+      "status": "read_supported_not_canonical_persisted",
+      "business_key": "ID scoped by portal",
+      "source": "user.get"
+    },
+    {
+      "entity_id": "pipeline_stage",
+      "layer": "semantic_metadata",
+      "status": "dynamic_discovery_supported_live_verification_pending",
+      "business_key": "portal + category_id + stage_id",
+      "source": ["crm.category.list", "crm.status.list"]
+    },
+    {
+      "entity_id": "product_row",
+      "layer": "supporting_source",
+      "status": "read_supported_n_plus_1_not_canonical_persisted",
+      "business_key": "deal_id + product_row_id when available",
+      "source": "crm.deal.productrows.get"
+    }
+  ],
+  "executive_metric_candidates": [
+    {
+      "metric_id": "META_MENSAL-01",
+      "semantic_name": "meta_mensal_new_mrr",
+      "preferred_variant": true,
+      "source_type": "configuration",
+      "owner_status": "proposed",
+      "threshold_status": "not_applicable",
+      "live_source_verified": true,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner"]
+    },
+    {
+      "metric_id": "FECHADO_MES-01a",
+      "semantic_name": "receita_fechada_mes",
+      "preferred_variant": true,
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "not_applicable",
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation"]
+    },
+    {
+      "metric_id": "FORECAST_TOTAL-01a",
+      "semantic_name": "forecast_total_mes_cockpit",
+      "preferred_variant": false,
+      "methodology_variant": "cockpit_commit_bestcase_full_pipeline_weighted",
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "methodology_variant_documented",
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation", "executive_methodology_selection"]
+    },
+    {
+      "metric_id": "FORECAST_TOTAL-01b",
+      "semantic_name": "forecast_total_mes_weighted",
+      "preferred_variant": false,
+      "methodology_variant": "all_open_pipeline_weighted",
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "not_applicable",
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation", "executive_methodology_selection"]
+    },
+    {
+      "metric_id": "PIPELINE_TOTAL-01",
+      "semantic_name": "pipeline_total_aberto",
+      "preferred_variant": true,
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "not_applicable",
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation"]
+    },
+    {
+      "metric_id": "PIPELINE_ELEGIVEL-01",
+      "semantic_name": "pipeline_elegivel",
+      "preferred_variant": true,
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "pending_business_decision",
+      "pending_thresholds": ["aging_critico_elegibilidade_45_dias"],
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation", "threshold_ratification"]
+    },
+    {
+      "metric_id": "COVERAGE-01a",
+      "semantic_name": "coverage_atual_sobre_gap",
+      "preferred_variant": false,
+      "source_type": "bitrix_plus_configuration",
+      "owner_status": "proposed",
+      "threshold_status": "pending_business_decision",
+      "pending_thresholds": ["coverage_critico_abaixo_2x", "coverage_atencao_2x_a_3x", "coverage_saudavel_3x_ou_mais"],
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation", "threshold_ratification", "coverage_variant_selection"]
+    },
+    {
+      "metric_id": "WIN_RATE-01a",
+      "semantic_name": "win_rate_coorte_fechamento",
+      "preferred_variant": true,
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "not_applicable",
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation"]
+    },
+    {
+      "metric_id": "AGING-01",
+      "semantic_name": "aging_etapa_atual_dias",
+      "preferred_variant": true,
+      "source_type": "bitrix",
+      "owner_status": "proposed",
+      "threshold_status": "pending_business_decision",
+      "pending_thresholds": ["aging_alto_45_dias_when_used_as_executive_alert"],
+      "live_source_verified": false,
+      "executive_eligible": false,
+      "blocked_by": ["formal_metric_owner", "live_bitrix_validation", "threshold_ratification_for_executive_alert"]
+    }
+  ],
+  "methodology_variants_that_must_remain_distinct": [
+    {
+      "concept": "forecast_bucket",
+      "variants": ["BUCKET_FORECAST-01a", "BUCKET_FORECAST-01b"],
+      "reason": "documented methodologies use different thresholds and only Cockpit has Upside"
+    },
+    {
+      "concept": "forecast_total",
+      "variants": ["FORECAST_TOTAL-01a", "FORECAST_TOTAL-01b"],
+      "reason": "Cockpit and Forecast/Catalog use different weighting methodologies"
+    },
+    {
+      "concept": "coverage",
+      "variants": ["COVERAGE-01a", "COVERAGE-01b", "COVERAGE-01c"],
+      "reason": "denominators and business meanings differ"
+    }
+  ],
+  "explicitly_out_of_scope_until_modeled": [
+    {
+      "concept": "faturado",
+      "status": "absent_from_current_model"
+    },
+    {
+      "concept": "realizado",
+      "status": "absent_from_current_model"
+    },
+    {
+      "concept": "recebido",
+      "status": "absent_from_current_model"
+    }
+  ],
+  "gate": {
+    "semantic_contract_implemented": true,
+    "governance_decisions_formalized": true,
+    "governance_decisions_pending": 9,
+    "runtime_database_validated": true,
+    "runtime_database_validation_scope": "isolated_postgresql_16_github_actions",
+    "production_database_validated": false,
+    "bronze_ingestion_pipeline_validated": true,
+    "bronze_ingestion_validation_scope": "synthetic_bitrix_envelope_to_postgresql16_github_actions",
+    "bitrix_source_adapter_implemented": true,
+    "bitrix_source_adapter_tested_with_mock": true,
+    "bitrix_live_probe_workflow_prepared": true,
+    "bitrix_live_probe_manual_only": true,
+    "bitrix_live_probe_sample_bounded": true,
+    "bitrix_live_probe_executed": false,
+    "bronze_live_source_ingestion_validated": false,
+    "bitrix_live_verified": false,
+    "metric_owners_ratified": false,
+    "pending_business_thresholds_resolved": false,
+    "sprint_03_release_ready": false
+  }
+}

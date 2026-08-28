@@ -1,0 +1,47 @@
+{
+  "portal": "totaltrac",
+  "extraido_em": "2026-08-27T15:40:00Z",
+  "extraido_via": "synthetic:github-actions",
+  "negocios": [
+    {
+      "ID": "7001",
+      "TITLE": "TOTAL TRAC CLIENTE FICTICIO",
+      "STAGE_ID": "NEW",
+      "CATEGORY_ID": "0",
+      "OPPORTUNITY": "9100.25",
+      "CURRENCY_ID": "BRL",
+      "DATE_CREATE": "2026-08-21T10:00:00-03:00",
+      "DATE_MODIFY": "2026-08-27T09:30:00-03:00",
+      "MOVED_TIME": "2026-08-26T15:00:00-03:00",
+      "ASSIGNED_BY_ID": "201",
+      "COMPANY_ID": "501",
+      "CONTACT_ID": "0",
+      "LEAD_ID": "0",
+      "SOURCE_ID": "WEB",
+      "CLOSED": "N"
+    }
+  ],
+  "leads": [
+    {
+      "ID": "8001",
+      "TITLE": "TOTAL TRAC LEAD FICTICIO",
+      "STATUS_ID": "NEW",
+      "SOURCE_ID": "CALL",
+      "OPPORTUNITY": "1700",
+      "DATE_CREATE": "2026-08-25T12:00:00-03:00",
+      "DATE_MODIFY": "2026-08-27T08:30:00-03:00",
+      "ASSIGNED_BY_ID": "202",
+      "COMPANY_ID": "0",
+      "CONTACT_ID": "701",
+      "COMPANY_TITLE": "TOTAL TRAC EMPRESA FICTICIA",
+      "NAME": "Pessoa",
+      "LAST_NAME": "TotalTrac",
+      "PHONE": [
+        { "VALUE": "+55 11 90000-0000", "VALUE_TYPE": "WORK" }
+      ],
+      "EMAIL": [
+        { "VALUE": "totaltrac.teste@example.invalid", "VALUE_TYPE": "WORK" }
+      ]
+    }
+  ]
+}
