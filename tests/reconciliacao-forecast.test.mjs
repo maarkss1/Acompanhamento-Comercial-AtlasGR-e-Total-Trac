@@ -50,17 +50,9 @@ const constStageIdsPiloto = extrairTrechoEntreAncoras(
   ");"
 );
 
-// A classificação de semântica em forecast-semanal.mjs não é uma função
-// nomeada isolada — é um `const` calculado inline dentro do laço de
-// main() (linhas ~288-291 no arquivo real). Extraímos esse trecho literal
-// por âncoras e envolvemos numa função só para poder chamá-lo isoladamente
-// no teste; a lógica em si não é reescrita, é copiada do arquivo.
-const trechoSemantica = extrairTrechoEntreAncoras(
-  codigoForecastSemanal,
-  'const semantic = String(d.STAGE_SEMANTIC_ID',
-  ': "process";'
-);
-const fnClassificarSemantica = `function classificarSemanticaForecastSemanal(d) {\n  ${trechoSemantica}\n  return semantica;\n}`;
+// A classificação de semântica agora é uma função pura nomeada no script Node,
+// reconciliada diretamente com semanticaDeal() do navegador.
+const fnClassificarSemantica = extrairTextoFuncao(codigoForecastSemanal, "classificarSemanticaForecastSemanal");
 
 const forecastSemanal = avaliarTrechos([
   constStageIdsPiloto,
@@ -132,45 +124,37 @@ describe("Reconciliação — classificação de semântica: caso em que STAGE_S
   }
 });
 
-describe("Reconciliação — classificação de semântica: caso em que STAGE_SEMANTIC_ID está AUSENTE (DIVERGÊNCIA DOCUMENTADA)", () => {
-  // Achado da Wave 1 (Agente 03): scripts/forecast-semanal.mjs não tem o
-  // fallback `metaStage?.semantics` que js/jornada.js tem em semanticaDeal().
-  // Motivo estrutural: buscarLabelsEstagiosComercial() em forecast-semanal.mjs
-  // só busca NAME via crm.status.list (labelsEstagio[STATUS_ID] = NAME) — não
-  // busca o campo SEMANTICS por estágio, diferente de
-  // buscarMetadadosFunisEEstagios() no navegador (js/jornada.js), que guarda
-  // `semantics: st?.EXTRA?.SEMANTICS || st.SEMANTICS || ""` por estágio e é
-  // isso que semanticaDeal() usa como fallback.
-  //
-  // Consequência prática: se um negócio chegar ao Bitrix sem
-  // STAGE_SEMANTIC_ID preenchido (campo custom/estágio mal configurado, etc.),
-  // o navegador ainda pode classificar corretamente via metaStage.semantics;
-  // o script Node SEMPRE cai em "process" nesse caso, mesmo que o estágio
-  // real seja de ganho ou perda.
-  //
-  // Este teste NÃO corrige a divergência (fora de escopo desta tarefa) — só
-  // captura o comportamento atual, para que a divergência fique visível em
-  // CI/teste automatizado, não só em documentação.
+describe("Reconciliação — classificação de semântica: STAGE_SEMANTIC_ID ausente usa metadata do estágio (CONCORDÂNCIA)", () => {
   const negocioFicticioSemStageSemanticId = {
     ID: "fixture-4",
     STAGE_SEMANTIC_ID: "",
-    _label: "estágio de ganho, mas sem STAGE_SEMANTIC_ID preenchido no negócio",
+    _label: "estágio sem semantic id no negócio",
   };
-  const metaStageFicticio = { label: "Contrato Assinado (Financeiro)", semantics: "S" };
 
-  test("js/jornada.js usa o fallback metaStage.semantics e classifica como 'success'", () => {
-    const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStageFicticio);
+  test("fallback de ganho mantém navegador e Node em success", () => {
+    const metaStage = { label: "Contrato Assinado (Financeiro)", semantics: "S" };
+    const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+    const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
     assert.equal(doNavegador, "success");
+    assert.equal(doNode, "success");
+    assert.equal(doNavegador, doNode);
   });
 
-  test("scripts/forecast-semanal.mjs não tem esse fallback e classifica (incorretamente) como 'process'", () => {
-    const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId);
+  test("fallback de perda mantém navegador e Node em failure", () => {
+    const metaStage = { label: "Negócio Perdido", semantics: "F" };
+    const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+    const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
+    assert.equal(doNavegador, "failure");
+    assert.equal(doNode, "failure");
+    assert.equal(doNavegador, doNode);
+  });
+
+  test("sem semântica no negócio nem no estágio, ambos mantêm process", () => {
+    const metaStage = { label: "Etapa sem semântica", semantics: "" };
+    const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStage);
+    const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId, metaStage);
+    assert.equal(doNavegador, "process");
     assert.equal(doNode, "process");
-  });
-
-  test("as duas lógicas DIVERGEM neste caso — é exatamente o achado da Wave 1, agora com teste automatizado", () => {
-    const doNavegador = jornada.semanticaDeal(negocioFicticioSemStageSemanticId, metaStageFicticio);
-    const doNode = forecastSemanal.classificarSemanticaForecastSemanal(negocioFicticioSemStageSemanticId);
-    assert.notEqual(doNavegador, doNode);
+    assert.equal(doNavegador, doNode);
   });
 });

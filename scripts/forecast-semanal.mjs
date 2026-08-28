@@ -231,14 +231,27 @@ async function enviarAlertaSeConfigurado(texto) {
   }
 }
 
-async function buscarLabelsEstagiosComercial() {
+function classificarSemanticaForecastSemanal(d, metaStage) {
+  metaStage = metaStage || {};
+  const semantic = String(d?.STAGE_SEMANTIC_ID || metaStage?.semantics || "").toLowerCase();
+  return semantic === "s" || semantic === "success" ? "success"
+    : semantic === "f" || semantic === "failure" || semantic === "apology" ? "failure"
+    : "process";
+}
+
+async function buscarMetadadosEstagiosComercial() {
   try {
     const corpo = await chamarBitrix("crm.status.list", { filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } });
-    const labels = {};
-    (corpo.result || []).forEach((st) => { labels[String(st.STATUS_ID)] = st.NAME || st.STATUS_ID; });
-    return labels;
+    const metadados = {};
+    (corpo.result || []).forEach((st) => {
+      metadados[String(st.STATUS_ID)] = {
+        label: st.NAME || st.STATUS_ID,
+        semantics: st?.EXTRA?.SEMANTICS || st.SEMANTICS || "",
+      };
+    });
+    return metadados;
   } catch (e) {
-    console.warn(`Nao foi possivel buscar os labels dos estagios (crm.status.list): ${e.message}. Fallback de probabilidade usara "" como label (equivale ao default de 30%).`);
+    console.warn(`Nao foi possivel buscar os metadados dos estagios (crm.status.list): ${e.message}. Fallback de semantica usara STAGE_SEMANTIC_ID do negocio e fallback de probabilidade usara label vazio.`);
     return {};
   }
 }
@@ -271,7 +284,7 @@ async function main() {
     nomeUsuario[String(u.ID)] = `${u.NAME || ""} ${u.LAST_NAME || ""}`.trim() || `ID ${u.ID}`;
   });
 
-  const labelsEstagio = await buscarLabelsEstagiosComercial();
+  const metadadosEstagio = await buscarMetadadosEstagiosComercial();
 
   let fechadoSemana = 0, fechadoMes = 0;
   let pipelineAbertoSemana = 0, pipelinePonderadoSemana = 0;
@@ -285,10 +298,8 @@ async function main() {
   let vencidoCount = 0, vencidoValor = 0;
 
   for (const d of deals) {
-    const semantic = String(d.STAGE_SEMANTIC_ID || "").toLowerCase();
-    const semantica = semantic === "s" || semantic === "success" ? "success"
-      : semantic === "f" || semantic === "failure" || semantic === "apology" ? "failure"
-      : "process";
+    const metaStage = metadadosEstagio[String(d.STAGE_ID)] || {};
+    const semantica = classificarSemanticaForecastSemanal(d, metaStage);
     const valor = Number(d.OPPORTUNITY) || 0;
 
     if (semantica === "success") {
@@ -297,7 +308,7 @@ async function main() {
       continue;
     }
     if (semantica !== "process") continue;
-    const stageLabel = labelsEstagio[String(d.STAGE_ID)] || "";
+    const stageLabel = metaStage.label || "";
     if (ehEstagioPiloto(d.STAGE_ID, stageLabel)) continue; // sem pilotos no pipeline aberto
 
     const closeDate = parteDataISO(d.CLOSEDATE);
