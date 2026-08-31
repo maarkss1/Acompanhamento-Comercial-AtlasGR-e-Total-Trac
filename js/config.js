@@ -329,6 +329,22 @@ const RELATORIOS = {
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
 
+  pipeline_novo_gerado: { grupo:"Comercial & Receita", label:"🌱 Pipeline Novo Gerado", descricao:"Novo pipeline criado hoje, na semana e no mês.", handler:"catalogo", periodo:"todas" },
+  pipeline_carryover: { grupo:"Comercial & Receita", label:"📅 Pipeline Carryover", descricao:"Negócios cujo fechamento foi postergado.", handler:"catalogo", periodo:"todas" },
+  closedate_intelligence: { grupo:"Comercial & Receita", label:"📆 CLOSEDATE Intelligence", descricao:"Higiene de datas no pipeline aberto.", handler:"catalogo", periodo:"todas" },
+  forecast_accuracy: { grupo:"Comercial & Receita", label:"🎯 Forecast Accuracy", descricao:"Comparação contra histórico oficial.", handler:"catalogo", periodo:"mensal" },
+  opportunity_health_score: { grupo:"Comercial & Receita", label:"❤️ Opportunity Health Score", descricao:"Score de saúde das oportunidades abertas.", handler:"catalogo", periodo:"todas" },
+  pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
+  receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
+  motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
+  pipeline_novo_gerado: { grupo:"Comercial & Receita", label:"🌱 Pipeline Novo Gerado", descricao:"Novo pipeline criado hoje, na semana e no mês.", handler:"catalogo", periodo:"todas" },
+  pipeline_carryover: { grupo:"Comercial & Receita", label:"📅 Pipeline Carryover", descricao:"Negócios cujo fechamento foi postergado.", handler:"catalogo", periodo:"todas" },
+  closedate_intelligence: { grupo:"Comercial & Receita", label:"📆 CLOSEDATE Intelligence", descricao:"Higiene de datas no pipeline aberto.", handler:"catalogo", periodo:"todas" },
+  forecast_accuracy: { grupo:"Comercial & Receita", label:"🎯 Forecast Accuracy", descricao:"Comparação contra histórico oficial.", handler:"catalogo", periodo:"mensal" },
+  opportunity_health_score: { grupo:"Comercial & Receita", label:"❤️ Opportunity Health Score", descricao:"Score de saúde das oportunidades abertas.", handler:"catalogo", periodo:"todas" },
+  pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
+  receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
+  motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
   vendido_faturado: { grupo:"Financeiro × Comercial", label:"💸 Vendido × Faturado", descricao:"Compara o valor das vendas ganhas no Comercial com os registros financeiros de faturamento e NFs.", handler:"catalogo", periodo:"mensal" },
   backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" }
 };
