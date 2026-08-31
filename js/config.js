@@ -278,7 +278,7 @@ const ENTIDADES = {
     hasCategoria: false,
   },
   analise_sdr: {
-    label: "📊 Análise SDR — semanal e mensal (João Reis)",
+    label: "📊 Análise SDR — semanal e mensal (por SDR)",
     especial: true,
     analiseSdr: true,
     hasCategoria: false,
@@ -306,6 +306,7 @@ const RELATORIOS = {
   conversao_comercial: { grupo:"Comercial & Receita", label:"🧭 Conversão Comercial — funil e Win Rate", descricao:"Coorte de oportunidades, ganhos/perdas e conversão histórica por estágio.", handler:"catalogo", periodo:"mensal" },
   aging_sla: { grupo:"Comercial & Receita", label:"⏱️ Aging & SLA Comercial", descricao:"Backlog por tempo no estágio atual e SLA configurável.", handler:"catalogo", periodo:"todas", slaAging:true },
   performance_vendedores: { grupo:"Comercial & Receita", label:"🏆 Performance por vendedor", descricao:"Pipeline, ganhos, perdas, receita, ticket, Win Rate e ciclo por responsável atual.", handler:"catalogo", periodo:"mensal" },
+  vendas_realizadas: { grupo:"Comercial & Receita", label:"💰 Vendas realizadas — diário, mensal e anual", descricao:"Vendas (negócios ganhos) de todos os vendedores, agrupadas por dia, por mês e por ano, com receita e ticket médio.", handler:"catalogo", periodo:"todas" },
   ganhos_perdas_ciclo: { grupo:"Comercial & Receita", label:"🏁 Ganhos, perdas e ciclo de vendas", descricao:"Fechamentos, receita ganha, valor perdido, ticket e ciclo de venda.", handler:"catalogo", periodo:"mensal" },
   origens_canais: { grupo:"Comercial & Receita", label:"🛰️ Origens, canais e conversão", descricao:"Leads, oportunidades, ganhos e receita por SOURCE_ID ou UTM_SOURCE.", handler:"catalogo", periodo:"mensal" },
   produtos_receita: { grupo:"Comercial & Receita", label:"📦 Produtos e receita", descricao:"Produtos presentes em negócios ganhos, unidades, negócios e valor das linhas.", handler:"catalogo", periodo:"mensal" },
@@ -313,7 +314,7 @@ const RELATORIOS = {
 
   diario_sdr: { grupo:"SDR & Leads", label:"📅 Diário SDR — atividades, Leads atendidos e potenciais", descricao:"Atividades concluídas, Leads atendidos e potenciais ainda sem atividade.", handler:"diario_sdr", periodo:"diario" },
   reunioes_sdr: { grupo:"SDR & Leads", label:"🤝 Reuniões — agendadas x realizadas", descricao:"Reuniões (atividade TYPE_ID=1) quebradas por responsável, pipeline e etapa do negócio vinculado — qualquer funil, qualquer usuário.", handler:"catalogo", periodo:"mensal" },
-  analise_sdr: { grupo:"SDR & Leads", label:"📊 João Reis — análise semanal e mensal", descricao:"Produção diária do João, mix de atividades, jornada, backlog e conversões.", handler:"analise_sdr", periodo:"mensal" },
+  analise_sdr: { grupo:"SDR & Leads", label:"📊 Análise SDR — semanal e mensal", descricao:"Produção diária do SDR informado, mix de atividades, jornada, backlog e conversões. Disponível para qualquer SDR da empresa.", handler:"analise_sdr", periodo:"mensal" },
   funil_leads: { grupo:"SDR & Leads", label:"🪜 Funil de Leads & conversão SDR", descricao:"Leads criados, status, desqualificação, oportunidades e ganhos.", handler:"catalogo", periodo:"mensal" },
   produtividade_atividades: { grupo:"SDR & Leads", label:"⚡ Produtividade de atividades por responsável", descricao:"Atividades concluídas por usuário/canal e entidades únicas tocadas.", handler:"catalogo", periodo:"mensal" },
   sla_primeiro_contato: { grupo:"SDR & Leads", label:"☎️ SLA de primeiro contato", descricao:"Tempo da criação do Lead até a primeira atividade concluída vinculada.", handler:"catalogo", periodo:"mensal", slaPrimeiroContato:true },
@@ -321,7 +322,10 @@ const RELATORIOS = {
   decisao_final_sdr: { grupo:"SDR & Leads", label:"🧭 Decisão Final SDR — saneamento seguro", descricao:"Leads estagnados classificados em ação recomendada (recontatar, desqualificar, escalar ou nutrir), sem escrever no Bitrix.", handler:"catalogo", periodo:"todas", diasEstagnacao:true },
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
-  qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" }
+  qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
+
+  vendido_faturado: { grupo:"Financeiro × Comercial", label:"💸 Vendido × Faturado", descricao:"Compara o valor das vendas ganhas no Comercial com os registros financeiros de faturamento e NFs.", handler:"catalogo", periodo:"mensal" },
+  backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" }
 };
 
 // v11 — Metas mensais do forecast Comercial (R$), usadas como valor padrão da

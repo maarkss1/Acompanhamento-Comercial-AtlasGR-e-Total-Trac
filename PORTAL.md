@@ -112,7 +112,7 @@ abaixo).
 ### 5. `sdr.html` — 📞 SDR & Operação
 - Grade de cards só do grupo "SDR & Leads".
 - Card de conexão compacto.
-- Os blocos dedicados de **Diário SDR** e **Análise SDR** (João Reis)
+- Os blocos dedicados de **Diário SDR** e **Análise SDR** (por SDR)
   embutidos direto na página, com um par de botões ("📅 Diário SDR" /
   "📊 Análise SDR") para trocar qual dos dois roda, sem sair da página —
   função local `sdrSelecionarRelatorioLocal(chave, rolar)`.
