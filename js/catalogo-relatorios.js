@@ -565,6 +565,264 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "Auditoria usa apenas atividades e campos já mapeados pelo extrator; valida existência e completude, não a qualidade do conteúdo registrado em cada atividade.");
     }
 
+    else if(chave==="contact_rate"){
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+      const leadsTrabalhados=Object.keys(atividadesLead).length;
+      let contatosEfetivos=0;
+      Object.values(atividadesLead).forEach(ats=>{
+        if(ats.some(x=>String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail")) contatosEfetivos++;
+      });
+      criarResultadoCatalogo(chave,"Contact Rate","Proporção de Leads com contato efetivo vs Leads trabalhados.",
+        [kpi("Leads Trabalhados",leadsTrabalhados),kpi("Contatos Efetivos",contatosEfetivos),kpi("Contact Rate",`${leadsTrabalhados?taxaPct(contatosEfetivos,leadsTrabalhados):0}%`)],
+        [{titulo:"Resumo Contact Rate",dados:[{TRABALHADOS:leadsTrabalhados,EFETIVOS:contatosEfetivos,TAXA:`${leadsTrabalhados?taxaPct(contatosEfetivos,leadsTrabalhados):0}%`}],colunas:[{label:"Leads Trabalhados",valor:"TRABALHADOS"},{label:"Contatos Efetivos",valor:"EFETIVOS"},{label:"Contact Rate",valor:"TAXA"}]}]);
+    }
+
+    else if(chave==="meeting_rate"){
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+      const leadsTrabalhados=Object.keys(atividadesLead).length;
+      let reunioesAgendadas=0,reunioesRealizadas=0;
+      Object.values(atividadesLead).forEach(ats=>{
+        const reunioesLead=ats.filter(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
+        reunioesAgendadas+=reunioesLead.length;
+        reunioesRealizadas+=reunioesLead.filter(x=>x.COMPLETED==="Y").length;
+      });
+      criarResultadoCatalogo(chave,"Meeting Rate & Show Rate","Taxa de agendamento de reuniões e de comparecimento.",
+        [kpi("Leads Trabalhados",leadsTrabalhados),kpi("Reuniões Agendadas",reunioesAgendadas),kpi("Meeting Rate",`${leadsTrabalhados?taxaPct(reunioesAgendadas,leadsTrabalhados):0}%`),kpi("Reuniões Realizadas",reunioesRealizadas),kpi("Show Rate",`${reunioesAgendadas?taxaPct(reunioesRealizadas,reunioesAgendadas):0}%`)],
+        [{titulo:"Resumo Meeting & Show Rate",dados:[{TRABALHADOS:leadsTrabalhados,AGENDADAS:reunioesAgendadas,REALIZADAS:reunioesRealizadas,MEETING_RATE:`${leadsTrabalhados?taxaPct(reunioesAgendadas,leadsTrabalhados):0}%`,SHOW_RATE:`${reunioesAgendadas?taxaPct(reunioesRealizadas,reunioesAgendadas):0}%`}],colunas:[{label:"Leads Trabalhados",valor:"TRABALHADOS"},{label:"Reuniões Agendadas",valor:"AGENDADAS"},{label:"Meeting Rate",valor:"MEETING_RATE"},{label:"Reuniões Realizadas",valor:"REALIZADAS"},{label:"Show Rate",valor:"SHOW_RATE"}]}]);
+    }
+
+    else if(chave==="no_show_sdr"){
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),atividadesLead={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+      let agendadas=0,noShow=0,reagendadas=0,posteriormenteRealizadas=0;
+      Object.values(atividadesLead).forEach(ats=>{
+        const reunioes=ats.filter(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
+        agendadas+=reunioes.length;
+        reunioes.forEach(r=>{
+          if(r.COMPLETED!=="Y") noShow++;
+          // simplificação: marcamos reagendado ou posteriormente realizado para o mesmo lead como recuperado
+          if(r.COMPLETED!=="Y" && reunioes.some(x=>x.ID!==r.ID && x.COMPLETED==="Y" && x.CREATED>=r.CREATED)) posteriormenteRealizadas++;
+        });
+      });
+      criarResultadoCatalogo(chave,"No-show & Recuperação","Reuniões agendadas, no-shows e recuperação posterior.",
+        [kpi("Agendadas",agendadas),kpi("No-show",noShow),kpi("Taxa No-show",`${agendadas?taxaPct(noShow,agendadas):0}%`),kpi("Recuperadas",posteriormenteRealizadas)],
+        [{titulo:"Resumo No-show",dados:[{AGENDADAS:agendadas,NOSHOW:noShow,TAXA:`${agendadas?taxaPct(noShow,agendadas):0}%`,RECUPERADAS:posteriormenteRealizadas}],colunas:[{label:"Agendadas",valor:"AGENDADAS"},{label:"No-show",valor:"NOSHOW"},{label:"Taxa No-show",valor:"TAXA"},{label:"Recuperadas",valor:"RECUPERADAS"}]}]);
+    }
+
+    else if(chave==="tentativas_conversao"){
+      const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]);
+      const ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p));
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+      let arrContato=[], arrReuniao=[], arrOpp=[];
+      ls.forEach(l=>{
+        const ats=atividadesLead[String(l.ID)]||[];
+        ats.sort((a,b)=>new Date(a.CREATED)-new Date(b.CREATED));
+        const idxContato=ats.findIndex(x=>String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail");
+        if(idxContato!==-1) arrContato.push(idxContato+1);
+        const idxReuniao=ats.findIndex(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
+        if(idxReuniao!==-1) arrReuniao.push(idxReuniao+1);
+        const opps=db.deals.filter(d=>String(d.LEAD_ID)===String(l.ID)).sort((a,b)=>new Date(a.DATE_CREATE)-new Date(b.DATE_CREATE));
+        if(opps.length>0){
+          const dOpp=new Date(opps[0].DATE_CREATE);
+          const atsAteOpp=ats.filter(x=>new Date(x.END_TIME)<=dOpp);
+          arrOpp.push(Math.max(1,atsAteOpp.length));
+        }
+      });
+      const getMetrics = (arr) => {
+        if(!arr.length) return {qtd:0, media:0, med:0, p75:0, p90:0};
+        const s = [...arr].sort((a,b)=>a-b);
+        return {
+          qtd: s.length,
+          media: Math.round((s.reduce((sum,v)=>sum+v,0)/s.length)*10)/10,
+          med: s[Math.floor(s.length/2)],
+          p75: s[Math.floor(s.length*0.75)],
+          p90: s[Math.floor(s.length*0.90)]
+        };
+      };
+      const mContato = getMetrics(arrContato), mReuniao = getMetrics(arrReuniao), mOpp = getMetrics(arrOpp);
+      const dealsApurados=db.deals.filter(d=>idBitrixValido(d.LEAD_ID) && dentroPeriodoCatalogo(d.DATE_CREATE,p)).length;
+      const dealsTotais=db.deals.filter(d=>dentroPeriodoCatalogo(d.DATE_CREATE,p)).length;
+      criarResultadoCatalogo(chave,"Tentativas até Conversão","Média e distribuição de tentativas até contato, reunião e oportunidade.",
+        [kpi("Contatos",mContato.qtd),kpi("Média (Contato)",mContato.media),kpi("Reuniões",mReuniao.qtd),kpi("Média (Reunião)",mReuniao.media),kpi("Oportunidades",mOpp.qtd),kpi("Média (Oportunidade)",mOpp.media),kpi("Cobertura Vínculo (Opps)",`${dealsTotais?taxaPct(dealsApurados,dealsTotais):0}%`)],
+        [{titulo:"Resumo Tentativas (Distribuição)",dados:[
+          {TIPO:"Contato",QTD:mContato.qtd,MEDIA:mContato.media,MEDIANA:mContato.med,P75:mContato.p75,P90:mContato.p90},
+          {TIPO:"Reunião",QTD:mReuniao.qtd,MEDIA:mReuniao.media,MEDIANA:mReuniao.med,P75:mReuniao.p75,P90:mReuniao.p90},
+          {TIPO:"Oportunidade",QTD:mOpp.qtd,MEDIA:mOpp.media,MEDIANA:mOpp.med,P75:mOpp.p75,P90:mOpp.p90}
+        ],colunas:[{label:"Objetivo",valor:"TIPO"},{label:"Leads (Amostra)",valor:"QTD"},{label:"Média",valor:"MEDIA"},{label:"Mediana",valor:"MEDIANA"},{label:"P75",valor:"P75"},{label:"P90",valor:"P90"}]}]);
+    }
+
+    else if(chave==="receita_sdr"){
+      const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]),ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p));
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead=new Set();
+      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")atividadesLead.add(String(b.OWNER_ID));}));
+      const leadsTrabalhados=ls.filter(l=>atividadesLead.has(String(l.ID)));
+      const leadsIds=new Set(leadsTrabalhados.map(l=>String(l.ID)));
+      const oppsGanhos=db.deals.filter(d=>leadsIds.has(String(d.LEAD_ID)) && ["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase()));
+      const receita=oppsGanhos.reduce((s,d)=>s+(Number(d.OPPORTUNITY)||0),0);
+      criarResultadoCatalogo(chave,"Receita Originada pelo SDR","Receita comprovada gerada a partir de Leads trabalhados pelo SDR.",
+        [kpi("Leads Trabalhados",leadsTrabalhados.length),kpi("Oportunidades Ganhas",oppsGanhos.length),kpi("Receita Originada",moedaRelatorio(receita))],
+        [{titulo:"Oportunidades Ganhas Originadas pelo SDR",dados:oppsGanhos.map(d=>({ID:d.ID,TITULO:d.TITLE,RECEITA:d.OPPORTUNITY})),colunas:[{label:"Deal ID",valor:"ID"},{label:"Título",valor:"TITULO"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true}]}]);
+    }
+
+    else if(chave==="performance_sdr"){
+      const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]);
+      // Obter limites máximos considerando o mês anterior para garantir todos os dados das comparações
+      const dataMinimaReq = p.inicio ? new Date(p.inicio) : new Date();
+      dataMinimaReq.setMonth(dataMinimaReq.getMonth() - 1);
+      dataMinimaReq.setDate(1);
+      const a=await atividadesCatalogo(webhook,true,dataMinimaReq.toISOString().split("T")[0],p.fim||"");
+
+      const calcPerf = (inicio, fim) => {
+        const pL={inicio: inicio, fim: fim};
+        const ls=lb.leads.filter(l=>dentroPeriodoCatalogo(l.DATE_CREATE,pL));
+        const ats=a.dados.filter(x=>dentroPeriodoCatalogo(x.END_TIME,pL)||dentroPeriodoCatalogo(x.CREATED,pL));
+        const atividadesLead={};
+        ats.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+
+        const resPorSDR = {};
+        const getSDR = (id) => {
+          const nome = nomeUsuario(id) || (id ? `ID ${id}` : "Sem responsável");
+          if(!resPorSDR[id]) resPorSDR[id]={
+            id, nome, leadsNovos:0, leadsTrabalhados:0, atividadesConcluidas:0,
+            contatosEfetivos:0, reunioesAgendadas:0, reunioesRealizadas:0, noShows:0,
+            oportunidadesGeradas:0, receitaOriginada:0, oppsGanhosInfo:[]
+          };
+          return resPorSDR[id];
+        };
+
+        ls.forEach(l=>{ getSDR(l.ASSIGNED_BY_ID).leadsNovos++; });
+
+        Object.entries(atividadesLead).forEach(([lId, aL]) => {
+          const l=ls.find(x=>String(x.ID)===lId);
+          const rResp = l ? getSDR(l.ASSIGNED_BY_ID) : getSDR("0");
+          rResp.leadsTrabalhados++;
+
+          if(aL.some(x=>String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail")) rResp.contatosEfetivos++;
+          const reunioes=aL.filter(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
+          rResp.reunioesAgendadas += reunioes.length;
+          rResp.reunioesRealizadas += reunioes.filter(x=>x.COMPLETED==="Y").length;
+          rResp.noShows += reunioes.filter(x=>x.COMPLETED!=="Y").length;
+        });
+
+        ats.forEach(x => { if(x.COMPLETED==="Y") getSDR(x.RESPONSIBLE_ID).atividadesConcluidas++; });
+
+        const oppsNoPeriodo = db.deals.filter(d=>dentroPeriodoCatalogo(d.DATE_CREATE,pL) && idBitrixValido(d.LEAD_ID));
+        oppsNoPeriodo.forEach(d => {
+          const rResp = getSDR(d.ASSIGNED_BY_ID);
+          rResp.oportunidadesGeradas++;
+          if(["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase())){
+            rResp.receitaOriginada += (Number(d.OPPORTUNITY)||0);
+            rResp.oppsGanhosInfo.push(d);
+          }
+        });
+
+        const somaObj = Object.values(resPorSDR).reduce((acc, v)=>{
+          acc.leadsNovos+=v.leadsNovos; acc.leadsTrabalhados+=v.leadsTrabalhados;
+          acc.atividadesConcluidas+=v.atividadesConcluidas; acc.contatosEfetivos+=v.contatosEfetivos;
+          acc.reunioesAgendadas+=v.reunioesAgendadas; acc.reunioesRealizadas+=v.reunioesRealizadas;
+          acc.noShows+=v.noShows; acc.oportunidadesGeradas+=v.oportunidadesGeradas;
+          acc.receitaOriginada+=v.receitaOriginada;
+          return acc;
+        },{leadsNovos:0, leadsTrabalhados:0, atividadesConcluidas:0, contatosEfetivos:0, reunioesAgendadas:0, reunioesRealizadas:0, noShows:0, oportunidadesGeradas:0, receitaOriginada:0});
+
+        const calcTaxas = (v) => ({
+          ...v,
+          contactRate: v.leadsTrabalhados ? v.contatosEfetivos/v.leadsTrabalhados : 0,
+          meetingRate: v.leadsTrabalhados ? v.reunioesAgendadas/v.leadsTrabalhados : 0,
+          showRate: v.reunioesAgendadas ? v.reunioesRealizadas/v.reunioesAgendadas : 0,
+          convLeadOpp: v.leadsTrabalhados ? v.oportunidadesGeradas/v.leadsTrabalhados : 0
+        });
+
+        return {
+          total: calcTaxas(somaObj),
+          porSdr: Object.values(resPorSDR).map(calcTaxas).sort((a,b)=>b.leadsTrabalhados-a.leadsTrabalhados)
+        };
+      };
+
+      const refFim = new Date(p.fim||p.inicio||new Date());
+      const sInicio=new Date(refFim); sInicio.setDate(refFim.getDate() - refFim.getDay() + (refFim.getDay()===0?-6:1));
+      const sFim=new Date(sInicio); sFim.setDate(sInicio.getDate()+6);
+      const prevSInicio=new Date(sInicio); prevSInicio.setDate(sInicio.getDate()-7);
+      const prevSFim=new Date(prevSInicio); prevSFim.setDate(prevSInicio.getDate()+6);
+
+      const resSemanaAtual = calcPerf(sInicio.toISOString().split("T")[0], sFim.toISOString().split("T")[0]);
+      const resSemanaAnterior = calcPerf(prevSInicio.toISOString().split("T")[0], prevSFim.toISOString().split("T")[0]);
+
+      const mInicio=new Date(refFim.getFullYear(), refFim.getMonth(), 1);
+      const mFim=new Date(refFim.getFullYear(), refFim.getMonth()+1, 0);
+      const prevMInicio=new Date(refFim.getFullYear(), refFim.getMonth()-1, 1);
+      const prevMFim=new Date(refFim.getFullYear(), refFim.getMonth(), 0);
+
+      const resMesAtual = calcPerf(mInicio.toISOString().split("T")[0], mFim.toISOString().split("T")[0]);
+      const resMesAnterior = calcPerf(prevMInicio.toISOString().split("T")[0], prevMFim.toISOString().split("T")[0]);
+
+      const dif = (atual, ant, pct=false, moeda=false) => {
+        const d = atual - ant;
+        const v = ant ? d/ant : (atual?1:0);
+        const txtA = moeda?moedaRelatorio(atual):atual;
+        const txtAn = moeda?moedaRelatorio(ant):ant;
+        const s=d>0?"+":"";
+        return `<div>Atual: ${pct?taxaPct(atual,1)+'%':txtA}<br>Anterior: ${pct?taxaPct(ant,1)+'%':txtAn}<br>Dif: ${s}${pct?taxaPct(d,1)+'%':(moeda?moedaRelatorio(d):d)}<br>Var: ${s}${(v*100).toFixed(1)}%</div>`;
+      };
+
+      const metricas = [
+        {l:"Leads Novos",k:"leadsNovos",pct:false,moeda:false},
+        {l:"Leads Trabalhados",k:"leadsTrabalhados",pct:false,moeda:false},
+        {l:"Atividades Concluídas",k:"atividadesConcluidas",pct:false,moeda:false},
+        {l:"Contatos Efetivos",k:"contatosEfetivos",pct:false,moeda:false},
+        {l:"Reuniões Agendadas",k:"reunioesAgendadas",pct:false,moeda:false},
+        {l:"Reuniões Realizadas",k:"reunioesRealizadas",pct:false,moeda:false},
+        {l:"No-Shows",k:"noShows",pct:false,moeda:false},
+        {l:"Oportunidades Geradas",k:"oportunidadesGeradas",pct:false,moeda:false},
+        {l:"Receita Originada",k:"receitaOriginada",pct:false,moeda:true},
+        {l:"Contact Rate",k:"contactRate",pct:true,moeda:false},
+        {l:"Meeting Rate",k:"meetingRate",pct:true,moeda:false},
+        {l:"Show Rate",k:"showRate",pct:true,moeda:false},
+        {l:"Lead → Opp",k:"convLeadOpp",pct:true,moeda:false}
+      ];
+
+      const kpisResult = metricas.slice(0,5).map(m=>kpi(m.l, resMesAtual.total[m.k]));
+
+      const rowsSemana = metricas.map(m=>({METRICA:m.l, RES:dif(resSemanaAtual.total[m.k], resSemanaAnterior.total[m.k], m.pct, m.moeda)}));
+      const rowsMes = metricas.map(m=>({METRICA:m.l, RES:dif(resMesAtual.total[m.k], resMesAnterior.total[m.k], m.pct, m.moeda)}));
+
+      const renderPorSDR = (arr) => arr.map(v=>({
+        SDR: v.nome, LEADS_NOVOS: v.leadsNovos, LEADS_TRABALHADOS: v.leadsTrabalhados,
+        ATIVIDADES: v.atividadesConcluidas, CONTATOS: v.contatosEfetivos, REUNIOES: v.reunioesRealizadas,
+        OPPS: v.oportunidadesGeradas, RECEITA: moedaRelatorio(v.receitaOriginada)
+      }));
+
+      const ev=a.dados.filter(x=>dentroPeriodoCatalogo(x.END_TIME,{inicio:mInicio.toISOString().split("T")[0],fim:mFim.toISOString().split("T")[0]}));
+      const series={};
+      ev.forEach(x=>{
+        const d=parteDataISO(x.END_TIME);
+        if(!d) return;
+        if(!series[d]) series[d]={DATA:d,ATIVIDADES:0,REUNIOES:0,REALIZADAS:0,OPPORTUNIDADES:0,RECEITA:0};
+        series[d].ATIVIDADES++;
+        if(String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião") {
+          series[d].REUNIOES++;
+          if(x.COMPLETED==="Y") series[d].REALIZADAS++;
+        }
+      });
+      db.deals.filter(d=>idBitrixValido(d.LEAD_ID) && dentroPeriodoCatalogo(d.DATE_CREATE,{inicio:mInicio.toISOString().split("T")[0],fim:mFim.toISOString().split("T")[0]})).forEach(d=>{
+        const dt=parteDataISO(d.DATE_CREATE);
+        if(!series[dt]) series[dt]={DATA:dt,ATIVIDADES:0,REUNIOES:0,REALIZADAS:0,OPPORTUNIDADES:0,RECEITA:0};
+        series[dt].OPPORTUNIDADES++;
+        if(["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase())) series[dt].RECEITA+=(Number(d.OPPORTUNITY)||0);
+      });
+      const evolucaoDados=Object.values(series).sort((a,b)=>a.DATA.localeCompare(b.DATA));
+
+      criarResultadoCatalogo(chave,"Performance SDR Semanal e Mensal","Evolução da performance SDR consolidada e por responsável.",
+        kpisResult,
+        [{titulo:`Semana Atual (${sInicio.toLocaleDateString()} a ${sFim.toLocaleDateString()}) vs Anterior (${prevSInicio.toLocaleDateString()} a ${prevSFim.toLocaleDateString()})`,dados:rowsSemana,colunas:[{label:"Métrica",valor:"METRICA"},{label:"Comparação",valor:"RES",html:true}]},
+         {titulo:`Mês Atual (${mInicio.toLocaleDateString()} a ${mFim.toLocaleDateString()}) vs Anterior (${prevMInicio.toLocaleDateString()} a ${prevMFim.toLocaleDateString()})`,dados:rowsMes,colunas:[{label:"Métrica",valor:"METRICA"},{label:"Comparação",valor:"RES",html:true}]},
+         {titulo:"Evolução Diária (Mês Atual)",dados:evolucaoDados,colunas:[{label:"Data",valor:(x)=>formatarDataBR(x.DATA)},{label:"Atividades",valor:"ATIVIDADES"},{label:"Reuniões",valor:"REUNIOES"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Opps",valor:"OPPORTUNIDADES"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA)}]},
+         {titulo:"Performance por SDR (Mês Atual)",dados:renderPorSDR(resMesAtual.porSdr),colunas:[{label:"SDR",valor:"SDR"},{label:"L. Novos",valor:"LEADS_NOVOS"},{label:"L. Trab.",valor:"LEADS_TRABALHADOS"},{label:"Atividades",valor:"ATIVIDADES"},{label:"Contatos",valor:"CONTATOS"},{label:"Reuniões",valor:"REUNIOES"},{label:"Opps",valor:"OPPS"},{label:"Receita",valor:"RECEITA"}]}]);
+    }
+
     else if(chave==="decisao_final_sdr"){
       const lb=await baseLeadsCatalogo(webhook),diasLimite=Math.max(1,Number(document.getElementById("diasEstagnacaoSDR").value)||15);
       const a=await atividadesCatalogo(webhook,null,"",""),by={};

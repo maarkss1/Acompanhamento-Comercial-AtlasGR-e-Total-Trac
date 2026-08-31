@@ -319,6 +319,12 @@ const RELATORIOS = {
   sla_primeiro_contato: { grupo:"SDR & Leads", label:"☎️ SLA de primeiro contato", descricao:"Tempo da criação do Lead até a primeira atividade concluída vinculada.", handler:"catalogo", periodo:"mensal", slaPrimeiroContato:true },
   auditoria_sdr: { grupo:"SDR & Leads", label:"🧪 Auditoria SDR — validar dados e plano", descricao:"Leads sem atividade, atividades sem resultado registrado e completude de campos-chave do trabalho de SDR.", handler:"catalogo", periodo:"mensal" },
   decisao_final_sdr: { grupo:"SDR & Leads", label:"🧭 Decisão Final SDR — saneamento seguro", descricao:"Leads estagnados classificados em ação recomendada (recontatar, desqualificar, escalar ou nutrir), sem escrever no Bitrix.", handler:"catalogo", periodo:"todas", diasEstagnacao:true },
+  performance_sdr: { grupo:"SDR & Leads", label:"📈 Performance SDR Semanal e Mensal", descricao:"Evolução da performance SDR ao longo do tempo (semanal, mensal, consolidada e por responsável).", handler:"catalogo", periodo:"mensal" },
+  contact_rate: { grupo:"SDR & Leads", label:"📞 Contact Rate", descricao:"Proporção de Leads com contato efetivo vs Leads trabalhados.", handler:"catalogo", periodo:"mensal" },
+  meeting_rate: { grupo:"SDR & Leads", label:"📅 Meeting Rate & Show Rate", descricao:"Taxa de agendamento de reuniões e de comparecimento.", handler:"catalogo", periodo:"mensal" },
+  no_show_sdr: { grupo:"SDR & Leads", label:"❌ No-show & Recuperação", descricao:"Reuniões agendadas, no-shows e recuperação posterior.", handler:"catalogo", periodo:"mensal" },
+  tentativas_conversao: { grupo:"SDR & Leads", label:"🔁 Tentativas até Conversão", descricao:"Média e distribuição de tentativas até contato, reunião e oportunidade.", handler:"catalogo", periodo:"mensal" },
+  receita_sdr: { grupo:"SDR & Leads", label:"💰 Receita Originada pelo SDR", descricao:"Receita comprovada gerada a partir de Leads trabalhados pelo SDR.", handler:"catalogo", periodo:"mensal" },
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
