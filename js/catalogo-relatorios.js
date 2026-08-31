@@ -74,20 +74,39 @@ async function buscarReunioesFunilRelatorio(webhook,inicio="",fim=""){
     const encontrados=await buscarEntidadesPorIds(webhook,"crm.deal.list",idsDeals,["ID","CATEGORY_ID","STAGE_ID"]);
     Object.entries(encontrados).forEach(([id,d])=>{mapaDeals[id]={categoria:String(d.CATEGORY_ID??""),estagio:String(d.STAGE_ID??"")}});
   }
-  return{reunioes,meta,mapaDeals};
+  // Reuniões sem negócio (Deal) vinculado, mas ligadas a um Lead (OWNER_TYPE_ID=1),
+  // caem no pipeline virtual "Leads" — Leads não têm CATEGORY_ID (funil de Deal),
+  // mas têm STATUS_ID (etapa do próprio Lead), usado abaixo como "etapa".
+  const idsLeads=[...new Set(reunioes.filter((r)=>!bindingsDaAtividade(r).some((b)=>b.OWNER_TYPE_ID==="2"&&mapaDeals[String(b.OWNER_ID)])).flatMap((r)=>bindingsDaAtividade(r).filter((b)=>b.OWNER_TYPE_ID==="1").map((b)=>b.OWNER_ID)))];
+  const mapaLeads={};
+  if(idsLeads.length){
+    const [encontrados,statusList]=await Promise.all([
+      buscarEntidadesPorIds(webhook,"crm.lead.list",idsLeads,["ID","STATUS_ID"]),
+      carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"STATUS","order[SORT]":"ASC"}),
+    ]);
+    const statusMap={};statusList.forEach((s)=>{statusMap[String(s.STATUS_ID)]=s.NAME||s.STATUS_ID;});
+    Object.entries(encontrados).forEach(([id,l])=>{mapaLeads[id]=statusMap[String(l.STATUS_ID)]||l.STATUS_ID||"—";});
+  }
+  return{reunioes,meta,mapaDeals,mapaLeads};
 }
 
 // Pipeline/etapa do PRIMEIRO negócio (CRM Deal) vinculado à atividade que já
-// foi encontrado em mapaDeals — reuniões ligadas só a Lead/Contato/Empresa
-// (sem negócio) não têm pipeline no Bitrix deste projeto (Leads não têm
-// CATEGORY_ID, ver ENTIDADES.leads.hasCategoria em js/config.js).
+// foi encontrado em mapaDeals. Sem Deal, mas com Lead vinculado (OWNER_TYPE_ID=1),
+// cai no pipeline virtual "Leads" (etapa = STATUS_ID do Lead, via mapaLeads).
+// Só sobra "Sem negócio vinculado" quando a reunião está ligada apenas a
+// Contato/Empresa (sem Lead nem Deal).
 function reuniaoVinculoFunilEtapa(r,base){
-  const vinculo=bindingsDaAtividade(r).find((b)=>b.OWNER_TYPE_ID==="2"&&base.mapaDeals[String(b.OWNER_ID)]);
-  if(!vinculo)return{pipeline:"Sem negócio vinculado (Lead/Contato/Empresa)",pipelineId:"",etapa:"—"};
-  const d=base.mapaDeals[String(vinculo.OWNER_ID)];
-  const pipeline=nomeFunilSemCodigo(base.meta.categorias?.[d.categoria]||`Categoria ${d.categoria}`);
-  const etapa=base.meta.estagios?.[d.categoria]?.[d.estagio]?.label||d.estagio||"—";
-  return{pipeline,pipelineId:d.categoria,etapa};
+  const binds=bindingsDaAtividade(r);
+  const vinculoDeal=binds.find((b)=>b.OWNER_TYPE_ID==="2"&&base.mapaDeals[String(b.OWNER_ID)]);
+  if(vinculoDeal){
+    const d=base.mapaDeals[String(vinculoDeal.OWNER_ID)];
+    const pipeline=nomeFunilSemCodigo(base.meta.categorias?.[d.categoria]||`Categoria ${d.categoria}`);
+    const etapa=base.meta.estagios?.[d.categoria]?.[d.estagio]?.label||d.estagio||"—";
+    return{pipeline,pipelineId:d.categoria,etapa};
+  }
+  const vinculoLead=binds.find((b)=>b.OWNER_TYPE_ID==="1"&&base.mapaLeads?.[String(b.OWNER_ID)]!==undefined);
+  if(vinculoLead)return{pipeline:"Leads",pipelineId:"leads",etapa:base.mapaLeads[String(vinculoLead.OWNER_ID)]||"—"};
+  return{pipeline:"Sem negócio vinculado (Contato/Empresa)",pipelineId:"",etapa:"—"};
 }
 
 function resumoReunioesFunilRelatorio(base){
@@ -999,14 +1018,14 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const porEtapa=agruparReunioesPor(r.linhas,"ETAPA");
       const semNegocio=r.linhas.filter((x)=>x.PIPELINE.startsWith("Sem negócio")).length;
       criarResultadoCatalogo(chave,"Reuniões — agendadas x realizadas",`Reuniões (END_TIME) entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong> — qualquer pipeline, etapa e responsável.`,
-        [kpi("Total de reuniões",r.linhas.length),kpi("Agendadas",r.agendadas.length),kpi("Realizadas",r.realizadas.length),kpi("% Realizadas",`${taxaPct(r.realizadas.length,r.linhas.length)}%`),kpi("Responsáveis",porResp.length),kpi("Pipelines",porPipeline.filter((x)=>x.PIPELINE!=="Sem negócio vinculado (Lead/Contato/Empresa)").length),kpi("Sem negócio vinculado",semNegocio)],
+        [kpi("Total de reuniões",r.linhas.length),kpi("Agendadas",r.agendadas.length),kpi("Realizadas",r.realizadas.length),kpi("% Realizadas",`${taxaPct(r.realizadas.length,r.linhas.length)}%`),kpi("Responsáveis",porResp.length),kpi("Pipelines",porPipeline.filter((x)=>!x.PIPELINE.startsWith("Sem negócio")).length),kpi("Leads (sem negócio)",r.linhas.filter((x)=>x.PIPELINE==="Leads").length),kpi("Sem negócio vinculado",semNegocio)],
         [
           {titulo:"Por responsável (qualquer usuário)",dados:porResp,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
           {titulo:"Por pipeline (funil)",dados:porPipeline,colunas:[{label:"Pipeline",valor:"PIPELINE"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
           {titulo:"Por etapa do negócio vinculado",dados:porEtapa,colunas:[{label:"Etapa",valor:"ETAPA"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
           {titulo:"Reuniões (detalhe)",dados:r.linhas,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Assunto",valor:"ASSUNTO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Situação",valor:"SITUACAO"},{label:"Início",valor:"INICIO"},{label:"Fim",valor:"FIM"},{label:"Pipeline",valor:"PIPELINE"},{label:"Etapa",valor:"ETAPA"}]}
         ],
-        "Agendada = atividade de Reunião (TYPE_ID=1) com COMPLETED≠Y; Realizada = COMPLETED=Y. Pipeline/etapa vêm do negócio (CRM Deal) vinculado à atividade, quando existe; reuniões vinculadas só a Lead/Contato/Empresa aparecem como \"Sem negócio vinculado\".");
+        "Agendada = atividade de Reunião (TYPE_ID=1) com COMPLETED≠Y; Realizada = COMPLETED=Y. Pipeline/etapa vêm do negócio (CRM Deal) vinculado à atividade, quando existe; sem Deal mas com Lead vinculado, cai no pipeline \"Leads\" (etapa = status do Lead); só sem negócio nenhum (Contato/Empresa) aparece como \"Sem negócio vinculado\".");
     }
 
     else throw new Error(`Relatório "${chave}" ainda não possui implementação.`);

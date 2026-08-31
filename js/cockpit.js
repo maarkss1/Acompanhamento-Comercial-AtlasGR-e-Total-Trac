@@ -267,6 +267,13 @@ function cockpitPopularPipelineReunioes(meta) {
     opt.textContent = label;
     sel.appendChild(opt);
   });
+  // Pipeline virtual: reuniões sem Deal vinculado mas ligadas a um Lead (ver
+  // reuniaoVinculoFunilEtapa, js/catalogo-relatorios.js) — não vem de meta.categorias
+  // porque Lead não tem CATEGORY_ID/funil de Deal no Bitrix.
+  const optLeads = document.createElement("option");
+  optLeads.value = "leads";
+  optLeads.textContent = "Leads (sem negócio vinculado)";
+  sel.appendChild(optLeads);
   if ([...sel.options].some((o) => o.value === anterior)) sel.value = anterior;
 }
 
