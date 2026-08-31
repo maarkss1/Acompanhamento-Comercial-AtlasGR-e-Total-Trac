@@ -164,7 +164,7 @@ function taxaPct(numerador, denominador) {
   return Math.round((Number(numerador || 0) / Number(denominador || 0)) * 10000) / 100;
 }
 
-async function buscarHistoricoEntidadeSDR(webhook, entityTypeId, idsEntidade) {
+async function buscarHistoricoEntidade(webhook, entityTypeId, idsEntidade) {
   const todos = [];
   const vistos = new Set();
   const ids = [...new Set((idsEntidade || []).map(String).filter((x) => x && x !== "0"))];
@@ -573,10 +573,10 @@ async function extrairAnaliseSDR(webhook) {
     };
 
     atualizarStatus("Análise SDR: reconstruindo histórico das etapas dos Leads...");
-    const historicoLeads = await buscarHistoricoEntidadeSDR(webhook, 1, idsJornadaLista);
+    const historicoLeads = await buscarHistoricoEntidade(webhook, 1, idsJornadaLista);
 
     atualizarStatus("Análise SDR: reconstruindo histórico das oportunidades relacionadas...");
-    const historicoDeals = await buscarHistoricoEntidadeSDR(webhook, 2, dealIdsRelacionados);
+    const historicoDeals = await buscarHistoricoEntidade(webhook, 2, dealIdsRelacionados);
 
     const histLeadPorId = {};
     historicoLeads.forEach((h) => (histLeadPorId[String(h.OWNER_ID)] ||= []).push(h));
