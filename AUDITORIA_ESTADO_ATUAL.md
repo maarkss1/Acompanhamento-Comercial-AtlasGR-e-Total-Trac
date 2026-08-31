@@ -47,7 +47,7 @@ Organização interna do arquivo (por região aproximada de linhas):
 - 3435–4221: Catálogo de relatórios (`extrairRelatorioCatalogo`, ~20 relatórios, um bloco
   `if/else if` monolítico e denso).
 - 4221–4700: Forecast semanal (extração, cálculo, "modelo visual" com metas e setas de tendência).
-- 4700–5650: Análise SDR (semanal/mensal, "João Reis").
+- 4700–5650: Análise SDR (semanal/mensal, por SDR configurável).
 - 5650–6150: Modelo visual da Análise SDR + Diário SDR (extração).
 - 6150–6720: Jornada do Cliente (extração completa, `extrairJornada`).
 - 6715–6900: exportações CSV/JSON por relatório especial.
@@ -91,9 +91,9 @@ personalizado, escolher campos (inclusive `UF_CRM_*` descobertos dinamicamente v
   de tendência, "modelo visual" para impressão/e-mail (`gerarHTMLForecastModelo`, 4331).
 - **Diário SDR** (`extrairDiarioSDR`, 5698): atividades concluídas no dia, Leads atendidos,
   Leads/negócios "potenciais" ainda sem atividade.
-- **Análise SDR — semanal/mensal (João Reis)** (`extrairAnaliseSDR`, 4990): produção diária,
+- **Análise SDR — semanal/mensal (por SDR)** (`extrairAnaliseSDR`, 4990): produção diária,
   mix de canais de atividade, jornada mais frequente, backlog, taxas de conversão, SLA de
-  primeiro contato — com modelo visual customizado (`gerarHTMLRelatorioJoao`, 5658).
+  primeiro contato — com modelo visual customizado (`gerarHTMLRelatorioAnaliseSdr`, 5658).
 
 ### Catálogo de relatórios (v6+, `RELATORIOS`, `Relatorios AtlasGR.html:1740`)
 20 relatórios agrupados em "Jornada & Cliente", "Comercial & Receita", "SDR & Leads",
@@ -233,7 +233,7 @@ Cockpit (ver seção 15/16).
   `baixarJSONDiarioSDR`).
 - **HTML "modelo visual"** para impressão/e-mail: gerado por
   `gerarHTMLRelatorioVisualGenerico` (3577, usado por Jornada e Diário SDR),
-  `gerarHTMLForecastModelo` (4331) e `gerarHTMLRelatorioJoao` (5658) — todos produzem um
+  `gerarHTMLForecastModelo` (4331) e `gerarHTMLRelatorioAnaliseSdr` (5658) — todos produzem um
   documento HTML autocontido (cabeçalho, KPIs, tabelas) que pode ser aberto em nova aba
   (`abrirHtmlEmNovaAba`, 4221) ou baixado como arquivo.
 - Catálogo genérico também expõe `baixarCSVRelatorioCatalogo` / `baixarJSONRelatorioCatalogo` /
@@ -375,7 +375,7 @@ Cockpit (ver seção 15/16).
 - **Nenhuma sanitização de nomes de cliente/título de negócio antes de embutir em HTML gerado
   para download**: há uma função `escapeHtmlRelatorio` (3264) usada nas tabelas, o que é bom —
   mas vale confirmar que **todos** os pontos de interpolação de dados do Bitrix nos HTMLs
-  gerados (`gerarHTMLForecastModelo`, `gerarHTMLRelatorioJoao`, etc.) passam por ela, já que
+  gerados (`gerarHTMLForecastModelo`, `gerarHTMLRelatorioAnaliseSdr`, etc.) passam por ela, já que
   dados de CRM podem conter caracteres não controlados vindos de fontes externas (leads via
   formulário web, por exemplo) — um XSS armazenado é tecnicamente possível se algum campo for
   interpolado sem escape.

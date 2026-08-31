@@ -219,7 +219,7 @@
       <div class="row" style="margin-top:10px;">
         <div>
           <label for="nomeSdrPrincipal" style="margin-top:0;">SDR principal</label>
-          <input type="text" id="nomeSdrPrincipal" value="João Reis" placeholder="João Reis">
+          <input type="text" id="nomeSdrPrincipal" value="" placeholder="Ex: Maria Silva">
         </div>
         <div>
           <label for="palavrasFunisSDR" style="margin-top:0;">Pipelines de potenciais</label>
@@ -268,7 +268,7 @@
       <div class="row" style="margin-top:10px;">
         <div>
           <label for="nomeSdrAnalise" style="margin-top:0;">SDR analisado</label>
-          <input type="text" id="nomeSdrAnalise" value="João Reis" placeholder="João Reis">
+          <input type="text" id="nomeSdrAnalise" value="" placeholder="Nome do SDR a analisar">
         </div>
         <div>
           <label for="diasSemAtividadeCriticoSDR" style="margin-top:0;">Backlog crítico sem atividade (dias)</label>
@@ -450,9 +450,9 @@
     <div class="relatorio-especial-grid" id="analiseSdrMesKpis"></div>
 
     <div class="botoes-download">
-      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('João Reis — análise semanal e mensal')">🤖 Perguntar à IA sobre este relatório</button>
-      <button type="button" class="primario" onclick="abrirRelatorioVisualJoao()">Abrir relatório visual</button>
-      <button type="button" class="secundario" onclick="baixarHTMLRelatorioJoao()">HTML • modelo executivo</button>
+      <button type="button" class="secundario" onclick="abrirIAParaRelatorio('Análise SDR — análise semanal e mensal')">🤖 Perguntar à IA sobre este relatório</button>
+      <button type="button" class="primario" onclick="abrirRelatorioVisualAnaliseSdr()">Abrir relatório visual</button>
+      <button type="button" class="secundario" onclick="baixarHTMLRelatorioAnaliseSdr()">HTML • modelo executivo</button>
       <button type="button" class="secundario" onclick="baixarCSVAnaliseSdrDiario()">CSV • atividades diárias</button>
       <button type="button" class="secundario" onclick="baixarCSVAnaliseSdrClientes()">CSV • atividades por cliente</button>
       <button type="button" class="secundario" onclick="baixarCSVAnaliseSdrConversoes()">CSV • conversões</button>
@@ -482,7 +482,7 @@
     <div class="relatorio-subtitulo">Leads / clientes e sua jornada</div>
     <div class="relatorio-scroll"><div id="analiseSdrLeadsTabela"></div></div>
 
-    <div class="relatorio-subtitulo">Backlog atual do João Reis</div>
+    <div class="relatorio-subtitulo">Backlog atual do SDR analisado</div>
     <div class="relatorio-scroll"><div id="analiseSdrBacklogTabela"></div></div>
 
     <p class="rodape-nota">
