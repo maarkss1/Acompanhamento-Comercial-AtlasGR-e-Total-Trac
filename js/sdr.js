@@ -343,7 +343,7 @@ async function extrairAnaliseSDR(webhook) {
   resultadoAnaliseSDR = {};
 
   try {
-    atualizarStatus("Análise SDR: localizando João Reis e carregando estrutura do CRM...");
+    atualizarStatus("Análise SDR: localizando o SDR configurado e carregando estrutura do CRM...");
 
     const [meta, statusLeads] = await Promise.all([
       buscarMetadadosFunisEEstagios(webhook),
@@ -354,7 +354,10 @@ async function extrairAnaliseSDR(webhook) {
       buscarUsuariosJornada(webhook)
     ]);
 
-    const nomeSdr = String(document.getElementById("nomeSdrAnalise")?.value || "João Reis").trim();
+    const nomeSdr = String(document.getElementById("nomeSdrAnalise")?.value || "").trim();
+    if (!nomeSdr) {
+      throw new Error("Informe o nome do SDR que deseja analisar.");
+    }
     const usuarios = encontrarUsuariosPorNomeConfigurado(nomeSdr);
     if (!usuarios.length) {
       throw new Error(`Não encontrei o usuário "${nomeSdr}" na lista de usuários do Bitrix.`);
@@ -449,7 +452,7 @@ async function extrairAnaliseSDR(webhook) {
     const leadsJornadaMap = { ...leadsAtribuidosMap, ...leadsTocadosMap };
     const idsJornadaLista = [...idsJornada];
 
-    atualizarStatus("Análise SDR: buscando negócios originados dos Leads do João...");
+    atualizarStatus(`Análise SDR: buscando negócios originados dos Leads de ${sdrNome}...`);
     const dealsRelacionados = await buscarDealsPorLeadIdsAnaliseSDR(webhook, idsJornadaLista);
 
     const dealIdsRelacionados = dealsRelacionados.map((d) => String(d.ID)).filter(Boolean);
@@ -1045,7 +1048,7 @@ function tabelaModelo(headers,rows){
     (rows||[]).map((r)=>`<tr>${headers.map((h)=>`<td>${h.html?h.valor(r):escapeHtmlRelatorio(h.valor(r)??"")}</td>`).join("")}</tr>`).join("")+
     `</tbody></table></div>`;
 }
-function gerarHTMLRelatorioJoao(){
+function gerarHTMLRelatorioAnaliseSdr(){
   const r=resultadoAnaliseSDR;if(!r?.resumo)return "";
   const s=r.resumo.semana,m=r.resumo.mes,top=r.clientes_atividades?.[0];
   const insight=m.ATIVIDADES
@@ -1083,8 +1086,8 @@ function gerarHTMLRelatorioJoao(){
   `<h2 class="section">Taxas de conversão</h2>${conv}<h2 class="section">Jornadas mais frequentes</h2>${rotas}`+
   `<footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · Análise SDR · ${escapeHtmlRelatorio(r.meta.sdr_nome)}</footer></div></body></html>`;
 }
-function abrirRelatorioVisualJoao(){const h=gerarHTMLRelatorioJoao();if(h)mostrarRelatorioVisualInline(h,"Análise SDR — João Reis");}
-function baixarHTMLRelatorioJoao(){const h=gerarHTMLRelatorioJoao();if(h)baixarArquivo(h,`analise_sdr_joao_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
+function abrirRelatorioVisualAnaliseSdr(){const h=gerarHTMLRelatorioAnaliseSdr();if(h)mostrarRelatorioVisualInline(h,`Análise SDR — ${resultadoAnaliseSDR?.meta?.sdr_nome||"SDR"}`);}
+function baixarHTMLRelatorioAnaliseSdr(){const h=gerarHTMLRelatorioAnaliseSdr();if(h)baixarArquivo(h,`analise_sdr_modelo_atlas_${dataHoje()}.html`,"text/html;charset=utf-8;");}
 
 async function extrairDiarioSDR(webhook) {
   document.getElementById("spinner").style.display = "inline-block";
@@ -1326,7 +1329,7 @@ async function extrairDiarioSDR(webhook) {
       };
     }).sort((a, b) => b.ATIVIDADES_NO_PERIODO - a.ATIVIDADES_NO_PERIODO);
 
-    const nomeSdrPrincipal = String(document.getElementById("nomeSdrPrincipal")?.value || "João Reis").trim();
+    const nomeSdrPrincipal = String(document.getElementById("nomeSdrPrincipal")?.value || "").trim();
     const usuariosSdrConfigurados = encontrarUsuariosPorNomeConfigurado(nomeSdrPrincipal);
 
     const sdrUserIds = new Set([
@@ -1420,8 +1423,8 @@ async function extrairDiarioSDR(webhook) {
       return resumoPorResponsavel[k];
     };
 
-    // SDR explicitamente configurado. João Reis permanece no relatório mesmo
-    // quando não tiver Lead/Negócio potencial atribuído naquele dia.
+    // SDR explicitamente configurado (campo "SDR principal") permanece no
+    // relatório mesmo quando não tiver Lead/Negócio potencial atribuído naquele dia.
     usuariosSdrConfigurados.forEach((u) => garantirResp(u.id, u.nome));
 
     potenciaisLeads.forEach((x) => {

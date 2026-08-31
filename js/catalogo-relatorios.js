@@ -217,6 +217,37 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "ASSIGNED_BY_ID representa o responsável atual, não todo o histórico de ownership.");
     }
 
+    else if(chave==="vendas_realizadas"){
+      const b=await baseDealsCatalogo(webhook,true),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p));
+      const porDia={},porMes={},porAno={};
+      const acomodar=(mapa,chaveGrupo,rotulo,d)=>{
+        const k=`${chaveGrupo}|||${d._RESPONSAVEL}`;
+        if(!mapa[k])mapa[k]={CHAVE:chaveGrupo,PERIODO:rotulo,VENDEDOR:d._RESPONSAVEL,VENDAS:0,RECEITA:0};
+        mapa[k].VENDAS++;mapa[k].RECEITA+=d._VALOR;
+      };
+      ds.forEach((d)=>{
+        const dia=d._FECHAMENTO||"";
+        if(!dia)return;
+        acomodar(porDia,dia,formatarDataBR(dia),d);
+        acomodar(porMes,dia.slice(0,7),mesAnoBR(dia),d);
+        acomodar(porAno,dia.slice(0,4),dia.slice(0,4),d);
+      });
+      const montarLinhas=(mapa)=>Object.values(mapa).map((r)=>({...r,TICKET:r.VENDAS?r.RECEITA/r.VENDAS:0})).sort((a,b)=>b.CHAVE.localeCompare(a.CHAVE)||b.RECEITA-a.RECEITA);
+      const linhasDia=montarLinhas(porDia),linhasMes=montarLinhas(porMes),linhasAno=montarLinhas(porAno);
+      const receitaTotal=ds.reduce((a,d)=>a+d._VALOR,0),porVendedorReceita={};
+      ds.forEach((d)=>{porVendedorReceita[d._RESPONSAVEL]=(porVendedorReceita[d._RESPONSAVEL]||0)+d._VALOR});
+      const melhorVendedor=Object.entries(porVendedorReceita).sort((a,b)=>b[1]-a[1])[0];
+      const colunasVendas=[{label:"Vendedor",valor:"VENDEDOR"},{label:"Vendas",valor:"VENDAS"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true}];
+      criarResultadoCatalogo(chave,"Vendas realizadas — diário, mensal e anual",`Negócios ganhos (fechados) entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>, por vendedor.`,
+        [kpi("Vendas fechadas",ds.length),kpi("Receita total",moedaRelatorio(receitaTotal)),kpi("Ticket médio",moedaRelatorio(ds.length?receitaTotal/ds.length:0)),kpi("Vendedores com venda",new Set(ds.map((d)=>d._RESPONSAVEL)).size),kpi("Dias com venda",new Set(ds.map((d)=>d._FECHAMENTO)).size),kpi("Meses com venda",new Set(ds.map((d)=>d._FECHAMENTO.slice(0,7))).size),kpi("Anos com venda",new Set(ds.map((d)=>d._FECHAMENTO.slice(0,4))).size),kpi("Melhor vendedor",melhorVendedor?`${melhorVendedor[0]} (${moedaRelatorio(melhorVendedor[1])})`:"—")],
+        [
+          {titulo:"Vendas por dia e vendedor",dados:linhasDia,colunas:[{label:"Data",valor:"PERIODO"},...colunasVendas]},
+          {titulo:"Vendas por mês e vendedor",dados:linhasMes,colunas:[{label:"Mês",valor:"PERIODO"},...colunasVendas]},
+          {titulo:"Vendas por ano e vendedor",dados:linhasAno,colunas:[{label:"Ano",valor:"PERIODO"},...colunasVendas]}
+        ],
+        "Venda = negócio em estágio de sucesso (ganho); data considerada é a mesma usada no Forecast (contrato assinado com fallback para CLOSEDATE).");
+    }
+
     else if(chave==="ganhos_perdas_ciclo"){
       const b=await baseDealsCatalogo(webhook,true),fs=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA!=="process"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)),won=fs.filter((d)=>d._SEMANTICA==="success"),lost=fs.filter((d)=>d._SEMANTICA==="failure");
       const rows=fs.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,RESULTADO:d._SEMANTICA==="success"?"Ganho":"Perdido",RESPONSAVEL:d._RESPONSAVEL,FECHAMENTO:d._FECHAMENTO,VALOR:d._VALOR,CICLO_DIAS:d._CICLO}));const cs=rows.map((x)=>Number(x.CICLO_DIAS)).filter(Number.isFinite);
@@ -898,7 +929,7 @@ const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="ht
 // wordmark de duas cores do manual de identidade visual deles (TOTAL em
 // navy #374898, TRAC em azul #008FCE) — mesmo padrão String.raw do logo
 // acima, usado por gerarHTMLRelatorioVisualGenerico/cockpitGerarHTMLExport/
-// gerarHTMLForecastModelo/gerarHTMLRelatorioJoao via marcaAtiva().logoSvg.
+// gerarHTMLForecastModelo/gerarHTMLRelatorioAnaliseSdr via marcaAtiva().logoSvg.
 const MODELO_EXECUTIVO_LOGO_TOTALTRAC = String.raw`<svg viewBox="0 0 620 120" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(2,4)">
     <path d="M52 0C27 0 7 19 7 43c0 30 45 71 45 71s45-41 45-71C97 19 77 0 52 0z" fill="#93DBF2"/>
