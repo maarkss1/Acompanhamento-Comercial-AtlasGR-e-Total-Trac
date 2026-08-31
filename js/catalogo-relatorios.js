@@ -357,6 +357,165 @@ async function extrairRelatorioCatalogo(webhook,chave){
         [{titulo:"Resumo por responsável",dados:Object.values(m).sort((a,b)=>b.ATRASADAS-a.ATRASADAS),colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Pendentes",valor:"PENDENTES"},{label:"Atrasadas",valor:"ATRASADAS"},{label:"Hoje",valor:"HOJE"},{label:"Sem prazo",valor:"SEM_PRAZO"}]},{titulo:"Atividades abertas",dados:rows,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Canal",valor:"CANAL"},{label:"Assunto",valor:"ASSUNTO"},{label:"Deadline",valor:"DEADLINE"},{label:"Situação",valor:"SITUACAO"},{label:"Vínculos",valor:"VINCULOS"}]}]);
     }
 
+    else if(chave==="vendido_faturado"){
+      // 49. Vendido × Faturado
+      const b=await baseDealsCatalogo(webhook,true);
+      const fs=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="success");
+      const faturamentos=getFaturamentos();
+      const agrupado=agruparFaturamentosPorNegocio();
+
+      // "Mês" para o gráfico: Mês do Fechamento (Vendido) vs Mês da NF (Faturado) não batem 1:1.
+      // O requisito diz "Mês da venda no Bitrix vs Mês em que a NF ocorreu".
+      // Vamos agrupar os KPIs pela data de Fechamento (Vendido).
+      const mesFiltrado=p.mes||"";
+      const rows=[];
+      let totalVendido=0, totalFaturado=0, totalPendente=0;
+      let faturamentosMesAtual=0;
+
+      fs.forEach((d)=>{
+        const faturadoInfo = agrupado[String(d.ID)] || { faturado: 0, nfs: 0 };
+        const vendido = d._VALOR || 0;
+        const faturado = faturadoInfo.faturado;
+        const pendente = Math.max(0, vendido - faturado);
+
+        let status = "AGUARDANDO FINANCEIRO";
+        if(faturado === 0 && faturadoInfo.nfs === 0) status = "AGUARDANDO FINANCEIRO";
+        // "NÃO FATURADO" necessitaria flag explícita do Financeiro. Usaremos as flags simples por hora
+        else if(faturado > 0 && faturado < vendido) status = "PARCIALMENTE FATURADO";
+        else if(faturado === vendido) status = "FATURADO";
+        else if(faturado > vendido) status = "DIVERGÊNCIA";
+
+        // Filtro de mês pelo Deal
+        const noMes = mesFiltrado ? d._FECHAMENTO.startsWith(mesFiltrado) : true;
+        if(noMes) {
+          totalVendido += vendido;
+          totalFaturado += faturado; // Quanto do que foi VENDIDO neste mês já foi faturado
+          totalPendente += pendente;
+          rows.push({
+            DEAL_ID: d.ID,
+            CLIENTE: d._CLIENTE,
+            VENDEDOR: d._RESPONSAVEL,
+            DATA_VENDA: d._FECHAMENTO,
+            VENDIDO: vendido,
+            FATURADO: faturado,
+            PENDENTE: pendente,
+            STATUS: status,
+            NFS: faturadoInfo.nfs,
+            ACOES: `<button class="btn btn-secundario btn-sm" onclick="abrirModalFaturamento('${d.ID}', '${escapeHtmlRelatorio(d._CLIENTE)}', ${vendido}, ${faturado})">+ NF</button>`
+          });
+        }
+      });
+
+      faturamentos.forEach((f)=>{
+        if(mesFiltrado && f.data_faturamento && f.data_faturamento.startsWith(mesFiltrado)){
+          faturamentosMesAtual += Number(f.valor_faturado) || 0;
+        } else if (!mesFiltrado) {
+          faturamentosMesAtual += Number(f.valor_faturado) || 0;
+        }
+      });
+
+      const pct = totalVendido > 0 ? (totalFaturado / totalVendido) * 100 : 0;
+      rows.sort((a,b)=>b.VENDIDO - a.VENDIDO);
+
+      criarResultadoCatalogo(chave,"Vendido × Faturado","Comparação entre as vendas ganhas no Comercial e as NFs emitidas pelo Financeiro.",
+        [
+          kpi("Vendido (Competência Comercial)",moedaRelatorio(totalVendido)),
+          kpi("Faturado (Deste vendido)",moedaRelatorio(totalFaturado)),
+          kpi("Pendente",moedaRelatorio(totalPendente)),
+          kpi("% Faturado (Coorte Venda)",`${pct.toFixed(1)}%`),
+          kpi("Faturado Realizado (Competência Financeira)",moedaRelatorio(faturamentosMesAtual)),
+          kpi("Negócios",rows.length),
+          kpi("Divergências",rows.filter(r=>r.STATUS==="DIVERGÊNCIA").length)
+        ],
+        [
+          {titulo:"Listagem de Vendas",dados:rows,colunas:[
+            {label:"Deal",valor:"DEAL_ID"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Vendedor",valor:"VENDEDOR"},
+            {label:"Vendido em",valor:"DATA_VENDA"},
+            {label:"Vendido",valor:(x)=>moedaRelatorio(x.VENDIDO),html:true},
+            {label:"Faturado",valor:(x)=>moedaRelatorio(x.FATURADO),html:true},
+            {label:"Pendente",valor:(x)=>moedaRelatorio(x.PENDENTE),html:true},
+            {label:"Status",valor:"STATUS"},
+            {label:"NFs",valor:"NFS"},
+            {label:"Ações",valor:"ACOES",html:true}
+          ]}
+        ]);
+    }
+
+    else if(chave==="backlog_financeiro"){
+      // 50. Backlog Financeiro de Vendas
+      const b=await baseDealsCatalogo(webhook,true);
+      const fs=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="success");
+      const agrupado=agruparFaturamentosPorNegocio();
+
+      const hoje = new Date();
+      let totalPendente = 0;
+      let count0_3=0, count4_7=0, count8_15=0, count16_30=0, count30mais=0;
+
+      const rows=[];
+      fs.forEach((d)=>{
+        const faturadoInfo = agrupado[String(d.ID)] || { faturado: 0, nfs: 0 };
+        const vendido = d._VALOR || 0;
+        const pendente = Math.max(0, vendido - faturadoInfo.faturado);
+
+        if (pendente > 0) {
+          const dtVenda = d._FECHAMENTO ? new Date(`${d._FECHAMENTO}T12:00:00`) : new Date(d.MOVED_TIME||d.DATE_CREATE);
+          const dias = Math.max(0, Math.floor((hoje - dtVenda) / 86400000));
+
+          let faixa = "0-3 dias";
+          if(dias>30) { faixa="Acima de 30"; count30mais++; }
+          else if(dias>=16) { faixa="16-30"; count16_30++; }
+          else if(dias>=8) { faixa="8-15"; count8_15++; }
+          else if(dias>=4) { faixa="4-7"; count4_7++; }
+          else { count0_3++; }
+
+          totalPendente += pendente;
+
+          rows.push({
+            DEAL_ID: d.ID,
+            CLIENTE: d._CLIENTE,
+            VENDEDOR: d._RESPONSAVEL,
+            DATA_VENDA: d._FECHAMENTO,
+            VENDIDO: vendido,
+            FATURADO: faturadoInfo.faturado,
+            PENDENTE: pendente,
+            DIAS: dias,
+            FAIXA: faixa,
+            NFS: faturadoInfo.nfs,
+            ACOES: `<button class="btn btn-secundario btn-sm" onclick="abrirModalFaturamento('${d.ID}', '${escapeHtmlRelatorio(d._CLIENTE)}', ${vendido}, ${faturadoInfo.faturado})">+ NF</button>`
+          });
+        }
+      });
+
+      // Classificar por valor pendente (maior primeiro)
+      rows.sort((a,b)=>b.PENDENTE - a.PENDENTE);
+
+      criarResultadoCatalogo(chave,"Backlog Financeiro de Vendas","O que foi vendido e ainda precisa ser faturado.",
+        [
+          kpi("Negócios pendentes",rows.length),
+          kpi("Valor pendente",moedaRelatorio(totalPendente)),
+          kpi("0-3 dias",count0_3),
+          kpi("4-7 dias",count4_7),
+          kpi("8-15 dias",count8_15),
+          kpi("16-30 dias",count16_30),
+          kpi(">30 dias",count30mais)
+        ],
+        [
+          {titulo:"Prioridade de Faturamento",dados:rows,colunas:[
+            {label:"Deal",valor:"DEAL_ID"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Vendedor",valor:"VENDEDOR"},
+            {label:"Data",valor:"DATA_VENDA"},
+            {label:"Dias Pendente",valor:"DIAS"},
+            {label:"Faixa",valor:"FAIXA"},
+            {label:"Pendente",valor:(x)=>moedaRelatorio(x.PENDENTE),html:true},
+            {label:"NFs parciais",valor:"NFS"},
+            {label:"Ações",valor:"ACOES",html:true}
+          ]}
+        ]);
+    }
+
     else if(chave==="qualidade_crm"){
       const [db,lb]=await Promise.all([baseDealsCatalogo(webhook,false),baseLeadsCatalogo(webhook)]),ds=db.deals,ls=lb.leads;
       const open=ds.filter((d)=>semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{})==="process"&&!ehEstagioPiloto(d.STAGE_ID,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]?.label));
@@ -954,3 +1113,116 @@ function modeloExecutivoCssParaMarca(marca) {
     .replace("#FF6B10", marca.corSecundaria2);
 }
 
+
+// ---------------------------------------------------------------------------
+// v29 — Modal de Faturamento (Vendido × Faturado)
+// ---------------------------------------------------------------------------
+let faturamentoDealAtual = null;
+
+window.abrirModalFaturamento = function(dealId, cliente, vendido, faturadoAtual) {
+  faturamentoDealAtual = dealId;
+  const pendente = Math.max(0, vendido - faturadoAtual);
+
+  let modal = document.getElementById("modalFaturamento");
+  if (!modal) {
+    document.body.insertAdjacentHTML("beforeend", `
+      <div id="modalFaturamento" class="modal-backdrop oculto">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Registrar Faturamento (NF)</h3>
+            <button class="modal-close" onclick="fecharModalFaturamento()">×</button>
+          </div>
+          <div class="modal-body">
+            <p><strong>Cliente:</strong> <span id="faturamentoCliente"></span></p>
+            <p><strong>Total Vendido:</strong> <span id="faturamentoVendido"></span></p>
+            <p><strong>Já Faturado:</strong> <span id="faturamentoAtual"></span></p>
+            <p><strong>Pendente:</strong> <span id="faturamentoPendente"></span></p>
+
+            <form id="formFaturamento" onsubmit="salvarFaturamento(event)">
+              <div class="form-group" style="margin-top: 15px;">
+                <label for="faturamentoValor">Valor da NF (R$):</label>
+                <input type="number" id="faturamentoValor" step="0.01" min="0.01" required class="input-form">
+              </div>
+              <div class="form-group">
+                <label for="faturamentoData">Data da NF:</label>
+                <input type="date" id="faturamentoData" required class="input-form">
+              </div>
+              <div class="form-group">
+                <label for="faturamentoNF">Número da NF (opcional):</label>
+                <input type="text" id="faturamentoNF" class="input-form">
+              </div>
+              <div class="form-group">
+                <label for="faturamentoObs">Observação (opcional):</label>
+                <textarea id="faturamentoObs" rows="2" class="input-form"></textarea>
+              </div>
+              <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secundario" onclick="fecharModalFaturamento()">Cancelar</button>
+                <button type="submit" class="btn btn-primario">Salvar Faturamento</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    `);
+    modal = document.getElementById("modalFaturamento");
+  }
+
+  document.getElementById("faturamentoCliente").textContent = cliente;
+  document.getElementById("faturamentoVendido").textContent = moedaRelatorio(vendido);
+  document.getElementById("faturamentoAtual").textContent = moedaRelatorio(faturadoAtual);
+  document.getElementById("faturamentoPendente").textContent = moedaRelatorio(pendente);
+
+  // Preencher valor pendente como default
+  document.getElementById("faturamentoValor").value = pendente > 0 ? pendente.toFixed(2) : "";
+  document.getElementById("faturamentoData").value = new Date().toISOString().split("T")[0];
+  document.getElementById("faturamentoNF").value = "";
+  document.getElementById("faturamentoObs").value = "";
+
+  modal.classList.remove("oculto");
+};
+
+window.fecharModalFaturamento = function() {
+  const modal = document.getElementById("modalFaturamento");
+  if (modal) modal.classList.add("oculto");
+  faturamentoDealAtual = null;
+};
+
+window.salvarFaturamento = function(ev) {
+  ev.preventDefault();
+  if (!faturamentoDealAtual) return;
+
+  const valor = Number(document.getElementById("faturamentoValor").value) || 0;
+  const data = document.getElementById("faturamentoData").value;
+  const nf = document.getElementById("faturamentoNF").value;
+  const obs = document.getElementById("faturamentoObs").value;
+
+  if (valor <= 0 || !data) {
+    alert("Preencha o valor e a data corretamente.");
+    return;
+  }
+
+  const faturamento = {
+    bitrix_id: faturamentoDealAtual,
+    valor_faturado: valor,
+    data_faturamento: data,
+    numero_nf: nf,
+    observacao: obs,
+    usuario: "Usuário Local" // Sem login real, apenas guardamos genérico
+  };
+
+  saveFaturamento(faturamento);
+  fecharModalFaturamento();
+
+  // Re-extrair o relatório para atualizar os valores
+  const webhook = document.getElementById("webhook")?.value;
+  const relatorioAtual = document.getElementById("relatorio")?.value;
+  if (webhook && relatorioAtual && ["vendido_faturado", "backlog_financeiro"].includes(relatorioAtual)) {
+    // Precisamos recarregar chamando o mesmo hook que o botão extrair chamaria
+    // Como estamos num modal, um alert é mais seguro, mas vamos tentar clicar no botão extrair silenciosamente
+    const btnExt = document.getElementById("iniciarExtracao");
+    if(btnExt) btnExt.click();
+    else alert("Faturamento salvo com sucesso! Por favor, extraia o relatório novamente para atualizar.");
+  } else {
+    alert("Faturamento salvo com sucesso!");
+  }
+};

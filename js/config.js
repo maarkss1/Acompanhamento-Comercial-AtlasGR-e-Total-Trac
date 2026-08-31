@@ -321,7 +321,10 @@ const RELATORIOS = {
   decisao_final_sdr: { grupo:"SDR & Leads", label:"🧭 Decisão Final SDR — saneamento seguro", descricao:"Leads estagnados classificados em ação recomendada (recontatar, desqualificar, escalar ou nutrir), sem escrever no Bitrix.", handler:"catalogo", periodo:"todas", diasEstagnacao:true },
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
-  qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" }
+  qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
+
+  vendido_faturado: { grupo:"Financeiro × Comercial", label:"💸 Vendido × Faturado", descricao:"Compara o valor das vendas ganhas no Comercial com os registros financeiros de faturamento e NFs.", handler:"catalogo", periodo:"mensal" },
+  backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" }
 };
 
 // v11 — Metas mensais do forecast Comercial (R$), usadas como valor padrão da
