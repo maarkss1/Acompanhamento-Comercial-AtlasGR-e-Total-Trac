@@ -32,6 +32,10 @@ let cockpitState = {
   dealsFinanceiroFiltrados: [],
   meta: null,           // metadados de funil/estágio (buscarMetadadosFunisEEstagios)
   periodo: { inicio: "", fim: "" },
+  // Reuniões (TYPE_ID=1) — busca sob demanda (não faz parte de "Atualizar
+  // agora"), ver cockpitCarregarReunioes. null até o primeiro clique em
+  // "↻ Carregar reuniões".
+  reunioes: null,
 };
 
 // Guarda, por card clicável, a lista de negócios que compõe aquele número —
@@ -80,6 +84,7 @@ function iniciarCockpitExecutivo() {
   }
   atualizarRelogioCockpit();
   cockpitRenderEstadoVazio();
+  cockpitRenderReunioes(); // placeholder inicial — busca é sob demanda, não depende de "Atualizar agora"
   cockpitAtualizarTicker();
   cockpitIniciarAutoAtualizacao();
   initDragAndDrop();
@@ -224,6 +229,92 @@ async function carregarOrigensCockpit() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Reuniões (agendadas x realizadas) — carregamento sob demanda, mesmo padrão
+// de carregarVendedoresCockpit/carregarOrigensCockpit acima: não entra em
+// "Atualizar agora" porque é uma chamada extra e mais pesada (crm.activity.list
+// sem filtro de TYPE_ID no servidor, filtrado no cliente — ver
+// buscarReunioesFunilRelatorio, js/catalogo-relatorios.js). Cobre qualquer
+// pipeline, etapa e usuário — não só o funil Comercial usado no resto do
+// Cockpit — porque reuniões podem estar vinculadas a negócio de qualquer funil.
+// ---------------------------------------------------------------------------
+async function cockpitCarregarReunioes() {
+  const webhook = document.getElementById("webhook").value.trim();
+  const erro = validarWebhook(webhook);
+  if (erro) { mostrarErro(erro); return; }
+  const status = cockpitEl("cockpitReunioesStatus");
+  if (status) status.textContent = "Carregando reuniões do Bitrix (pode levar alguns segundos)...";
+  try {
+    const periodo = cockpitPeriodoFiltro();
+    const base = await buscarReunioesFunilRelatorio(webhook, periodo.inicio, periodo.fim);
+    cockpitState.reunioes = base;
+    cockpitPopularPipelineReunioes(base.meta);
+    cockpitRenderReunioes();
+  } catch (e) {
+    if (status) status.textContent = "";
+    mostrarErro("Não consegui carregar as reuniões do Cockpit.\n\nDetalhe técnico: " + e.message);
+  }
+}
+
+function cockpitPopularPipelineReunioes(meta) {
+  const sel = cockpitEl("cockpitReunioesPipeline");
+  if (!sel) return;
+  const anterior = sel.value;
+  sel.innerHTML = '<option value="">Todos os pipelines</option>';
+  Object.entries(meta.categorias || {}).forEach(([id, label]) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some((o) => o.value === anterior)) sel.value = anterior;
+}
+
+// Reaplica os filtros de Pipeline (próprio deste bloco) e de Usuário
+// (reaproveita o seletor "Vendedor" já existente no topo do Cockpit, sobre
+// RESPONSIBLE_ID da atividade em vez de ASSIGNED_BY_ID do negócio) sobre o
+// último lote de reuniões já buscado — sem nova ida ao Bitrix.
+function cockpitRenderReunioes() {
+  const base = cockpitState.reunioes;
+  const status = cockpitEl("cockpitReunioesStatus");
+  const tabelas = ["cockpitReunioesPorResponsavel", "cockpitReunioesPorPipeline", "cockpitReunioesPorEtapa"];
+  if (!base) {
+    const kpisEl = cockpitEl("cockpitReunioesKpis");
+    if (kpisEl) kpisEl.innerHTML = cockpitPlaceholderVazio('Clique em "↻ Carregar reuniões" para buscar as atividades de Reunião (TYPE_ID=1) do período selecionado no filtro acima.');
+    tabelas.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = ""; });
+    return;
+  }
+  const usuario = cockpitEl("cockpitVendedor")?.value || "";
+  const pipeline = cockpitEl("cockpitReunioesPipeline")?.value || "";
+  const r = resumoReunioesFunilRelatorio(base);
+  const linhas = r.linhas.filter((x) => {
+    if (usuario && x._RESPONSAVEL_ID !== String(usuario)) return false;
+    if (pipeline && x._PIPELINE_ID !== String(pipeline)) return false;
+    return true;
+  });
+  const agendadas = linhas.filter((x) => x.SITUACAO === "Agendada");
+  const realizadas = linhas.filter((x) => x.SITUACAO === "Realizada");
+  cockpitDrill.reunioesAgendadas = agendadas;
+  cockpitDrill.reunioesRealizadas = realizadas;
+  cockpitDrill.reunioesTotal = linhas;
+  cockpitEl("cockpitReunioesKpis").innerHTML = [
+    cockpitKpiCard("Reuniões agendadas", agendadas.length, "reunioesAgendadas"),
+    cockpitKpiCard("Reuniões realizadas", realizadas.length, "reunioesRealizadas"),
+    cockpitKpiCard("Total de reuniões", linhas.length, "reunioesTotal"),
+    cockpitKpiCard("% realizadas", linhas.length ? `${taxaPct(realizadas.length, linhas.length)}%` : "não disponível", null),
+  ].join("");
+  const colunasGrupo = (campo, rotulo) => [
+    { label: rotulo, valor: campo },
+    { label: "Agendadas", valor: "AGENDADAS" },
+    { label: "Realizadas", valor: "REALIZADAS" },
+    { label: "Total", valor: "TOTAL" },
+  ];
+  cockpitEl("cockpitReunioesPorResponsavel").innerHTML = tabelaRelatorio(colunasGrupo("RESPONSAVEL", "Responsável"), agruparReunioesPor(linhas, "RESPONSAVEL"), 100);
+  cockpitEl("cockpitReunioesPorPipeline").innerHTML = tabelaRelatorio(colunasGrupo("PIPELINE", "Pipeline"), agruparReunioesPor(linhas, "PIPELINE"), 100);
+  cockpitEl("cockpitReunioesPorEtapa").innerHTML = tabelaRelatorio(colunasGrupo("ETAPA", "Etapa"), agruparReunioesPor(linhas, "ETAPA"), 100);
+  if (status) status.textContent = `${base.reunioes.length} reunião(ões) no período · ${linhas.length} após filtro de vendedor/pipeline · atualizado às ${new Date().toLocaleTimeString("pt-BR")}.`;
+}
+
 // Filtro de produto: não existe infraestrutura de filtro por produto nos
 // relatórios do catálogo (ver AUDITORIA_ESTADO_ATUAL.md, seção 7) porque
 // crm.deal.productrows.get é uma chamada por negócio (N+1, caro). Para não
@@ -263,6 +354,7 @@ async function aplicarFiltroProdutoCockpit() {
 // Vendedor/Origem já vieram na extração (só o Comercial é buscado); trocar o
 // filtro não precisa de nova ida ao Bitrix, só reaplica sobre o cache local.
 function cockpitReaplicarFiltros() {
+  cockpitRenderReunioes(); // reaplica o filtro de Vendedor sobre reuniões já buscadas, independente dos negócios
   if (!cockpitState.deals.length) return;
   const termo = (cockpitEl("cockpitProduto")?.value || "").trim();
   if (termo) { aplicarFiltroProdutoCockpit(); return; }
@@ -1353,14 +1445,13 @@ function renderizarCockpit() {
   // I) SDR — resumo executivo
   const s = cockpitCalcularResumoSdr(c);
   cockpitEl("cockpitSdrAviso").textContent =
-    "Este resumo usa só os negócios do Comercial já carregados (não busca Leads/atividades). Leads trabalhados, reuniões e conversão Lead→Oportunidade completa: ver Análise SDR / Diário SDR (links abaixo).";
+    "Este resumo usa só os negócios do Comercial já carregados (não busca Leads/atividades). Leads trabalhados e conversão Lead→Oportunidade completa: ver Análise SDR / Diário SDR (links abaixo). Reuniões agendadas/realizadas: bloco dedicado logo abaixo (busca sob demanda).";
   cockpitEl("cockpitSdrResumo").innerHTML = [
     cockpitKpiCard("Negócios criados no período", s.totalCriados, null),
     cockpitKpiCard("Originados de Lead (proxy SDR)", s.viaLeadQtd, "sdrViaLead"),
     cockpitKpiCard("Valor originado de Lead", moedaRelatorio(s.viaLeadValor), "sdrViaLead"),
     cockpitKpiCard("% originado de Lead", cockpitND(s.pctViaLead, (v) => `${v}%`), "sdrViaLead"),
     cockpitKpiCard("Leads trabalhados", "não disponível", null),
-    cockpitKpiCard("Reuniões agendadas/realizadas", "não disponível", null),
   ].join("");
 
   // J) Qualidade dos Dados (CRM) — Data Quality Score
@@ -1389,23 +1480,41 @@ function renderizarCockpit() {
 // ---------------------------------------------------------------------------
 // Drill-down (requisito 9): clique em qualquer KPI mostra os negócios por trás
 // ---------------------------------------------------------------------------
+// Drills de reuniões (bloco dedicado logo abaixo do SDR) têm formato
+// diferente dos drills de negócio (atividade, não deal) — ver
+// cockpitRenderReunioes, que popula cockpitDrill.reunioes* com essas colunas.
+const COCKPIT_DRILL_REUNIOES = new Set(["reunioesAgendadas", "reunioesRealizadas", "reunioesTotal"]);
+
 function cockpitAbrirDrill(chave, titulo) {
   const linhas = cockpitDrill[chave] || [];
   const modal = cockpitEl("cockpitDrillModal");
   if (!modal) return;
   cockpitEl("cockpitDrillTitulo").textContent = titulo || "Detalhamento";
-  cockpitEl("cockpitDrillContagem").textContent = `${linhas.length} negócio(s)`;
-  // Drill de "Pipeline inelegível" ganha uma coluna extra com o(s) motivo(s)
-  // de reprovação (ver cockpitVerificarElegibilidade) — os demais drills
-  // seguem as colunas padrão.
-  const colunas = [
-    { label: "Empresa / Cliente", valor: "_CLIENTE" },
-    { label: "Valor", valor: (x) => moedaRelatorio(x._VALOR), html: true },
-    { label: "Etapa", valor: "_ESTAGIO" },
-    { label: "Vendedor", valor: "_RESPONSAVEL" },
-    { label: "CLOSEDATE", valor: (x) => formatarDataBR(parteDataISO(x.CLOSEDATE)) },
-  ];
-  if (chave === "pipelineInelegivel") colunas.push({ label: "Motivo(s) de inelegibilidade", valor: "_MOTIVOS_INELEGIBILIDADE" });
+  cockpitEl("cockpitDrillContagem").textContent = `${linhas.length} ${COCKPIT_DRILL_REUNIOES.has(chave) ? "reunião(ões)" : "negócio(s)"}`;
+  let colunas;
+  if (COCKPIT_DRILL_REUNIOES.has(chave)) {
+    colunas = [
+      { label: "Assunto", valor: "ASSUNTO" },
+      { label: "Responsável", valor: "RESPONSAVEL" },
+      { label: "Situação", valor: "SITUACAO" },
+      { label: "Início", valor: "INICIO" },
+      { label: "Fim", valor: "FIM" },
+      { label: "Pipeline", valor: "PIPELINE" },
+      { label: "Etapa", valor: "ETAPA" },
+    ];
+  } else {
+    // Drill de "Pipeline inelegível" ganha uma coluna extra com o(s) motivo(s)
+    // de reprovação (ver cockpitVerificarElegibilidade) — os demais drills
+    // seguem as colunas padrão.
+    colunas = [
+      { label: "Empresa / Cliente", valor: "_CLIENTE" },
+      { label: "Valor", valor: (x) => moedaRelatorio(x._VALOR), html: true },
+      { label: "Etapa", valor: "_ESTAGIO" },
+      { label: "Vendedor", valor: "_RESPONSAVEL" },
+      { label: "CLOSEDATE", valor: (x) => formatarDataBR(parteDataISO(x.CLOSEDATE)) },
+    ];
+    if (chave === "pipelineInelegivel") colunas.push({ label: "Motivo(s) de inelegibilidade", valor: "_MOTIVOS_INELEGIBILIDADE" });
+  }
   let tabelaHTML = tabelaRelatorio(colunas, linhas, 300);
   const inputHTML = `<input type="text" id="cockpitDrillBusca" placeholder="Pesquisar nos registros..." style="width:100%; padding:8px 12px; margin-bottom:12px; border-radius:6px; border:1px solid var(--line); font-size:13px; outline:none;" onkeyup="filtrarTabelaDrillDown(this)">`;
   

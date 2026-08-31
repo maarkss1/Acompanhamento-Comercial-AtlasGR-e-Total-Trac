@@ -312,6 +312,7 @@ const RELATORIOS = {
   clientes_receita: { grupo:"Comercial & Receita", label:"🏢 Clientes, receita e concentração", descricao:"Receita por cliente, recorrência, ticket médio e concentração Top 10.", handler:"catalogo", periodo:"mensal" },
 
   diario_sdr: { grupo:"SDR & Leads", label:"📅 Diário SDR — atividades, Leads atendidos e potenciais", descricao:"Atividades concluídas, Leads atendidos e potenciais ainda sem atividade.", handler:"diario_sdr", periodo:"diario" },
+  reunioes_sdr: { grupo:"SDR & Leads", label:"🤝 Reuniões — agendadas x realizadas", descricao:"Reuniões (atividade TYPE_ID=1) quebradas por responsável, pipeline e etapa do negócio vinculado — qualquer funil, qualquer usuário.", handler:"catalogo", periodo:"mensal" },
   analise_sdr: { grupo:"SDR & Leads", label:"📊 João Reis — análise semanal e mensal", descricao:"Produção diária do João, mix de atividades, jornada, backlog e conversões.", handler:"analise_sdr", periodo:"mensal" },
   funil_leads: { grupo:"SDR & Leads", label:"🪜 Funil de Leads & conversão SDR", descricao:"Leads criados, status, desqualificação, oportunidades e ganhos.", handler:"catalogo", periodo:"mensal" },
   produtividade_atividades: { grupo:"SDR & Leads", label:"⚡ Produtividade de atividades por responsável", descricao:"Atividades concluídas por usuário/canal e entidades únicas tocadas.", handler:"catalogo", periodo:"mensal" },
