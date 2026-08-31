@@ -80,12 +80,18 @@ async function buscarReunioesFunilRelatorio(webhook,inicio="",fim=""){
   const idsLeads=[...new Set(reunioes.filter((r)=>!bindingsDaAtividade(r).some((b)=>b.OWNER_TYPE_ID==="2"&&mapaDeals[String(b.OWNER_ID)])).flatMap((r)=>bindingsDaAtividade(r).filter((b)=>b.OWNER_TYPE_ID==="1").map((b)=>b.OWNER_ID)))];
   const mapaLeads={};
   if(idsLeads.length){
-    const [encontrados,statusList]=await Promise.all([
-      buscarEntidadesPorIds(webhook,"crm.lead.list",idsLeads,["ID","STATUS_ID"]),
-      carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"STATUS","order[SORT]":"ASC"}),
-    ]);
-    const statusMap={};statusList.forEach((s)=>{statusMap[String(s.STATUS_ID)]=s.NAME||s.STATUS_ID;});
-    Object.entries(encontrados).forEach(([id,l])=>{mapaLeads[id]=statusMap[String(l.STATUS_ID)]||l.STATUS_ID||"—";});
+    try{
+      const [encontrados,statusList]=await Promise.all([
+        buscarEntidadesPorIds(webhook,"crm.lead.list",idsLeads,["ID","STATUS_ID"]),
+        carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"STATUS","order[SORT]":"ASC"}),
+      ]);
+      const statusMap={};statusList.forEach((s)=>{statusMap[String(s.STATUS_ID)]=s.NAME||s.STATUS_ID;});
+      Object.entries(encontrados).forEach(([id,l])=>{mapaLeads[id]=statusMap[String(l.STATUS_ID)]||l.STATUS_ID||"—";});
+    }catch(e){
+      // Falha ao buscar Leads (ex: webhook sem permissão crm.lead.list) não pode
+      // derrubar o relatório inteiro de Reuniões — sem mapaLeads, essas reuniões
+      // voltam a cair em "Sem negócio vinculado", igual ao comportamento anterior.
+    }
   }
   return{reunioes,meta,mapaDeals,mapaLeads};
 }

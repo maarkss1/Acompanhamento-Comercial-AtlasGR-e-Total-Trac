@@ -398,6 +398,12 @@ async function atualizarCockpit() {
   // v29 — zera antes do ciclo de busca pra saber, no fim, se alguma resposta
   // deste carregamento veio do cache local (até 5min) em vez de fresca.
   window.ULTIMA_CARGA_TEVE_CACHE = false;
+  // Vendedor/Origem: carrega a lista sozinho se ainda não foi carregada (só
+  // "Todos"/"Todas" no select) — antes só populava com o clique manual no "↻",
+  // e sem isso o filtro fica com uma única opção, impossível de selecionar.
+  // Sem await: não deve atrasar o carregamento principal do Cockpit.
+  if ((cockpitEl("cockpitVendedor")?.options.length || 0) <= 1) carregarVendedoresCockpit();
+  if ((cockpitEl("cockpitOrigem")?.options.length || 0) <= 1) carregarOrigensCockpit();
   try {
     const base = await baseDealsCatalogo(webhook, true); // somenteComercial=true → CATEGORY_ID 0
     const enriquecidos = base.deals.map((d) => enriquecerDealCatalogo(d, base));
