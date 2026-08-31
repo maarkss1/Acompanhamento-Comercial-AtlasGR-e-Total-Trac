@@ -103,7 +103,7 @@ function cockpitTickerItens() {
     `Pipeline elegível: ${moedaRelatorio(c.saude.pipelineElegivel)}`,
     `Coverage: ${c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`)}`,
     `Pipeline criado no período: ${moedaRelatorio(c.saude.pipelineCriadoPeriodo)}`,
-    `Win Rate (coorte por fechamento): ${cockpitND(c.eficiencia.winRate, (v) => `${v}%`)}`,
+    `Win Rate Mensal: ${cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`)} · Anual: ${cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`)} · Total: ${cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`)}`,
   ];
   if (g) itens.push(`Ritmo de geração de pipeline: ${cockpitND(g.paceRitmoPct, (v) => `${v}%`)}`);
   const nAlertas = alertasInfo?.alertas?.length || 0;
@@ -467,6 +467,21 @@ function cockpitCoverageRecomendado(winRate) {
   return 1 / (winRate / 100);
 }
 
+// Win Rate para uma janela de datas fixa (mensal/anual/total), independente
+// do filtro de período escolhido na tela — mesmo critério do bloco F
+// (coorte por _FECHAMENTO/_SEMANTICA success-failure), só variando a janela.
+// `deals` já vem filtrado por vendedor/origem/produto (cockpitState.dealsFiltrados),
+// então "total" aqui é todo o histórico carregado no Bitrix para esses filtros,
+// não um número inventado.
+function cockpitWinRateJanela(deals, janela) {
+  const fechados = (deals || []).filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, janela));
+  const ganhosDeals = fechados.filter((d) => d._SEMANTICA === "success");
+  const perdidosDeals = fechados.filter((d) => d._SEMANTICA === "failure");
+  const totalFechados = ganhosDeals.length + perdidosDeals.length;
+  const winRate = totalFechados > 0 ? Math.round((ganhosDeals.length / totalFechados) * 1000) / 10 : null;
+  return { winRate, ganhos: ganhosDeals.length, perdidos: perdidosDeals.length, ganhosDeals, perdidosDeals };
+}
+
 // v26 — "Fechado no mês" (Resultado do Mês) passa a usar o funil Financeiro,
 // etapa "Contrato Assinado" — mesmo critério e mesma base de data (MOVED_TIME)
 // já usados pelo Forecast (ehFechado/DATA_MOVIMENTO em
@@ -572,6 +587,20 @@ function cockpitCalcular() {
   drill.winRateGanhos = ganhosPeriodo;
   drill.winRatePerdidos = perdidosPeriodo;
   drill.cicloVenda = ganhosPeriodo;
+
+  // Win Rate Mensal / Anual / Total — janelas fixas, sempre calculadas juntas
+  // (não dependem do filtro de período da tela, que só afeta o `winRate`
+  // acima usado por Coverage Recomendado/Pipeline Necessário).
+  const anoAtual = Number(mes.hojeISO.slice(0, 4));
+  const wrMensal = cockpitWinRateJanela(deals, { inicio: mes.inicio, fim: mes.fim });
+  const wrAnual = cockpitWinRateJanela(deals, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
+  const wrTotal = cockpitWinRateJanela(deals, { inicio: "", fim: "" });
+  drill.winRateGanhosMensal = wrMensal.ganhosDeals;
+  drill.winRatePerdidosMensal = wrMensal.perdidosDeals;
+  drill.winRateGanhosAnual = wrAnual.ganhosDeals;
+  drill.winRatePerdidosAnual = wrAnual.perdidosDeals;
+  drill.winRateGanhosTotal = wrTotal.ganhosDeals;
+  drill.winRatePerdidosTotal = wrTotal.perdidosDeals;
 
   // -------------------- C) Saúde do Pipeline --------------------------------
   const abertosTodos = deals.filter((d) => d._SEMANTICA === "process");
@@ -711,7 +740,13 @@ function cockpitCalcular() {
     forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
     saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, coverageRecomendado, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
-    eficiencia: { winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length, ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro },
+    eficiencia: {
+      winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length,
+      winRateMensal: wrMensal.winRate, ganhosMensal: wrMensal.ganhos, perdidosMensal: wrMensal.perdidos,
+      winRateAnual: wrAnual.winRate, ganhosAnual: wrAnual.ganhos, perdidosAnual: wrAnual.perdidos,
+      winRateTotal: wrTotal.winRate, ganhosTotal: wrTotal.ganhos, perdidosTotal: wrTotal.perdidos,
+      ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro,
+    },
     estagios: estagiosLista, totalEstagios, estagiosForecast: estagiosForecastLista,
   };
 }
@@ -1056,7 +1091,9 @@ function cockpitGerarSituacaoAgora() {
     ["Coverage atual (elegível ÷ gap)", c.saude.coverage === "meta batida" ? "meta já batida" : (c.saude.coverage != null ? `${c.saude.coverage.toFixed(2)}x` : "não disponível")],
     ["Coverage recomendado (Win Rate histórico)", c.saude.coverageRecomendado != null ? `${c.saude.coverageRecomendado.toFixed(2)}x` : "não disponível"],
     ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
-    ["Win Rate (coorte por fechamento)", fmtPct(c.eficiencia.winRate)],
+    ["Win Rate Mensal (mês atual)", fmtPct(c.eficiencia.winRateMensal)],
+    ["Win Rate Anual (ano atual)", fmtPct(c.eficiencia.winRateAnual)],
+    ["Win Rate Total (todo o período com dados)", fmtPct(c.eficiencia.winRateTotal)],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
     ["Oportunidades abertas", c.saude.qtdAberto],
     ["Oportunidades em risco (vencidas/aging alto)", `${emRiscoQtd}`],
@@ -1287,15 +1324,18 @@ function renderizarCockpit() {
       <div class="cockpit-estagio-stats">${g.qtd} negócio(s) · ${moedaRelatorio(g.valor)} · ${g.pctTotal}% · aging médio ${g.agingMedio != null ? `${g.agingMedio}d` : "não disponível"}</div>
     </div>`).join("") || `<p class="rodape-nota">Nenhum negócio elegível (≤60 dias na etapa, sem Piloto).</p>`;
 
-  // F) Eficiência da Máquina
+  // F) Eficiência da Máquina — Win Rate sempre calculado em 3 janelas fixas
+  // (Mensal/Anual/Total), lado a lado, independente do filtro de período
+  // selecionado acima (que só afeta Ticket médio/Sales Cycle abaixo e o
+  // Coverage Recomendado/Pipeline Necessário em outros blocos).
   cockpitEl("cockpitEficiencia").innerHTML = [
-    cockpitKpiCard("Win Rate (coorte por fechamento)", cockpitND(c.eficiencia.winRate, (v) => `${v}%`), "winRateGanhos"),
-    cockpitKpiCard("Ganhos no período", c.eficiencia.ganhos, "winRateGanhos"),
-    cockpitKpiCard("Perdidos no período", c.eficiencia.perdidos, "winRatePerdidos"),
+    cockpitKpiCard("Win Rate Mensal (mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)`),
+    cockpitKpiCard("Win Rate Anual (ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)`),
+    cockpitKpiCard("Win Rate Total (todo o período com dados)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`),
     cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
     cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
     cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Win Rate Mensal/Anual/Total usam janelas fixas de data (mês atual, ano atual, todo o histórico carregado) e não mudam com o filtro de período acima. Ticket médio vendido e Sales Cycle continuam usando o período do filtro selecionado. Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
 
   // H) Geração de Pipeline
   const g = cockpitCalcularGeracaoPipeline(c);
@@ -1453,9 +1493,16 @@ function cockpitListaKpisExport(cache) {
     add("Proteção de Receita", `Recomendado (Win Rate) — ${p.label}`, p.coverageRecomendado != null ? String(Math.round(p.coverageRecomendado * 100) / 100) : null, "x");
   });
 
-  add("Eficiência da Máquina", "Win Rate (coorte por fechamento)", pct(c.eficiencia.winRate), "%");
-  add("Eficiência da Máquina", "Ganhos no período", num(c.eficiencia.ganhos), "qtd");
-  add("Eficiência da Máquina", "Perdidos no período", num(c.eficiencia.perdidos), "qtd");
+  add("Eficiência da Máquina", "Win Rate Mensal (mês atual)", pct(c.eficiencia.winRateMensal), "%");
+  add("Eficiência da Máquina", "Ganhos no mês", num(c.eficiencia.ganhosMensal), "qtd");
+  add("Eficiência da Máquina", "Perdidos no mês", num(c.eficiencia.perdidosMensal), "qtd");
+  add("Eficiência da Máquina", "Win Rate Anual (ano atual)", pct(c.eficiencia.winRateAnual), "%");
+  add("Eficiência da Máquina", "Ganhos no ano", num(c.eficiencia.ganhosAnual), "qtd");
+  add("Eficiência da Máquina", "Perdidos no ano", num(c.eficiencia.perdidosAnual), "qtd");
+  add("Eficiência da Máquina", "Win Rate Total (todo o período com dados)", pct(c.eficiencia.winRateTotal), "%");
+  add("Eficiência da Máquina", "Ganhos no total", num(c.eficiencia.ganhosTotal), "qtd");
+  add("Eficiência da Máquina", "Perdidos no total", num(c.eficiencia.perdidosTotal), "qtd");
+  add("Eficiência da Máquina", "Win Rate (período do filtro selecionado)", pct(c.eficiencia.winRate), "%");
   add("Eficiência da Máquina", "Ticket médio vendido (Comercial)", moeda(c.eficiencia.ticketMedioVendido), "R$");
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
   add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
