@@ -244,9 +244,44 @@
         <h3>📞 SDR <span class="cockpit-bloco-subtitulo">resumo</span></h3>
         <p class="rodape-nota" id="cockpitSdrAviso"></p>
         <div class="relatorio-especial-grid" id="cockpitSdrResumo"></div>
-        <p class="rodape-nota">Análise completa de SDR (leads trabalhados, atividades, reuniões): veja
+        <p class="rodape-nota">Análise completa de SDR (leads trabalhados, atividades): veja
           <a href="sdr.html">SDR &amp; Operação</a> — este bloco não duplica aquela lógica, só resume o que já
           está nos negócios do Comercial carregados aqui.</p>
+      </section>
+
+      <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-reunioes">
+        <h3>🤝 Reuniões — Agendadas x Realizadas <span class="cockpit-bloco-subtitulo">Qualquer pipeline, etapa e usuário</span></h3>
+        <p class="rodape-nota">Fonte: atividades do Bitrix (crm.activity.list, TYPE_ID=1 — Reunião). "Agendada" = COMPLETED≠Y;
+          "Realizada" = COMPLETED=Y. Usa o mesmo período do filtro "Período (Saúde do Pipeline / Eficiência)" acima.
+          Pipeline/etapa vêm do negócio (CRM Deal) vinculado à atividade, quando existe — reuniões ligadas só a
+          Lead/Contato/Empresa aparecem como "Sem negócio vinculado". Carregamento sob demanda: não entra em
+          "↻ Atualizar agora" (mesmo padrão dos filtros de Vendedor/Origem acima).</p>
+        <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <label for="cockpitReunioesPipeline" style="margin-top:0;">Pipeline (funil)</label>
+            <select id="cockpitReunioesPipeline" onchange="cockpitRenderReunioes()"><option value="">Todos os pipelines</option></select>
+          </div>
+          <button type="button" onclick="cockpitCarregarReunioes()">↻ Carregar reuniões</button>
+          <span class="rodape-nota" id="cockpitReunioesStatus" style="margin:0;"></span>
+        </div>
+        <div class="relatorio-especial-grid" id="cockpitReunioesKpis"></div>
+        <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:10px;">
+          <div style="flex:1;min-width:260px;">
+            <div class="relatorio-subtitulo">Por responsável (qualquer usuário)</div>
+            <div class="relatorio-scroll" id="cockpitReunioesPorResponsavel"></div>
+          </div>
+          <div style="flex:1;min-width:260px;">
+            <div class="relatorio-subtitulo">Por pipeline (funil)</div>
+            <div class="relatorio-scroll" id="cockpitReunioesPorPipeline"></div>
+          </div>
+          <div style="flex:1;min-width:260px;">
+            <div class="relatorio-subtitulo">Por etapa do negócio vinculado</div>
+            <div class="relatorio-scroll" id="cockpitReunioesPorEtapa"></div>
+          </div>
+        </div>
+        <p class="rodape-nota">Relatório completo (com detalhe reunião a reunião, exportável em CSV/JSON): veja
+          <a href="forecast.html">Relatórios Comerciais</a> ou <a href="sdr.html">SDR &amp; Operação</a> →
+          "🤝 Reuniões — agendadas x realizadas".</p>
       </section>
 
       <section class="cockpit-bloco" id="cockpit-bloco-qualidade">
