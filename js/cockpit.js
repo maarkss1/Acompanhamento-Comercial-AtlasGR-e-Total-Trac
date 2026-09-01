@@ -267,12 +267,12 @@ function cockpitPopularPipelineReunioes(meta) {
     opt.textContent = label;
     sel.appendChild(opt);
   });
-  // Pipeline virtual: reuniões sem Deal vinculado mas ligadas a um Lead (ver
-  // reuniaoVinculoFunilEtapa, js/catalogo-relatorios.js) — não vem de meta.categorias
-  // porque Lead não tem CATEGORY_ID/funil de Deal no Bitrix.
+  // Pipeline virtual "Leads": reuniões que vêm da etapa do próprio Lead no
+  // funil (Reunião Agendada/Realizada/No-Show, via crm.stagehistory.list) —
+  // não vem de meta.categorias porque Lead não tem CATEGORY_ID/funil de Deal.
   const optLeads = document.createElement("option");
   optLeads.value = "leads";
-  optLeads.textContent = "Leads (sem negócio vinculado)";
+  optLeads.textContent = "Leads (funil de Leads)";
   sel.appendChild(optLeads);
   if ([...sel.options].some((o) => o.value === anterior)) sel.value = anterior;
 }
@@ -287,7 +287,7 @@ function cockpitRenderReunioes() {
   const tabelas = ["cockpitReunioesPorResponsavel", "cockpitReunioesPorPipeline", "cockpitReunioesPorEtapa"];
   if (!base) {
     const kpisEl = cockpitEl("cockpitReunioesKpis");
-    if (kpisEl) kpisEl.innerHTML = cockpitPlaceholderVazio('Clique em "↻ Carregar reuniões" para buscar as atividades de Reunião (TYPE_ID=1) do período selecionado no filtro acima.');
+    if (kpisEl) kpisEl.innerHTML = cockpitPlaceholderVazio('Clique em "↻ Carregar reuniões" para buscar as reuniões (atividade + etapa do funil de Leads) do período selecionado no filtro acima.');
     tabelas.forEach((id) => { const el = cockpitEl(id); if (el) el.innerHTML = ""; });
     return;
   }
@@ -301,12 +301,15 @@ function cockpitRenderReunioes() {
   });
   const agendadas = linhas.filter((x) => x.SITUACAO === "Agendada");
   const realizadas = linhas.filter((x) => x.SITUACAO === "Realizada");
+  const noShow = linhas.filter((x) => x.SITUACAO === "No-Show");
   cockpitDrill.reunioesAgendadas = agendadas;
   cockpitDrill.reunioesRealizadas = realizadas;
+  cockpitDrill.reunioesNoShow = noShow;
   cockpitDrill.reunioesTotal = linhas;
   cockpitEl("cockpitReunioesKpis").innerHTML = [
     cockpitKpiCard("Reuniões agendadas", agendadas.length, "reunioesAgendadas"),
     cockpitKpiCard("Reuniões realizadas", realizadas.length, "reunioesRealizadas"),
+    cockpitKpiCard("No-Show", noShow.length, "reunioesNoShow"),
     cockpitKpiCard("Total de reuniões", linhas.length, "reunioesTotal"),
     cockpitKpiCard("% realizadas", linhas.length ? `${taxaPct(realizadas.length, linhas.length)}%` : "não disponível", null),
   ].join("");
@@ -314,12 +317,13 @@ function cockpitRenderReunioes() {
     { label: rotulo, valor: campo },
     { label: "Agendadas", valor: "AGENDADAS" },
     { label: "Realizadas", valor: "REALIZADAS" },
+    { label: "No-Show", valor: "NOSHOW" },
     { label: "Total", valor: "TOTAL" },
   ];
   cockpitEl("cockpitReunioesPorResponsavel").innerHTML = tabelaRelatorio(colunasGrupo("RESPONSAVEL", "Responsável"), agruparReunioesPor(linhas, "RESPONSAVEL"), 100);
   cockpitEl("cockpitReunioesPorPipeline").innerHTML = tabelaRelatorio(colunasGrupo("PIPELINE", "Pipeline"), agruparReunioesPor(linhas, "PIPELINE"), 100);
   cockpitEl("cockpitReunioesPorEtapa").innerHTML = tabelaRelatorio(colunasGrupo("ETAPA", "Etapa"), agruparReunioesPor(linhas, "ETAPA"), 100);
-  if (status) status.textContent = `${base.reunioes.length} reunião(ões) no período · ${linhas.length} após filtro de vendedor/pipeline · atualizado às ${new Date().toLocaleTimeString("pt-BR")}.`;
+  if (status) status.textContent = `${r.linhas.length} reunião(ões) no período (atividade + etapa do Lead) · ${linhas.length} após filtro de vendedor/pipeline · atualizado às ${new Date().toLocaleTimeString("pt-BR")}.`;
 }
 
 // Filtro de produto: não existe infraestrutura de filtro por produto nos
@@ -1496,7 +1500,7 @@ function renderizarCockpit() {
 // Drills de reuniões (bloco dedicado logo abaixo do SDR) têm formato
 // diferente dos drills de negócio (atividade, não deal) — ver
 // cockpitRenderReunioes, que popula cockpitDrill.reunioes* com essas colunas.
-const COCKPIT_DRILL_REUNIOES = new Set(["reunioesAgendadas", "reunioesRealizadas", "reunioesTotal"]);
+const COCKPIT_DRILL_REUNIOES = new Set(["reunioesAgendadas", "reunioesRealizadas", "reunioesNoShow", "reunioesTotal"]);
 
 function cockpitAbrirDrill(chave, titulo) {
   const linhas = cockpitDrill[chave] || [];
@@ -1514,6 +1518,7 @@ function cockpitAbrirDrill(chave, titulo) {
       { label: "Fim", valor: "FIM" },
       { label: "Pipeline", valor: "PIPELINE" },
       { label: "Etapa", valor: "ETAPA" },
+      { label: "Origem", valor: "ORIGEM" },
     ];
   } else {
     // Drill de "Pipeline inelegível" ganha uma coluna extra com o(s) motivo(s)

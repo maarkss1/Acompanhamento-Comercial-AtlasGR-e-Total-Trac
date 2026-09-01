@@ -54,16 +54,41 @@ async function atividadesCatalogo(webhook,completed,inicio="",fim=""){
 }
 
 // ---------------------------------------------------------------------------
-// Reuniões (atividade TYPE_ID=1) — agendadas x realizadas, quebradas por
-// responsável (qualquer usuário), pipeline e etapa do negócio vinculado
-// (qualquer funil/estágio). Reaproveitado pelo relatório do Catálogo
-// ("reunioes_sdr") e pelo bloco SDR do Cockpit — mesma fonte e mesma regra
-// nos dois lugares, sem redefinir nada.
+// Reuniões — agendadas x realizadas, de DUAS fontes complementares:
 //
-// "Agendada" = atividade de Reunião com COMPLETED≠Y (inclui futuras e
-// pendentes); "Realizada" = COMPLETED=Y. Período aplicado sobre END_TIME,
-// igual ao resto do Catálogo/Diário SDR (ver atividadesCatalogo acima).
+// 1) Atividade de Reunião (crm.activity.list, TYPE_ID=1) vinculada a um
+//    negócio (CRM Deal) — "Agendada" = COMPLETED≠Y, "Realizada" = COMPLETED=Y.
+//    Cobre times que registram a reunião como atividade de calendário.
+//
+// 2) Etapa do funil de Leads (crm.stagehistory.list, entityTypeId=1) — em
+//    times cujo processo de SDR marca "Reunião Agendada"/"Reunião Realizada"
+//    como STATUS_ID do próprio Lead (não como atividade), isso é o sinal
+//    real; sem essa fonte o relatório subconta ou zera esses times (caso
+//    real: BDR com 31 Leads passando por "Reunião Agendada" em 2 meses e
+//    zero atividade TYPE_ID=1 no nome dele). Os nomes dos estágios são
+//    lidos dinamicamente por palavra-chave (encontrarEstagiosReuniaoLead) —
+//    não hardcoda o STATUS_ID porque ele é específico de cada portal
+//    (AtlasGR ≠ Total Trac).
+//
+// As duas fontes viram linhas no mesmo formato (ver resumoReunioesFunilRelatorio)
+// e se somam nas mesmas tabelas — reaproveitado pelo relatório do Catálogo
+// ("reunioes_sdr") e pelo bloco de Reuniões do Cockpit, mesma fonte nos dois
+// lugares, sem redefinir nada. Período aplicado sobre END_TIME (atividades)
+// ou CREATED_TIME do evento de estágio (Leads).
 // ---------------------------------------------------------------------------
+async function encontrarEstagiosReuniaoLead(webhook){
+  const statusList=await carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"STATUS","order[SORT]":"ASC"});
+  const acha=(palavras)=>{
+    const s=statusList.find((x)=>textoContemAlgumaPalavra(x.NAME||"",palavras));
+    return s?String(s.STATUS_ID):null;
+  };
+  return{
+    agendada:acha(["reuniao agendada"]),
+    realizada:acha(["reuniao realizada"]),
+    noShow:acha(["no show"]),
+  };
+}
+
 async function buscarReunioesFunilRelatorio(webhook,inicio="",fim=""){
   const meta=await buscarMetadadosFunisEEstagios(webhook);
   const a=await atividadesCatalogo(webhook,null,inicio,fim);
@@ -74,61 +99,86 @@ async function buscarReunioesFunilRelatorio(webhook,inicio="",fim=""){
     const encontrados=await buscarEntidadesPorIds(webhook,"crm.deal.list",idsDeals,["ID","CATEGORY_ID","STAGE_ID"]);
     Object.entries(encontrados).forEach(([id,d])=>{mapaDeals[id]={categoria:String(d.CATEGORY_ID??""),estagio:String(d.STAGE_ID??"")}});
   }
-  // Reuniões sem negócio (Deal) vinculado, mas ligadas a um Lead (OWNER_TYPE_ID=1),
-  // caem no pipeline virtual "Leads" — Leads não têm CATEGORY_ID (funil de Deal),
-  // mas têm STATUS_ID (etapa do próprio Lead), usado abaixo como "etapa".
-  const idsLeads=[...new Set(reunioes.filter((r)=>!bindingsDaAtividade(r).some((b)=>b.OWNER_TYPE_ID==="2"&&mapaDeals[String(b.OWNER_ID)])).flatMap((r)=>bindingsDaAtividade(r).filter((b)=>b.OWNER_TYPE_ID==="1").map((b)=>b.OWNER_ID)))];
-  const mapaLeads={};
-  if(idsLeads.length){
-    try{
-      const [encontrados,statusList]=await Promise.all([
-        buscarEntidadesPorIds(webhook,"crm.lead.list",idsLeads,["ID","STATUS_ID"]),
-        carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"STATUS","order[SORT]":"ASC"}),
-      ]);
-      const statusMap={};statusList.forEach((s)=>{statusMap[String(s.STATUS_ID)]=s.NAME||s.STATUS_ID;});
-      Object.entries(encontrados).forEach(([id,l])=>{mapaLeads[id]=statusMap[String(l.STATUS_ID)]||l.STATUS_ID||"—";});
-    }catch(e){
-      // Falha ao buscar Leads (ex: webhook sem permissão crm.lead.list) não pode
-      // derrubar o relatório inteiro de Reuniões — sem mapaLeads, essas reuniões
-      // voltam a cair em "Sem negócio vinculado", igual ao comportamento anterior.
+
+  // Fonte 2: eventos de entrada nas etapas "Reunião Agendada"/"Reunião
+  // Realizada"/"No-Show" do funil de Leads, dentro do período. Resiliente:
+  // se falhar (ex: webhook sem permissão de crm.lead/stagehistory, comum em
+  // portais com escopo restrito), cai de volta a só a Fonte 1 em vez de
+  // derrubar o relatório inteiro.
+  let eventosEstagioLead=[],mapaLeadsResponsavel={};
+  try{
+    const estagios=await encontrarEstagiosReuniaoLead(webhook);
+    const idsEstagio=Object.values(estagios).filter(Boolean);
+    if(idsEstagio.length && inicio && fim){
+      const url=new URL(`${webhook.replace(/\/$/,"")}/crm.stagehistory.list.json`);
+      url.searchParams.append("entityTypeId","1");
+      url.searchParams.append("filter[>=CREATED_TIME]",`${inicio}T00:00:00-03:00`);
+      url.searchParams.append("filter[<=CREATED_TIME]",`${fim}T23:59:59-03:00`);
+      idsEstagio.forEach((id)=>url.searchParams.append("filter[@STATUS_ID][]",id));
+      const body=await bitrixFetchComRetentativa(url.toString());
+      const itens=body?.result?.items||(Array.isArray(body?.result)?body.result:[]);
+      const nomeEstagio={};
+      Object.entries(estagios).forEach(([chave,id])=>{if(id)nomeEstagio[id]=chave==="agendada"?"Reunião Agendada":chave==="realizada"?"Reunião Realizada":"No-Show";});
+      eventosEstagioLead=itens.map((e)=>({ID:e.ID,LEAD_ID:String(e.OWNER_ID),STATUS_ID:String(e.STATUS_ID),ETAPA:nomeEstagio[String(e.STATUS_ID)]||e.STATUS_ID,CRIADO:e.CREATED_TIME}));
+      const idsLead=[...new Set(eventosEstagioLead.map((e)=>e.LEAD_ID))];
+      if(idsLead.length){
+        const leadsEncontrados=await buscarEntidadesPorIds(webhook,"crm.lead.list",idsLead,["ID","TITLE","NAME","LAST_NAME","COMPANY_TITLE","ASSIGNED_BY_ID"]);
+        Object.entries(leadsEncontrados).forEach(([id,l])=>{mapaLeadsResponsavel[id]={responsavelId:idBitrixString(l.ASSIGNED_BY_ID),titulo:l.COMPANY_TITLE||`${l.NAME||""} ${l.LAST_NAME||""}`.trim()||l.TITLE||`Lead ${id}`};});
+      }
     }
+  }catch(e){
+    eventosEstagioLead=[];mapaLeadsResponsavel={};
   }
-  return{reunioes,meta,mapaDeals,mapaLeads};
+
+  return{reunioes,meta,mapaDeals,eventosEstagioLead,mapaLeadsResponsavel};
 }
 
 // Pipeline/etapa do PRIMEIRO negócio (CRM Deal) vinculado à atividade que já
-// foi encontrado em mapaDeals. Sem Deal, mas com Lead vinculado (OWNER_TYPE_ID=1),
-// cai no pipeline virtual "Leads" (etapa = STATUS_ID do Lead, via mapaLeads).
-// Só sobra "Sem negócio vinculado" quando a reunião está ligada apenas a
-// Contato/Empresa (sem Lead nem Deal).
+// foi encontrado em mapaDeals. Sem Deal vinculado, a atividade ainda entra
+// no relatório (fica "Sem negócio vinculado") — o sinal de Leads não vem
+// mais daqui, vem da Fonte 2 (eventosEstagioLead) em resumoReunioesFunilRelatorio.
 function reuniaoVinculoFunilEtapa(r,base){
-  const binds=bindingsDaAtividade(r);
-  const vinculoDeal=binds.find((b)=>b.OWNER_TYPE_ID==="2"&&base.mapaDeals[String(b.OWNER_ID)]);
-  if(vinculoDeal){
-    const d=base.mapaDeals[String(vinculoDeal.OWNER_ID)];
-    const pipeline=nomeFunilSemCodigo(base.meta.categorias?.[d.categoria]||`Categoria ${d.categoria}`);
-    const etapa=base.meta.estagios?.[d.categoria]?.[d.estagio]?.label||d.estagio||"—";
-    return{pipeline,pipelineId:d.categoria,etapa};
-  }
-  const vinculoLead=binds.find((b)=>b.OWNER_TYPE_ID==="1"&&base.mapaLeads?.[String(b.OWNER_ID)]!==undefined);
-  if(vinculoLead)return{pipeline:"Leads",pipelineId:"leads",etapa:base.mapaLeads[String(vinculoLead.OWNER_ID)]||"—"};
-  return{pipeline:"Sem negócio vinculado (Contato/Empresa)",pipelineId:"",etapa:"—"};
+  const vinculo=bindingsDaAtividade(r).find((b)=>b.OWNER_TYPE_ID==="2"&&base.mapaDeals[String(b.OWNER_ID)]);
+  if(!vinculo)return{pipeline:"Sem negócio vinculado (Lead/Contato/Empresa)",pipelineId:"",etapa:"—"};
+  const d=base.mapaDeals[String(vinculo.OWNER_ID)];
+  const pipeline=nomeFunilSemCodigo(base.meta.categorias?.[d.categoria]||`Categoria ${d.categoria}`);
+  const etapa=base.meta.estagios?.[d.categoria]?.[d.estagio]?.label||d.estagio||"—";
+  return{pipeline,pipelineId:d.categoria,etapa};
 }
 
 function resumoReunioesFunilRelatorio(base){
-  const linhas=base.reunioes.map((r)=>{
+  const linhasAtividade=base.reunioes.map((r)=>{
     const{pipeline,pipelineId,etapa}=reuniaoVinculoFunilEtapa(r,base);
     const respId=idBitrixString(r.RESPONSIBLE_ID);
     return{
-      ATIVIDADE_ID:r.ID,ASSUNTO:r.SUBJECT||"",
+      ID:`ativ_${r.ID}`,ASSUNTO:r.SUBJECT||"",
       RESPONSAVEL:nomeUsuario(respId)||(respId?`ID ${respId}`:"Sem responsável"),
       SITUACAO:String(r.COMPLETED)==="Y"?"Realizada":"Agendada",
       INICIO:r.START_TIME||"",FIM:r.END_TIME||"",
-      PIPELINE:pipeline,ETAPA:etapa,
+      PIPELINE:pipeline,ETAPA:etapa,ORIGEM:"Atividade (TYPE_ID=1)",
       _RESPONSAVEL_ID:respId,_PIPELINE_ID:pipelineId,
     };
   });
-  return{linhas,agendadas:linhas.filter((x)=>x.SITUACAO==="Agendada"),realizadas:linhas.filter((x)=>x.SITUACAO==="Realizada")};
+  const linhasLead=(base.eventosEstagioLead||[]).map((e)=>{
+    const l=base.mapaLeadsResponsavel?.[e.LEAD_ID];
+    const respId=l?.responsavelId||"";
+    const situacao=e.ETAPA==="Reunião Realizada"?"Realizada":e.ETAPA==="No-Show"?"No-Show":"Agendada";
+    return{
+      ID:`lead_${e.ID}`,ASSUNTO:l?.titulo||`Lead ${e.LEAD_ID}`,
+      RESPONSAVEL:nomeUsuario(respId)||(respId?`ID ${respId}`:"Sem responsável"),
+      SITUACAO:situacao,
+      INICIO:e.CRIADO,FIM:e.CRIADO,
+      PIPELINE:"Leads",ETAPA:e.ETAPA,ORIGEM:"Etapa do Lead",
+      _RESPONSAVEL_ID:respId,_PIPELINE_ID:"leads",
+    };
+  });
+  const linhas=[...linhasAtividade,...linhasLead];
+  return{
+    linhas,
+    agendadas:linhas.filter((x)=>x.SITUACAO==="Agendada"),
+    realizadas:linhas.filter((x)=>x.SITUACAO==="Realizada"),
+    noShow:linhas.filter((x)=>x.SITUACAO==="No-Show"),
+  };
 }
 
 // Agrupa as reuniões (já resumidas por resumoReunioesFunilRelatorio) por um
@@ -139,9 +189,11 @@ function agruparReunioesPor(linhas,campo){
   const m={};
   linhas.forEach((x)=>{
     const k=x[campo]||"—";
-    if(!m[k])m[k]={[campo]:k,AGENDADAS:0,REALIZADAS:0,TOTAL:0};
+    if(!m[k])m[k]={[campo]:k,AGENDADAS:0,REALIZADAS:0,NOSHOW:0,TOTAL:0};
     m[k].TOTAL++;
-    if(x.SITUACAO==="Agendada")m[k].AGENDADAS++;else m[k].REALIZADAS++;
+    if(x.SITUACAO==="Agendada")m[k].AGENDADAS++;
+    else if(x.SITUACAO==="No-Show")m[k].NOSHOW++;
+    else m[k].REALIZADAS++;
   });
   return Object.values(m).sort((a,b)=>b.TOTAL-a.TOTAL);
 }
@@ -1023,15 +1075,16 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const porPipeline=agruparReunioesPor(r.linhas,"PIPELINE");
       const porEtapa=agruparReunioesPor(r.linhas,"ETAPA");
       const semNegocio=r.linhas.filter((x)=>x.PIPELINE.startsWith("Sem negócio")).length;
-      criarResultadoCatalogo(chave,"Reuniões — agendadas x realizadas",`Reuniões (END_TIME) entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong> — qualquer pipeline, etapa e responsável.`,
-        [kpi("Total de reuniões",r.linhas.length),kpi("Agendadas",r.agendadas.length),kpi("Realizadas",r.realizadas.length),kpi("% Realizadas",`${taxaPct(r.realizadas.length,r.linhas.length)}%`),kpi("Responsáveis",porResp.length),kpi("Pipelines",porPipeline.filter((x)=>!x.PIPELINE.startsWith("Sem negócio")).length),kpi("Leads (sem negócio)",r.linhas.filter((x)=>x.PIPELINE==="Leads").length),kpi("Sem negócio vinculado",semNegocio)],
+      const colGrupo=[{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"No-Show",valor:"NOSHOW"},{label:"Total",valor:"TOTAL"}];
+      criarResultadoCatalogo(chave,"Reuniões — agendadas x realizadas",`Reuniões (atividade e etapa do funil de Leads) entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong> — qualquer pipeline, etapa e responsável.`,
+        [kpi("Total de reuniões",r.linhas.length),kpi("Agendadas",r.agendadas.length),kpi("Realizadas",r.realizadas.length),kpi("No-Show",r.noShow.length),kpi("% Realizadas",`${taxaPct(r.realizadas.length,r.linhas.length)}%`),kpi("Responsáveis",porResp.length),kpi("Via etapa do Lead",r.linhas.filter((x)=>x.ORIGEM==="Etapa do Lead").length),kpi("Sem negócio vinculado",semNegocio)],
         [
-          {titulo:"Por responsável (qualquer usuário)",dados:porResp,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
-          {titulo:"Por pipeline (funil)",dados:porPipeline,colunas:[{label:"Pipeline",valor:"PIPELINE"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
-          {titulo:"Por etapa do negócio vinculado",dados:porEtapa,colunas:[{label:"Etapa",valor:"ETAPA"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Total",valor:"TOTAL"}]},
-          {titulo:"Reuniões (detalhe)",dados:r.linhas,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Assunto",valor:"ASSUNTO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Situação",valor:"SITUACAO"},{label:"Início",valor:"INICIO"},{label:"Fim",valor:"FIM"},{label:"Pipeline",valor:"PIPELINE"},{label:"Etapa",valor:"ETAPA"}]}
+          {titulo:"Por responsável (qualquer usuário)",dados:porResp,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},...colGrupo]},
+          {titulo:"Por pipeline (funil)",dados:porPipeline,colunas:[{label:"Pipeline",valor:"PIPELINE"},...colGrupo]},
+          {titulo:"Por etapa",dados:porEtapa,colunas:[{label:"Etapa",valor:"ETAPA"},...colGrupo]},
+          {titulo:"Reuniões (detalhe)",dados:r.linhas,colunas:[{label:"ID",valor:"ID"},{label:"Assunto/Lead",valor:"ASSUNTO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Situação",valor:"SITUACAO"},{label:"Quando",valor:"INICIO"},{label:"Pipeline",valor:"PIPELINE"},{label:"Etapa",valor:"ETAPA"},{label:"Origem",valor:"ORIGEM"}]}
         ],
-        "Agendada = atividade de Reunião (TYPE_ID=1) com COMPLETED≠Y; Realizada = COMPLETED=Y. Pipeline/etapa vêm do negócio (CRM Deal) vinculado à atividade, quando existe; sem Deal mas com Lead vinculado, cai no pipeline \"Leads\" (etapa = status do Lead); só sem negócio nenhum (Contato/Empresa) aparece como \"Sem negócio vinculado\".");
+        "Duas fontes somadas: (1) atividade de Reunião (TYPE_ID=1) vinculada a negócio — Agendada=COMPLETED≠Y, Realizada=COMPLETED=Y, pipeline/etapa vêm do negócio (CRM Deal); (2) etapa do próprio Lead no funil (crm.stagehistory.list) — \"Reunião Agendada\"/\"Reunião Realizada\"/\"No-Show\" como STATUS_ID do Lead, aparece com pipeline \"Leads\". Coluna Origem no detalhe distingue as duas.");
     }
 
     else throw new Error(`Relatório "${chave}" ainda não possui implementação.`);

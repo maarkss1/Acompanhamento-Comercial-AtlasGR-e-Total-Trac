@@ -254,11 +254,12 @@
 
       <section class="cockpit-bloco cockpit-bloco-full" id="cockpit-bloco-reunioes">
         <h3>🤝 Reuniões — Agendadas x Realizadas <span class="cockpit-bloco-subtitulo">Qualquer pipeline, etapa e usuário</span></h3>
-        <p class="rodape-nota">Fonte: atividades do Bitrix (crm.activity.list, TYPE_ID=1 — Reunião). "Agendada" = COMPLETED≠Y;
-          "Realizada" = COMPLETED=Y. Usa o mesmo período do filtro "Período (Saúde do Pipeline / Eficiência)" acima.
-          Pipeline/etapa vêm do negócio (CRM Deal) vinculado à atividade, quando existe — sem Deal mas com Lead
-          vinculado, cai no pipeline "Leads" (etapa = status do Lead); só sem negócio nenhum (Contato/Empresa)
-          aparece como "Sem negócio vinculado". Carregamento sob demanda: não entra em
+        <p class="rodape-nota">Duas fontes somadas: (1) atividade de Reunião do Bitrix (crm.activity.list, TYPE_ID=1)
+          vinculada a um negócio — "Agendada" = COMPLETED≠Y, "Realizada" = COMPLETED=Y, pipeline/etapa vêm do negócio
+          (CRM Deal); (2) etapa do próprio Lead no funil (crm.stagehistory.list) — "Reunião Agendada"/"Reunião
+          Realizada"/"No-Show" como estágio do Lead, aparece no pipeline "Leads". Times que controlam reunião pela
+          etapa do Lead (não por atividade lançada) só aparecem corretamente com a fonte (2). Usa o mesmo período do
+          filtro "Período (Saúde do Pipeline / Eficiência)" acima. Carregamento sob demanda: não entra em
           "↻ Atualizar agora" (mesmo padrão dos filtros de Vendedor/Origem acima).</p>
         <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
           <div>
