@@ -1172,3 +1172,125 @@
   margin-bottom: 4px;
   color: var(--text-secondary);
 }
+
+/* ==========================================================================
+   IA Embarcada — Estilos para Cards de Insights, Copiloto e Modal Executivo
+   ========================================================================== */
+.ia-insights-card {
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line));
+  border-radius: 16px;
+  padding: 18px 22px;
+  background: color-mix(in srgb, var(--brand) 3%, var(--surface));
+  box-shadow: 0 8px 24px -8px rgba(0,0,0,.08);
+  margin: 18px 0 22px;
+  position: relative;
+  overflow: hidden;
+}
+.ia-insights-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--gold), #4774d9);
+}
+.ia-insights-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.ia-insights-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--brand);
+}
+.ia-insights-badge .ia-sparkle {
+  font-size: 15px;
+}
+.ia-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.ia-insights-coluna {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 12px -6px rgba(0,0,0,.06);
+}
+.ia-insights-coluna h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.ia-insights-coluna ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ia-insights-coluna li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.ia-bullet {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 900;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.ia-bullet.ok {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+.ia-bullet.alerta {
+  background: color-mix(in srgb, var(--gold) 22%, transparent);
+  color: #b37400;
+}
+.ia-bullet.acao {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+}
+.ia-tag-diag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 8px;
+}
+.ia-tag-diag.otimo, .ia-tag-diag.bom {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+}
+.ia-tag-diag.alerta {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  color: #b37400;
+}
+.ia-tag-diag.critico {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+

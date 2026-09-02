@@ -228,6 +228,11 @@ function renderizarRelatorioCatalogo(){
   document.getElementById("relatorioResultadoSubtitulo").innerHTML=r.subtitulo||"";
   document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>kpiCardHtml(x.rotulo,x.valor,r.tabelas?.length?"relatorioResultadoTabelas":undefined)).join("");
   const metaBarrasEl=document.getElementById("relatorioResultadoMetaBarras");if(metaBarrasEl)metaBarrasEl.innerHTML=r.barra_meta||"";
+  const iaEl=document.getElementById("relatorioResultadoIA");
+  if(iaEl && typeof iaDiagnosticarRelatorioCatalogo==="function"){
+    const diag=iaDiagnosticarRelatorioCatalogo(r);
+    iaEl.innerHTML=diag?iaRenderizarCardInsightsHTML(diag):"";
+  }
   document.getElementById("relatorioResultadoTabelas").innerHTML=(r.tabelas||[]).map((t)=>`<div class="relatorio-subtitulo">${escapeHtmlRelatorio(t.titulo)}</div><div class="relatorio-scroll">${tabelaRelatorio(t.colunas,t.dados||[],t.limite||300)}</div>`).join("");
   document.getElementById("relatorioResultadoNota").textContent=r.nota||"";
   const temVisual=!!(r.titulo&&(r.kpis?.length||r.tabelas?.length));
