@@ -641,21 +641,60 @@ function cockpitSituacaoFinanceiroPorCliente(dealsFinanceiro) {
   (dealsFinanceiro || []).forEach((d) => { (mapa[chaveClienteDealModelo(d)] ||= []).push(d); });
   return mapa;
 }
-function cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, janela) {
+// Classifica negócios do Comercial (independente de janela de data) contra o
+// status atual do cliente no Financeiro: "ganho" (Contrato Assinado), "perda"
+// (perdido no Comercial OU Contrato Cancelado no Financeiro) ou "pendente"
+// (ganho no Comercial, ainda sem resolução no Financeiro). Extraído de
+// cockpitWinRateComercialFinanceiro pra ser reaproveitado também pelo bloco F
+// (Eficiência da Máquina) e pela Taxa de Confirmação Financeiro abaixo — um
+// único critério, não duas cópias divergentes.
+function cockpitClassificarComercialFinanceiro(deals, dealsFinanceiro, filtro) {
   const mapaFin = cockpitSituacaoFinanceiroPorCliente(dealsFinanceiro);
-  const candidatos = (deals || []).filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, janela));
-  const classificados = candidatos.map((d) => {
+  const candidatos = (deals || []).filter((d) => d._SEMANTICA !== "process" && (!filtro || filtro(d)));
+  return candidatos.map((d) => {
     if (d._SEMANTICA === "failure") return { ...d, _RESULTADO: "perda" };
     const fin = mapaFin[chaveClienteDealModelo(d)];
     if (fin && fin.some((f) => cockpitEhFechadoFinanceiro(f))) return { ...d, _RESULTADO: "ganho" };
     if (fin && fin.some((f) => f._SEMANTICA === "failure" || normalizarTextoChave(f._ESTAGIO || "").includes("cancelado"))) return { ...d, _RESULTADO: "perda" };
     return { ...d, _RESULTADO: "pendente" }; // ganho no Comercial, ainda sem confirmação do Financeiro
   });
+}
+function cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, janela) {
+  const classificados = cockpitClassificarComercialFinanceiro(deals, dealsFinanceiro, (d) => dentroPeriodoCatalogo(d._FECHAMENTO, janela));
   const ganhosDeals = classificados.filter((d) => d._RESULTADO === "ganho");
   const perdidosDeals = classificados.filter((d) => d._RESULTADO === "perda");
   const totalFechados = ganhosDeals.length + perdidosDeals.length;
   const winRate = totalFechados > 0 ? Math.round((ganhosDeals.length / totalFechados) * 1000) / 10 : null;
   return { winRate, ganhos: ganhosDeals.length, perdidos: perdidosDeals.length, ganhosDeals, perdidosDeals };
+}
+// v28 — Taxa de Confirmação Financeiro: de todo negócio já marcado "Ganho" no
+// Comercial (qualquer data, sem recorte de janela — amostra histórica
+// completa para dar significância estatística), qual % realmente virou
+// Contrato Assinado no Financeiro (vs Cancelado, vs ainda pendente). Serve
+// pra calibrar expectativa ("nem todo Ganho no Comercial vira cliente") e
+// pra deratear o Forecast (ver forecastAjustadoConfianca em cockpitCalcular).
+function cockpitTaxaConfirmacaoFinanceiro(deals, dealsFinanceiro) {
+  const classificados = cockpitClassificarComercialFinanceiro(deals, dealsFinanceiro, null);
+  const assinados = classificados.filter((d) => d._RESULTADO === "ganho");
+  const cancelados = classificados.filter((d) => d._RESULTADO === "perda");
+  const pendentes = classificados.filter((d) => d._RESULTADO === "pendente");
+  const resolvidos = assinados.length + cancelados.length;
+  const taxa = resolvidos > 0 ? Math.round((assinados.length / resolvidos) * 1000) / 10 : null;
+  return { taxa, assinados, cancelados, pendentes, totalGanhosComercial: classificados.length };
+}
+// v28 — "Contratos não assinados": negócios do funil Financeiro ainda em
+// andamento (Aguardando Assinatura, Análise de Documentos, Termo Aceito,
+// Piloto etc.) — já ganhos no Comercial, cliente já sabe que fechou, mas o
+// contrato ainda não foi assinado. É receita "quase certa" que ainda não
+// pode ser contada como fechada; útil pra antecipar o caixa do mês/próximo
+// mês e pra cobrar assinatura de quem está parado há muito tempo.
+function cockpitContratosNaoAssinados(dealsFinanceiro, referenciaISO) {
+  const pendentes = (dealsFinanceiro || [])
+    .filter((d) => d._SEMANTICA === "process")
+    .map((d) => ({ ...d, _DIAS_PARADO: diferencaDiasAteReferencia(d.MOVED_TIME || d.DATE_CREATE, referenciaISO) }));
+  const valor = pendentes.reduce((a, d) => a + (Number(d._VALOR) || 0), 0);
+  const atrasados = pendentes.filter((d) => Number(d._DIAS_PARADO) > 15);
+  return { pendentes, valor, qtd: pendentes.length, atrasados, qtdAtrasados: atrasados.length };
 }
 
 // v29 — usada nos tickets médios abaixo em vez de `lista.length`: um negócio
@@ -669,8 +708,20 @@ function cockpitContarComValor(lista) {
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
   const leads = cockpitState.leadsFiltrados || [];
+  const dealsFinanceiro = cockpitState.dealsFinanceiroFiltrados || [];
   const mes = cockpitMesAtual();
   const drill = {};
+
+  // v28 — calculados cedo porque alimentam o Forecast (bloco B, derating por
+  // confiança) e o bloco F (Win Rate/Ticket médio/Ciclo, já confirmados no
+  // Financeiro) mais abaixo.
+  const confirmacaoFinanceiro = cockpitTaxaConfirmacaoFinanceiro(deals, dealsFinanceiro);
+  const contratosNaoAssinados = cockpitContratosNaoAssinados(dealsFinanceiro, mes.hojeISO);
+  drill.confirmacaoAssinados = confirmacaoFinanceiro.assinados;
+  drill.confirmacaoCancelados = confirmacaoFinanceiro.cancelados;
+  drill.confirmacaoPendentes = confirmacaoFinanceiro.pendentes;
+  drill.contratosNaoAssinados = contratosNaoAssinados.pendentes;
+  drill.contratosNaoAssinadosAtrasados = contratosNaoAssinados.atrasados;
 
   // -------------------- A) Resultado do Mês (sempre mês-calendário atual) --
   const ganhosMes = cockpitGanhosFinanceiroPeriodo(mes);
@@ -712,6 +763,16 @@ function cockpitCalcular() {
   });
   const forecastTotal = fechadoMes + commit + bestCase + pipelinePonderado;
   const gapForecast = metaMensal > 0 ? Math.max(0, metaMensal - forecastTotal) : null;
+  // v28 — Forecast Ajustado (confiança): NÃO substitui forecastTotal (que é a
+  // fórmula convergida com a Central de Inteligência — ver nota acima), fica
+  // como número ADICIONAL. Derateia a parte ainda não fechada (commit + best
+  // case + pipeline ponderado) pela Taxa de Confirmação Financeiro histórica
+  // — nem todo negócio "Ganho" no Comercial vira Contrato Assinado, então o
+  // forecast bruto tende a superestimar o que realmente vai fechar.
+  const taxaConfirmacao = confirmacaoFinanceiro.taxa;
+  const forecastAjustadoConfianca = taxaConfirmacao != null
+    ? fechadoMes + (commit + bestCase + pipelinePonderado) * (taxaConfirmacao / 100)
+    : null;
   drill.forecastCommit = linhasCommit;
   drill.forecastBestCase = linhasBest;
   drill.forecastPipeline = linhasPipe;
@@ -725,9 +786,13 @@ function cockpitCalcular() {
   // -------------------- F) Eficiência da Máquina ----------------------------
   // (calculado antes de C/D porque o Win Rate daqui alimenta o Coverage
   // Recomendado — divergência #3, ver cockpitCoverageRecomendado.)
-  const fechadosPeriodo = deals.filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, periodoFiltro));
-  const ganhosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "success");
-  const perdidosPeriodo = fechadosPeriodo.filter((d) => d._SEMANTICA === "failure");
+  // v28 — Ganho/Perda aqui agora exige confirmação do Financeiro (mesmo
+  // critério do Win Rate Mensal/Anual acima e de conversao_comercial), em vez
+  // de só "Negócios Ganhos" no Comercial — mantém Coverage Recomendado,
+  // Ticket Médio e Ciclo de Venda consistentes com os outros cards do Cockpit.
+  const fechadosPeriodoClassificados = cockpitClassificarComercialFinanceiro(deals, dealsFinanceiro, (d) => dentroPeriodoCatalogo(d._FECHAMENTO, periodoFiltro));
+  const ganhosPeriodo = fechadosPeriodoClassificados.filter((d) => d._RESULTADO === "ganho");
+  const perdidosPeriodo = fechadosPeriodoClassificados.filter((d) => d._RESULTADO === "perda");
   const winRate = (ganhosPeriodo.length + perdidosPeriodo.length) > 0
     ? Math.round((ganhosPeriodo.length / (ganhosPeriodo.length + perdidosPeriodo.length)) * 1000) / 10
     : null;
@@ -746,7 +811,6 @@ function cockpitCalcular() {
   // acima usado por Coverage Recomendado/Pipeline Necessário).
   const anoAtual = Number(mes.hojeISO.slice(0, 4));
   const mesAtualNum = mes.hojeISO.slice(5, 7);
-  const dealsFinanceiro = cockpitState.dealsFinanceiroFiltrados || [];
   const wrMensal = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: mes.inicio, fim: mes.fim });
   const wrAnual = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
   const wrTotal = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: "", fim: "" });
@@ -928,9 +992,11 @@ function cockpitCalcular() {
   return {
     mes, deals,
     resultadoMes: { fechadoMes, metaMensal, pctMeta, gapMeta, qtd: ganhosMes.length, ticketMedioMes, fechadoMesMom, qtdMom, ticketMom, deals: ganhosMes },
-    forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, metaMensal, gapForecast },
+    forecast: { commit, bestCase, pipelineForecast, pipelinePonderado, upside, forecastTotal, forecastAjustadoConfianca, taxaConfirmacao, metaMensal, gapForecast },
     saude: { pipelineTotal, pipelineElegivel, pipelineInelegivelQtd: inelegiveisComMotivo.length, coverage, coverageRecomendado, pipelineCriadoPeriodo, ticketMedioPipeline, qtdAberto: abertosTodos.length, periodoFiltro },
     protecao,
+    confirmacaoFinanceiro: { taxa: confirmacaoFinanceiro.taxa, assinados: confirmacaoFinanceiro.assinados.length, cancelados: confirmacaoFinanceiro.cancelados.length, pendentes: confirmacaoFinanceiro.pendentes.length, totalGanhosComercial: confirmacaoFinanceiro.totalGanhosComercial },
+    contratosNaoAssinados: { valor: contratosNaoAssinados.valor, qtd: contratosNaoAssinados.qtd, qtdAtrasados: contratosNaoAssinados.qtdAtrasados },
     eficiencia: {
       winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length,
       winRateMensal: wrMensal.winRate, ganhosMensal: wrMensal.ganhos, perdidosMensal: wrMensal.perdidos,
@@ -1279,7 +1345,9 @@ function cockpitGerarSituacaoAgora() {
     ["Fechado", fmtMoeda(c.resultadoMes.fechadoMes)],
     ["% da Meta", fmtPct(c.resultadoMes.pctMeta)],
     ["Forecast total do mês", fmtMoeda(c.forecast.forecastTotal)],
+    ["Forecast Ajustado (Taxa de Confirmação Financeiro)", fmtMoeda(c.forecast.forecastAjustadoConfianca)],
     ["Gap do Forecast", fmtMoeda(c.forecast.gapForecast)],
+    ["Contratos não assinados (Financeiro)", `${fmtMoeda(c.contratosNaoAssinados.valor)} (${c.contratosNaoAssinados.qtd} negócio(s)${c.contratosNaoAssinados.qtdAtrasados ? `, ${c.contratosNaoAssinados.qtdAtrasados} parado(s) há mais de 15 dias` : ""})`],
     ["Commit (valor cheio)", fmtMoeda(c.forecast.commit)],
     ["Best Case (valor cheio)", fmtMoeda(c.forecast.bestCase)],
     ["Pipeline ponderado (entra no forecast)", fmtMoeda(c.forecast.pipelinePonderado)],
@@ -1293,6 +1361,7 @@ function cockpitGerarSituacaoAgora() {
     ["Win Rate Anual (ano atual)", fmtPct(c.eficiencia.winRateAnual)],
     ["Win Rate Anos Anteriores", fmtPct(c.eficiencia.winRateAnteriores)],
     ["Win Rate Total (histórico acumulado)", fmtPct(c.eficiencia.winRateTotal)],
+    ["Taxa de Confirmação Financeiro (histórico)", fmtPct(c.confirmacaoFinanceiro.taxa)],
     ["Comparativo Mês YoY (vs mês ano anterior)", c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? '+' : ''}${c.eficiencia.diffMesYoY} pp` : "não disponível"],
     ["Comparativo Ano YoY (vs ano anterior)", c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? '+' : ''}${c.eficiencia.diffAnoYoY} pp` : "não disponível"],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
@@ -1471,6 +1540,8 @@ function renderizarCockpit() {
     cockpitKpiCard("Upside (não entra no forecast)", moedaRelatorio(c.forecast.upside), "forecastUpside"),
     cockpitKpiCard("Forecast total do mês", moedaRelatorio(c.forecast.forecastTotal), "forecastTotal", "cockpit-kpi-destaque"),
     cockpitKpiCard("Gap do Forecast", cockpitND(c.forecast.gapForecast, moedaRelatorio), "forecastTotal"),
+    cockpitKpiCard("Forecast Ajustado (confiança)", cockpitND(c.forecast.forecastAjustadoConfianca, moedaRelatorio), "forecastTotal", "", c.forecast.taxaConfirmacao != null ? `Derateado pela Taxa de Confirmação Financeiro (${c.forecast.taxaConfirmacao}%)` : "Sem histórico de confirmação Financeiro ainda"),
+    cockpitKpiCard("Contratos não assinados (Financeiro)", moedaRelatorio(c.contratosNaoAssinados.valor), "contratosNaoAssinados", c.contratosNaoAssinados.qtdAtrasados > 0 ? "cockpit-status-atencao" : "", `${c.contratosNaoAssinados.qtd} negócio(s) aguardando assinatura${c.contratosNaoAssinados.qtdAtrasados ? ` · ${c.contratosNaoAssinados.qtdAtrasados} parado(s) há mais de 15 dias` : ""}`),
   ].join("");
   if (cockpitEl("cockpitForecast")) cockpitEl("cockpitForecast").innerHTML = forecastHtml;
   if (cockpitEl("homeForecast")) cockpitEl("homeForecast").innerHTML = forecastHtml;
@@ -1531,7 +1602,10 @@ function renderizarCockpit() {
     cockpitKpiCard("Lead → Oportunidade (Ano atual)", cockpitND(c.eficiencia.leadsConversaoAnual, (v) => `${v}%`), "leadsGanhosAnual", "", `${c.eficiencia.leadsConvertidosAnual} opps criadas`),
     cockpitKpiCard("Win Rate Negócios (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
     cockpitKpiCard("Lead → Cliente (Ano atual)", cockpitND(l2cAnual, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Negócios)"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card de Conversão:</strong> Lead → Oportunidade avalia o funil de Leads (SDR). Win Rate Negócios avalia Comercial + Financeiro — só conta Ganho quando o contrato é assinado no Financeiro (Ganho no Comercial e depois cancelado no Financeiro conta como perda). Lead → Cliente é o resultado end-to-end (Lead até contrato assinado). Comparativos YoY apenas para o Win Rate Negócios.</p>`;
+
+    // 3. Confirmação Financeiro (histórico completo, sem recorte de janela)
+    cockpitKpiCard("Taxa de Confirmação Financeiro", cockpitND(c.confirmacaoFinanceiro.taxa, (v) => `${v}%`), "confirmacaoAssinados", "", `${c.confirmacaoFinanceiro.assinados} assinado(s) · ${c.confirmacaoFinanceiro.cancelados} cancelado(s) · ${c.confirmacaoFinanceiro.pendentes} pendente(s) de ${c.confirmacaoFinanceiro.totalGanhosComercial} Ganho(s) no Comercial`),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card de Conversão:</strong> Lead → Oportunidade avalia o funil de Leads (SDR). Win Rate Negócios avalia Comercial + Financeiro — só conta Ganho quando o contrato é assinado no Financeiro (Ganho no Comercial e depois cancelado no Financeiro conta como perda). Lead → Cliente é o resultado end-to-end (Lead até contrato assinado). Taxa de Confirmação Financeiro é o histórico completo (não só o período/janela): de todo negócio já Ganho no Comercial, quanto realmente virou Contrato Assinado — usada pra deratear o Forecast Ajustado. Comparativos YoY apenas para o Win Rate Negócios.</p>`;
 
   if (cockpitEl("cockpitWinRate")) cockpitEl("cockpitWinRate").innerHTML = winRateHtml;
   if (cockpitEl("homeWinRate")) {
@@ -1656,6 +1730,7 @@ function cockpitAbrirDrill(chave, titulo) {
       { label: "CLOSEDATE", valor: (x) => formatarDataBR(parteDataISO(x.CLOSEDATE)) },
     ];
     if (chave === "pipelineInelegivel") colunas.push({ label: "Motivo(s) de inelegibilidade", valor: "_MOTIVOS_INELEGIBILIDADE" });
+    if (chave === "contratosNaoAssinados" || chave === "contratosNaoAssinadosAtrasados") colunas.push({ label: "Dias parado na etapa", valor: (x) => x._DIAS_PARADO === "" ? "—" : `${x._DIAS_PARADO}d` });
   }
   let tabelaHTML = tabelaRelatorio(colunas, linhas, 300);
   const inputHTML = `<input type="text" id="cockpitDrillBusca" placeholder="Pesquisar nos registros..." style="width:100%; padding:8px 12px; margin-bottom:12px; border-radius:6px; border:1px solid var(--line); font-size:13px; outline:none;" onkeyup="filtrarTabelaDrillDown(this)">`;
@@ -1726,6 +1801,10 @@ function cockpitListaKpisExport(cache) {
   add("Forecast", "Upside (não entra no forecast)", moeda(c.forecast.upside), "R$");
   add("Forecast", "Forecast total do mês", moeda(c.forecast.forecastTotal), "R$");
   add("Forecast", "Gap do Forecast", moeda(c.forecast.gapForecast), "R$");
+  add("Forecast", "Forecast Ajustado (Taxa de Confirmação Financeiro)", moeda(c.forecast.forecastAjustadoConfianca), "R$");
+  add("Forecast", "Contratos não assinados (Financeiro)", moeda(c.contratosNaoAssinados.valor), "R$");
+  add("Forecast", "Contratos não assinados — quantidade", num(c.contratosNaoAssinados.qtd), "qtd");
+  add("Forecast", "Contratos não assinados — parados há mais de 15 dias", num(c.contratosNaoAssinados.qtdAtrasados), "qtd");
 
   add("Saúde do Pipeline", "Pipeline Total", moeda(c.saude.pipelineTotal), "R$");
   add("Saúde do Pipeline", "Pipeline Elegível (filtro)", moeda(c.saude.pipelineElegivel), "R$");
@@ -1768,6 +1847,10 @@ function cockpitListaKpisExport(cache) {
   add("Eficiência da Máquina", "Ticket médio vendido (Comercial)", moeda(c.eficiencia.ticketMedioVendido), "R$");
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
   add("Eficiência da Máquina", "Sales Cycle (mediana)", num(c.eficiencia.cicloMediana), "dias");
+  add("Eficiência da Máquina", "Taxa de Confirmação Financeiro (histórico)", pct(c.confirmacaoFinanceiro.taxa), "%");
+  add("Eficiência da Máquina", "Contratos assinados (histórico)", num(c.confirmacaoFinanceiro.assinados), "qtd");
+  add("Eficiência da Máquina", "Contratos cancelados no Financeiro (histórico)", num(c.confirmacaoFinanceiro.cancelados), "qtd");
+  add("Eficiência da Máquina", "Ganhos no Comercial ainda pendentes no Financeiro", num(c.confirmacaoFinanceiro.pendentes), "qtd");
 
   (c.estagiosForecast || []).forEach((eg) => {
     add("Pipeline por Estágio", eg.estagio, moeda(eg.valor), "R$");
