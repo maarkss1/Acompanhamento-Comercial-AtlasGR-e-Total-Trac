@@ -11,9 +11,11 @@ import path from "node:path";
 import { carregarScriptClassico } from "./helpers/carregar-script-classico.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CAMINHO_CONFIG = path.join(__dirname, "..", "js", "config.js");
 const CAMINHO_JORNADA = path.join(__dirname, "..", "js", "jornada.js");
 
-const jornada = carregarScriptClassico(CAMINHO_JORNADA);
+const config = carregarScriptClassico(CAMINHO_CONFIG);
+const jornada = carregarScriptClassico(CAMINHO_JORNADA, { contextoExtra: config });
 
 describe("jornada.js — normalizarTextoChave", () => {
   test("remove acentos, baixa a caixa e colapsa espaços", () => {
@@ -154,3 +156,105 @@ describe("jornada.js — classificarBucketForecast (thresholds 80/50 — fonte d
     assert.equal(jornada.classificarBucketForecast(0, "process"), "Pipeline");
   });
 });
+
+describe("jornada.js — Card 1 & Card 4: idBitrixValido e idBitrixString", () => {
+  test("idBitrixValido ignora null, undefined, 0, '0', '0.0', 'null', 'undefined', vazios e negativos", () => {
+    assert.equal(jornada.idBitrixValido(0), false);
+    assert.equal(jornada.idBitrixValido("0"), false);
+    assert.equal(jornada.idBitrixValido("0.0"), false);
+    assert.equal(jornada.idBitrixValido(null), false);
+    assert.equal(jornada.idBitrixValido(undefined), false);
+    assert.equal(jornada.idBitrixValido("null"), false);
+    assert.equal(jornada.idBitrixValido("undefined"), false);
+    assert.equal(jornada.idBitrixValido(""), false);
+    assert.equal(jornada.idBitrixValido(-10), false);
+    assert.equal(jornada.idBitrixValido("abc"), false);
+  });
+
+  test("idBitrixValido aceita inteiros e strings numéricas > 0", () => {
+    assert.equal(jornada.idBitrixValido(123), true);
+    assert.equal(jornada.idBitrixValido("456"), true);
+    assert.equal(jornada.idBitrixValido("789.00"), true);
+  });
+
+  test("idBitrixString formata ID Bitrix válido como string inteira limpa, ou vazia se inválido", () => {
+    assert.equal(jornada.idBitrixString("123"), "123");
+    assert.equal(jornada.idBitrixString(456.9), "456");
+    assert.equal(jornada.idBitrixString("0"), "");
+    assert.equal(jornada.idBitrixString(null), "");
+  });
+});
+
+describe("jornada.js — Card 1 & Card 4: limparNomeClienteParaChave e nomePareceOperacionalJornada", () => {
+  test("limparNomeClienteParaChave remove sufixos de departamentos internos", () => {
+    assert.equal(jornada.limparNomeClienteParaChave("Cliente Alfa - (Financeiro)"), "Cliente Alfa");
+    assert.equal(jornada.limparNomeClienteParaChave("Empresa Beta (Comercial)"), "Empresa Beta");
+    assert.equal(jornada.limparNomeClienteParaChave("Cliente Gama (Pós-Venda)"), "Cliente Gama");
+    assert.equal(jornada.limparNomeClienteParaChave("Empresa Delta (Implantação)"), "Empresa Delta");
+    assert.equal(jornada.limparNomeClienteParaChave("Cliente Real Sem Sufixo"), "Cliente Real Sem Sufixo");
+  });
+
+  test("nomePareceOperacionalJornada identifica nomes de teste ou operacionais", () => {
+    assert.equal(jornada.nomePareceOperacionalJornada("testando"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("teste de cadastro"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("abertura chamado sc"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("preencher formulario de crm"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("formulario reembolso"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("sucesso do cliente"), true);
+    assert.equal(jornada.nomePareceOperacionalJornada("x"), true); // < 3 chars
+    assert.equal(jornada.nomePareceOperacionalJornada("Transportadora Brasil Ltda"), false);
+  });
+});
+
+describe("jornada.js — Card 1 & Card 5: classificarFunilJornada e ehEstagioPiloto", () => {
+  test("classificarFunilJornada segrega funis internos (44, 8, 32, 42) de funis de cliente", () => {
+    assert.equal(jornada.classificarFunilJornada("44"), "INTERNO");
+    assert.equal(jornada.classificarFunilJornada("8"), "INTERNO");
+    assert.equal(jornada.classificarFunilJornada("32"), "INTERNO");
+    assert.equal(jornada.classificarFunilJornada("42"), "INTERNO");
+    assert.equal(jornada.classificarFunilJornada("30"), "HISTORICO_CLIENTE");
+    assert.equal(jornada.classificarFunilJornada("0"), "CLIENTE");
+    assert.equal(jornada.classificarFunilJornada("15"), "CLIENTE");
+  });
+
+  test("ehEstagioPiloto reconhece STAGE_ID de piloto e rótulo contendo 'piloto'", () => {
+    assert.equal(jornada.ehEstagioPiloto("UC_R1YAOS", "Qualquer Etapa"), true);
+    assert.equal(jornada.ehEstagioPiloto("QUALQUER_ID", "Piloto Comercial"), true);
+    assert.equal(jornada.ehEstagioPiloto("QUALQUER_ID", "Fase de Teste Piloto"), true);
+    assert.equal(jornada.ehEstagioPiloto("C30:NEW", "Proposta Enviada"), false);
+  });
+});
+
+describe("jornada.js — Card 4: construirSinaisDuplicidadeEmpresas", () => {
+  function plano(valor) {
+    return JSON.parse(JSON.stringify(valor));
+  }
+
+  test("identifica empresas duplicadas por nome, e-mail ou telefone sem fundir os IDs", () => {
+    const empresasPorId = {
+      "10": { ID: "10", TITLE: "Empresa Fictícia Alfa", EMAIL: [{ VALUE: "contato@alfa.test" }], PHONE: [{ VALUE: "(11) 99999-0000" }] },
+      "20": { ID: "20", TITLE: "Empresa Fictícia Alfa", EMAIL: [{ VALUE: "outro@alfa.test" }], PHONE: [{ VALUE: "(11) 88888-0000" }] },
+      "30": { ID: "30", TITLE: "Outra Empresa Fictícia", EMAIL: [{ VALUE: "contato@alfa.test" }], PHONE: [{ VALUE: "(11) 77777-0000" }] },
+      "40": { ID: "40", TITLE: "Empresa Fictícia Única", EMAIL: [{ VALUE: "unica@test.com" }], PHONE: [{ VALUE: "(11) 66666-0000" }] }
+    };
+
+    const sinais = jornada.construirSinaisDuplicidadeEmpresas(empresasPorId);
+
+    assert.equal(sinais["10"].duplicado, true);
+    assert.deepEqual([...sinais["10"].motivos], ["nome", "email"]);
+    assert.deepEqual([...sinais["10"].ids], ["20", "30"]);
+
+    assert.equal(sinais["20"].duplicado, true);
+    assert.deepEqual([...sinais["20"].motivos], ["nome"]);
+    assert.deepEqual([...sinais["20"].ids], ["10"]);
+
+    assert.equal(sinais["30"].duplicado, true);
+    assert.deepEqual([...sinais["30"].motivos], ["email"]);
+    assert.deepEqual([...sinais["30"].ids], ["10"]);
+
+    assert.equal(sinais["40"].duplicado, false);
+    assert.deepEqual([...sinais["40"].motivos], []);
+    assert.deepEqual([...sinais["40"].ids], []);
+  });
+});
+

@@ -44,6 +44,21 @@ export function carregarScriptClassico(caminhoAbsoluto, { contextoExtra = {} } =
 
   const sandbox = {
     console,
+    URL,
+    URLSearchParams,
+    TextEncoder,
+    TextDecoder,
+    AbortController,
+    Set,
+    Map,
+    Promise,
+    Date,
+    Math,
+    Number,
+    String,
+    Array,
+    Object,
+    RegExp,
     document: documentoFake,
     localStorage: {
       getItem: () => null,
@@ -53,6 +68,14 @@ export function carregarScriptClassico(caminhoAbsoluto, { contextoExtra = {} } =
     fetch: () => Promise.reject(new Error("fetch indisponível no ambiente de teste (vm sandbox)")),
     setTimeout,
     clearTimeout,
+    AbortSignal,
+    FormData,
+    Headers,
+    Request,
+    Response,
+    atualizarStatus: () => {},
+    esconderErro: () => {},
+    mostrarErro: (msg) => { console.error("mostrarErro:", msg); },
     ...contextoExtra,
   };
   // No navegador, funções/consts de nível superior de um <script> viram

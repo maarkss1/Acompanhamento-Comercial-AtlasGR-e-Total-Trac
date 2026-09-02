@@ -11,11 +11,13 @@ import path from "node:path";
 import { carregarScriptClassico } from "./helpers/carregar-script-classico.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CAMINHO_CONFIG = path.join(__dirname, "..", "js", "config.js");
 const CAMINHO_JORNADA = path.join(__dirname, "..", "js", "jornada.js");
 const CAMINHO_COCKPIT = path.join(__dirname, "..", "js", "cockpit.js");
 
-const jornada = carregarScriptClassico(CAMINHO_JORNADA);
-const cockpit = carregarScriptClassico(CAMINHO_COCKPIT, { contextoExtra: jornada });
+const config = carregarScriptClassico(CAMINHO_CONFIG);
+const jornada = carregarScriptClassico(CAMINHO_JORNADA, { contextoExtra: config });
+const cockpit = carregarScriptClassico(CAMINHO_COCKPIT, { contextoExtra: { ...config, ...jornada } });
 
 describe("cockpit.js — cockpitContarComValor", () => {
   test("conta só itens com _VALOR numérico > 0 (v29 — ver comentário na função)", () => {
@@ -37,40 +39,33 @@ describe("cockpit.js — cockpitContarComValor", () => {
   });
 });
 
-describe("cockpit.js — cockpitClassificarBucketForecast (thresholds 70/40/10 + tier 'Upside')", () => {
+describe("cockpit.js — cockpitClassificarBucketForecast (thresholds 80/50/10 + tier 'Upside')", () => {
   test("classifica por faixas de probabilidade", () => {
-    assert.equal(cockpit.cockpitClassificarBucketForecast(70), "Commit");
-    assert.equal(cockpit.cockpitClassificarBucketForecast(40), "Best Case");
+    assert.equal(cockpit.cockpitClassificarBucketForecast(80), "Commit");
+    assert.equal(cockpit.cockpitClassificarBucketForecast(50), "Best Case");
     assert.equal(cockpit.cockpitClassificarBucketForecast(10), "Pipeline");
     assert.equal(cockpit.cockpitClassificarBucketForecast(9), "Upside");
     assert.equal(cockpit.cockpitClassificarBucketForecast(0), "Upside");
   });
 });
 
-describe("cockpit.js vs jornada.js — divergência DOCUMENTADA de thresholds do bucket de forecast", () => {
-  // Achado do Agente 05 (Wave 1, Catálogo de Métricas): classificarBucketForecast
-  // (js/jornada.js — fonte de verdade do Forecast Semanal e do Catálogo de
-  // Relatórios) e cockpitClassificarBucketForecast (js/cockpit.js — só do
-  // Cockpit, convergida com thresholds de outro projeto) usam faixas
-  // DIFERENTES de propósito (ver comentário em js/cockpit.js:383-398):
-  //   classificarBucketForecast:        Commit >=80, Best Case >=50, senão Pipeline (sem tier "Upside")
-  //   cockpitClassificarBucketForecast: Commit >=70, Best Case >=40, Pipeline >=10, senão Upside
-  //
-  // Este teste não corrige a divergência (está fora de escopo) — só a torna
-  // explícita e detectável: se algum dia os thresholds forem unificados sem
-  // atualizar este teste, ele vai falhar e apontar exatamente para este
-  // comentário.
-  test("uma mesma probabilidade de 60% é 'Best Case' nos dois — mas por faixas diferentes", () => {
+describe("cockpit.js vs jornada.js — alinhamento de thresholds do bucket de forecast", () => {
+  test("uma mesma probabilidade de 80% é 'Commit' nos dois", () => {
+    assert.equal(jornada.classificarBucketForecast(80, "process"), "Commit");
+    assert.equal(cockpit.cockpitClassificarBucketForecast(80), "Commit");
+  });
+
+  test("uma mesma probabilidade de 60% é 'Best Case' nos dois", () => {
     assert.equal(jornada.classificarBucketForecast(60, "process"), "Best Case");
     assert.equal(cockpit.cockpitClassificarBucketForecast(60), "Best Case");
   });
 
-  test("probabilidade de 45%: Best Case no Cockpit, mas só Pipeline no Forecast Semanal/Catálogo", () => {
+  test("probabilidade de 45%: Pipeline no Cockpit e no Forecast Semanal/Catálogo", () => {
     assert.equal(jornada.classificarBucketForecast(45, "process"), "Pipeline");
-    assert.equal(cockpit.cockpitClassificarBucketForecast(45), "Best Case");
+    assert.equal(cockpit.cockpitClassificarBucketForecast(45), "Pipeline");
   });
 
-  test("probabilidade de 20%: Pipeline no Cockpit, mas já é o piso 'Pipeline' também no Forecast Semanal — sem tier 'Upside' lá", () => {
+  test("probabilidade de 20%: Pipeline no Cockpit e no Forecast Semanal", () => {
     assert.equal(jornada.classificarBucketForecast(20, "process"), "Pipeline");
     assert.equal(cockpit.cockpitClassificarBucketForecast(20), "Pipeline");
   });

@@ -1,3 +1,16 @@
+var extracaoCancelada = false;
+var resultadoRelatorioCatalogo = {};
+if (typeof atualizarStatus === "undefined") var atualizarStatus = function(){};
+if (typeof esconderErro === "undefined") var esconderErro = function(){};
+if (typeof mostrarErro === "undefined") var mostrarErro = function(){};
+
+if(typeof globalThis!=="undefined"){
+  if(typeof globalThis.atualizarStatus!=="function") globalThis.atualizarStatus=()=>{};
+  if(typeof globalThis.esconderErro!=="function") globalThis.esconderErro=()=>{};
+  if(typeof globalThis.mostrarErro!=="function") globalThis.mostrarErro=(msg)=>{console.error(msg);};
+  if(typeof globalThis.extracaoCancelada==="undefined") globalThis.extracaoCancelada=false;
+}
+
 async function mapaOrigensRelatorio(webhook){
   const a=await carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"SOURCE","order[SORT]":"ASC"});
   const m={};a.forEach((x)=>m[String(x.STATUS_ID)]=x.NAME||x.STATUS_ID);return m;
@@ -150,10 +163,15 @@ function resumoReunioesFunilRelatorio(base){
   const linhasAtividade=base.reunioes.map((r)=>{
     const{pipeline,pipelineId,etapa}=reuniaoVinculoFunilEtapa(r,base);
     const respId=idBitrixString(r.RESPONSIBLE_ID);
+    const subjNorm=normalizarTextoChave(r.SUBJECT||"");
+    let situacao=String(r.COMPLETED)==="Y"?"Realizada":"Agendada";
+    if(String(r.COMPLETED)!=="Y"&&(subjNorm.includes("no show")||subjNorm.includes("noshow")||subjNorm.includes("faltou")||subjNorm.includes("nao compareceu"))){
+      situacao="No-Show";
+    }
     return{
       ID:`ativ_${r.ID}`,ASSUNTO:r.SUBJECT||"",
       RESPONSAVEL:nomeUsuario(respId)||(respId?`ID ${respId}`:"Sem responsável"),
-      SITUACAO:String(r.COMPLETED)==="Y"?"Realizada":"Agendada",
+      SITUACAO:situacao,
       INICIO:r.START_TIME||"",FIM:r.END_TIME||"",
       PIPELINE:pipeline,ETAPA:etapa,ORIGEM:"Atividade (TYPE_ID=1)",
       _RESPONSAVEL_ID:respId,_PIPELINE_ID:pipelineId,
@@ -270,8 +288,12 @@ function baixarJSONRelatorioCatalogo(){
 }
 
 async function extrairRelatorioCatalogo(webhook,chave){
-  document.getElementById("spinner").style.display="inline-block";document.getElementById("btnExtrair").disabled=true;document.getElementById("btnParar").disabled=false;
-  extracaoCancelada=false;esconderErro();resultadoRelatorioCatalogo={};
+  const elSpinner=document.getElementById("spinner");if(elSpinner?.style)elSpinner.style.display="inline-block";
+  const elBtnExt=document.getElementById("btnExtrair");if(elBtnExt)elBtnExt.disabled=true;
+  const elBtnPar=document.getElementById("btnParar");if(elBtnPar)elBtnPar.disabled=false;
+  extracaoCancelada = false;
+  if(typeof esconderErro==="function")esconderErro();
+  resultadoRelatorioCatalogo={};
   try{
     const p=periodoCatalogo();
 
@@ -352,13 +374,86 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="performance_vendedores"){
-      const b=await baseDealsCatalogo(webhook,true),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)),m={};
-      const get=(d)=>{const k=String(d.ASSIGNED_BY_ID||"0");return m[k]||(m[k]={RESPONSAVEL:d._RESPONSAVEL,CRIADAS:0,PIPELINE:0,FORECAST:0,GANHOS:0,RECEITA:0,PERDAS:0,PERDIDO:0,CICLO_SOMA:0,CICLO_N:0})};
-      ds.forEach((d)=>{const r=get(d);if(dentroPeriodoCatalogo(d.DATE_CREATE,p))r.CRIADAS++;if(d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)){r.PIPELINE+=d._VALOR;const pr=Number(d.PROBABILITY);const prob=(Number.isFinite(pr)&&pr>0&&pr<=100)?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA);r.FORECAST+=d._VALOR*prob/100;}if(dentroPeriodoCatalogo(d._FECHAMENTO,p)){if(d._SEMANTICA==="success"){r.GANHOS++;r.RECEITA+=d._VALOR}else if(d._SEMANTICA==="failure"){r.PERDAS++;r.PERDIDO+=d._VALOR}if(d._CICLO!==""){r.CICLO_SOMA+=Number(d._CICLO);r.CICLO_N++}}});
-      const rows=Object.values(m).map((r)=>({...r,WIN_RATE:taxaPct(r.GANHOS,r.GANHOS+r.PERDAS),TICKET:r.GANHOS?r.RECEITA/r.GANHOS:0,CICLO:r.CICLO_N?Math.round(r.CICLO_SOMA/r.CICLO_N*10)/10:0})).sort((a,b)=>b.RECEITA-a.RECEITA);
+      const b=await baseDealsCatalogo(webhook,true),om=await mapaOrigensRelatorio(webhook),ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)),m={};
+      const get=(d)=>{const k=String(d.ASSIGNED_BY_ID||"0");return m[k]||(m[k]={RESPONSAVEL:d._RESPONSAVEL,CRIADAS:0,PIPELINE:0,FORECAST:0,GANHOS:0,RECEITA:0,PERDAS:0,PERDIDO:0,CICLO_SOMA:0,CICLO_N:0,TICKETS:[],UTMS:{}})};
+      ds.forEach((d)=>{
+        const r=get(d);
+        if(dentroPeriodoCatalogo(d.DATE_CREATE,p))r.CRIADAS++;
+        if(d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)){
+          r.PIPELINE+=d._VALOR;
+          const pr=Number(d.PROBABILITY);
+          const prob=(Number.isFinite(pr)&&pr>0&&pr<=100)?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA);
+          r.FORECAST+=d._VALOR*prob/100;
+        }
+        if(dentroPeriodoCatalogo(d._FECHAMENTO,p)){
+          if(d._SEMANTICA==="success"){
+            r.GANHOS++;
+            r.RECEITA+=d._VALOR;
+            r.TICKETS.push(d._VALOR);
+          }else if(d._SEMANTICA==="failure"){
+            r.PERDAS++;
+            r.PERDIDO+=d._VALOR;
+          }
+          if(d._CICLO!==""){r.CICLO_SOMA+=Number(d._CICLO);r.CICLO_N++;}
+        }
+        const utmSrc=String(d.UTM_SOURCE||"").trim();
+        const src=utmSrc?`UTM: ${utmSrc}`:(om[String(d.SOURCE_ID)]||d.SOURCE_ID||"");
+        if(src)r.UTMS[src]=(r.UTMS[src]||0)+1;
+      });
+
+      const todosTicketsGanhos=[];
+      const rows=Object.values(m).map((r)=>{
+        r.TICKETS.forEach(v=>todosTicketsGanhos.push(v));
+        const tSort=[...r.TICKETS].sort((a,b)=>a-b);
+        const medT=tSort.length?(tSort.length%2===0?(tSort[tSort.length/2-1]+tSort[tSort.length/2])/2:tSort[Math.floor(tSort.length/2)]):0;
+        const topUtm=Object.entries(r.UTMS).sort((a,b)=>b[1]-a[1])[0]?.[0]||"—";
+        return {
+          ...r,
+          WIN_RATE:taxaPct(r.GANHOS,r.GANHOS+r.PERDAS),
+          TICKET:r.GANHOS?r.RECEITA/r.GANHOS:0,
+          MEDIANA_TICKET:medT,
+          TOP_UTM:topUtm,
+          CICLO:r.CICLO_N?Math.round(r.CICLO_SOMA/r.CICLO_N*10)/10:0
+        };
+      }).sort((a,b)=>b.RECEITA-a.RECEITA);
+
+      const totalReceita=rows.reduce((a,r)=>a+r.RECEITA,0);
+      const top1=rows.slice(0,1).reduce((a,r)=>a+r.RECEITA,0);
+      const top5=rows.slice(0,5).reduce((a,r)=>a+r.RECEITA,0);
+      const top10=rows.slice(0,10).reduce((a,r)=>a+r.RECEITA,0);
+
+      const tGeralSort=[...todosTicketsGanhos].sort((a,b)=>a-b);
+      const medianaTicketGeral=tGeralSort.length?(tGeralSort.length%2===0?(tGeralSort[tGeralSort.length/2-1]+tGeralSort[tGeralSort.length/2])/2:tGeralSort[Math.floor(tGeralSort.length/2)]):0;
+
       criarResultadoCatalogo(chave,"Performance por vendedor",`Período: <strong>${escapeHtmlRelatorio(p.inicio||"todas")}</strong> a <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
-        [kpi("Vendedores",rows.length),kpi("Receita",moedaRelatorio(rows.reduce((a,r)=>a+r.RECEITA,0))),kpi("Ganhos",rows.reduce((a,r)=>a+r.GANHOS,0)),kpi("Perdas",rows.reduce((a,r)=>a+r.PERDAS,0)),kpi("Pipeline aberto",moedaRelatorio(rows.reduce((a,r)=>a+r.PIPELINE,0))),kpi("Criadas",rows.reduce((a,r)=>a+r.CRIADAS,0)),kpi("Win Rate geral (coorte por fechamento)",`${taxaPct(rows.reduce((a,r)=>a+r.GANHOS,0),rows.reduce((a,r)=>a+r.GANHOS+r.PERDAS,0))}%`),kpi("Atribuição","responsável atual")],
-        [{titulo:"Performance por responsável",dados:rows,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Criadas",valor:"CRIADAS"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Ciclo médio",valor:(x)=>`${x.CICLO}d`},{label:"Pipeline",valor:(x)=>moedaRelatorio(x.PIPELINE),html:true},{label:"Forecast Ponderado",valor:(x)=>moedaRelatorio(x.FORECAST),html:true}]}],
+        [
+          kpi("Vendedores",rows.length),
+          kpi("Receita",moedaRelatorio(totalReceita)),
+          kpi("Ganhos",rows.reduce((a,r)=>a+r.GANHOS,0)),
+          kpi("Perdas",rows.reduce((a,r)=>a+r.PERDAS,0)),
+          kpi("Pipeline aberto",moedaRelatorio(rows.reduce((a,r)=>a+r.PIPELINE,0))),
+          kpi("Criadas",rows.reduce((a,r)=>a+r.CRIADAS,0)),
+          kpi("Win Rate geral (coorte por fechamento)",`${taxaPct(rows.reduce((a,r)=>a+r.GANHOS,0),rows.reduce((a,r)=>a+r.GANHOS+r.PERDAS,0))}%`),
+          kpi("Mediana Ticket",moedaRelatorio(medianaTicketGeral)),
+          kpi("Top 1 Conc.",`${taxaPct(top1,totalReceita)}%`),
+          kpi("Top 5 Conc.",`${taxaPct(top5,totalReceita)}%`),
+          kpi("Top 10 Conc.",`${taxaPct(top10,totalReceita)}%`),
+          kpi("Atribuição","responsável atual")
+        ],
+        [{titulo:"Performance por responsável",dados:rows,colunas:[
+          {label:"Responsável",valor:"RESPONSAVEL"},
+          {label:"Criadas",valor:"CRIADAS"},
+          {label:"Ganhos",valor:"GANHOS"},
+          {label:"Perdas",valor:"PERDAS"},
+          {label:"Win Rate",valor:(x)=>`${x.WIN_RATE}%`},
+          {label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},
+          {label:"Ticket Médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true},
+          {label:"Mediana Ticket",valor:(x)=>moedaRelatorio(x.MEDIANA_TICKET),html:true},
+          {label:"Origem/UTM Principal",valor:"TOP_UTM"},
+          {label:"Ciclo médio",valor:(x)=>`${x.CICLO}d`},
+          {label:"Pipeline",valor:(x)=>moedaRelatorio(x.PIPELINE),html:true},
+          {label:"Forecast Ponderado",valor:(x)=>moedaRelatorio(x.FORECAST),html:true}
+        ]}],
         "ASSIGNED_BY_ID representa o responsável atual, não todo o histórico de ownership.");
     }
 
@@ -395,41 +490,129 @@ async function extrairRelatorioCatalogo(webhook,chave){
 
     else if(chave==="ganhos_perdas_ciclo"){
       const b=await baseDealsCatalogo(webhook,true),fs=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA!=="process"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)),won=fs.filter((d)=>d._SEMANTICA==="success"),lost=fs.filter((d)=>d._SEMANTICA==="failure");
-      const rows=fs.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,RESULTADO:d._SEMANTICA==="success"?"Ganho":"Perdido",RESPONSAVEL:d._RESPONSAVEL,FECHAMENTO:d._FECHAMENTO,VALOR:d._VALOR,CICLO_DIAS:d._CICLO}));const cs=rows.map((x)=>Number(x.CICLO_DIAS)).filter(Number.isFinite);
-      const cSort=[...cs].sort((a,b)=>a-b); const mediana=cSort.length?(cSort.length%2===0?(cSort[Math.floor(cSort.length/2)-1]+cSort[Math.floor(cSort.length/2)])/2:cSort[Math.floor(cSort.length/2)]):null;
+      const rows=fs.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,RESULTADO:d._SEMANTICA==="success"?"Ganho":"Perdido",RESPONSAVEL:d._RESPONSAVEL,FECHAMENTO:d._FECHAMENTO,VALOR:d._VALOR,CICLO_DIAS:d._CICLO})).sort((a,b)=>b.FECHAMENTO.localeCompare(a.FECHAMENTO)||b.VALOR-a.VALOR);
+      const cs=rows.map((x)=>Number(x.CICLO_DIAS)).filter(Number.isFinite);
+      const cSort=[...cs].sort((a,b)=>a-b);
+      const mediana=cSort.length?(cSort.length%2===0?(cSort[cSort.length/2-1]+cSort[cSort.length/2])/2:cSort[Math.floor(cSort.length/2)]):null;
+
+      const csWon=won.map((d)=>Number(d._CICLO)).filter(Number.isFinite);
+      const cWonSort=[...csWon].sort((a,b)=>a-b);
+      const medianaWon=cWonSort.length?(cWonSort.length%2===0?(cWonSort[cWonSort.length/2-1]+cWonSort[cWonSort.length/2])/2:cWonSort[Math.floor(cWonSort.length/2)]):null;
+
+      const csLost=lost.map((d)=>Number(d._CICLO)).filter(Number.isFinite);
+      const cLostSort=[...csLost].sort((a,b)=>a-b);
+      const medianaLost=cLostSort.length?(cLostSort.length%2===0?(cLostSort[cLostSort.length/2-1]+cLostSort[cLostSort.length/2])/2:cLostSort[Math.floor(cLostSort.length/2)]):null;
+
       criarResultadoCatalogo(chave,"Ganhos, perdas e ciclo de vendas","Fechamentos no período selecionado.",
-        [kpi("Fechados",rows.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Win Rate (coorte por fechamento)",`${taxaPct(won.length,rows.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Valor perdido",moedaRelatorio(lost.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket ganho (coorte por fechamento)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0)),kpi("Ciclo médio",cs.length?`${Math.round(cs.reduce((a,b)=>a+b,0)/cs.length*10)/10}d`:"—"),kpi("Mediana ciclo",mediana!==null?Math.round(mediana*10)/10+"d":"—")],
+        [
+          kpi("Fechados",rows.length),
+          kpi("Ganhos",won.length),
+          kpi("Perdas",lost.length),
+          kpi("Win Rate (coorte por fechamento)",`${taxaPct(won.length,rows.length)}%`),
+          kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),
+          kpi("Valor perdido",moedaRelatorio(lost.reduce((a,d)=>a+d._VALOR,0))),
+          kpi("Ticket ganho (coorte por fechamento)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0)),
+          kpi("Ciclo médio",cs.length?`${Math.round(cs.reduce((a,b)=>a+b,0)/cs.length*10)/10}d`:"—"),
+          kpi("Mediana ciclo",mediana!==null?Math.round(mediana*10)/10+"d":"—"),
+          kpi("Ciclo médio (Ganhos)",csWon.length?`${Math.round(csWon.reduce((a,b)=>a+b,0)/csWon.length*10)/10}d`:"—"),
+          kpi("Mediana ciclo (Ganhos)",medianaWon!==null?Math.round(medianaWon*10)/10+"d":"—"),
+          kpi("Ciclo médio (Perdas)",csLost.length?`${Math.round(csLost.reduce((a,b)=>a+b,0)/csLost.length*10)/10}d`:"—")
+        ],
         [{titulo:"Negócios fechados",dados:rows,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Resultado",valor:"RESULTADO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Fechamento",valor:"FECHAMENTO"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Ciclo",valor:(x)=>x.CICLO_DIAS===""?"":`${x.CICLO_DIAS}d`}]}]);
     }
 
     else if(chave==="origens_canais"){
       const [lb,db,om]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,true),mapaOrigensRelatorio(webhook)]),ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p)),by={};
       db.deals.forEach((d)=>{if(idBitrixValido(d.LEAD_ID))(by[String(d.LEAD_ID)]||=[]).push(enriquecerDealCatalogo(d,db))});
-      const m={};ls.forEach((l)=>{const utmMed=String(l.UTM_MEDIUM||"").trim();const utmCam=String(l.UTM_CAMPAIGN||"").trim();const utmSrc=String(l.UTM_SOURCE||"").trim();const src=utmSrc?`UTM: ${utmSrc}${utmMed?" / "+utmMed:""}${utmCam?" / "+utmCam:""}`:(om[String(l.SOURCE_ID)]||l.SOURCE_ID||"Sem origem");if(!m[src])m[src]={ORIGEM:src,LEADS:0,LEADS_COM_OPP:0,OPORTUNIDADES:0,GANHOS:0,RECEITA:0};const r=m[src];r.LEADS++;const ds=by[String(l.ID)]||[];if(ds.length)r.LEADS_COM_OPP++;r.OPORTUNIDADES+=ds.length;const w=ds.filter((d)=>d._SEMANTICA==="success");r.GANHOS+=w.length;r.RECEITA+=w.reduce((a,d)=>a+d._VALOR,0)});
-      const rows=Object.values(m).map((r)=>({...r,LEAD_OPP:taxaPct(r.LEADS_COM_OPP,r.LEADS),OPP_GANHO:taxaPct(r.GANHOS,r.OPORTUNIDADES)})).sort((a,b)=>b.LEADS-a.LEADS);
-      criarResultadoCatalogo(chave,"Origens, canais e conversão","UTM_SOURCE tem prioridade; fallback para SOURCE_ID.",
+      const m={};
+      ls.forEach((l)=>{
+        const utmMed=String(l.UTM_MEDIUM||"").trim();
+        const utmCam=String(l.UTM_CAMPAIGN||"").trim();
+        const utmSrc=String(l.UTM_SOURCE||"").trim();
+        const srcNome=om[String(l.SOURCE_ID)]||l.SOURCE_ID||"";
+        let src="";
+        if(utmSrc){
+          src=`UTM: ${utmSrc}${utmMed?" / "+utmMed:""}${utmCam?" / "+utmCam:""}`;
+          if(srcNome)src+=` (${srcNome})`;
+        }else{
+          src=srcNome||"Sem origem";
+        }
+        if(!m[src])m[src]={ORIGEM:src,LEADS:0,LEADS_COM_OPP:0,OPORTUNIDADES:0,GANHOS:0,RECEITA:0};
+        const r=m[src];
+        r.LEADS++;
+        const ds=by[String(l.ID)]||[];
+        if(ds.length)r.LEADS_COM_OPP++;
+        r.OPORTUNIDADES+=ds.length;
+        const w=ds.filter((d)=>d._SEMANTICA==="success");
+        r.GANHOS+=w.length;
+        r.RECEITA+=w.reduce((a,d)=>a+d._VALOR,0);
+      });
+
+      const leadIdsNaCoorte=new Set(ls.map(l=>String(l.ID)));
+      db.deals.forEach((dRaw)=>{
+        const d=enriquecerDealCatalogo(dRaw,db);
+        if(!dentroPeriodoCatalogo(d.DATE_CREATE,p)&&!dentroPeriodoCatalogo(d._FECHAMENTO,p))return;
+        if(idBitrixValido(d.LEAD_ID)&&leadIdsNaCoorte.has(String(d.LEAD_ID)))return;
+        const utmMed=String(d.UTM_MEDIUM||"").trim();
+        const utmCam=String(d.UTM_CAMPAIGN||"").trim();
+        const utmSrc=String(d.UTM_SOURCE||"").trim();
+        const srcNome=om[String(d.SOURCE_ID)]||d.SOURCE_ID||"";
+        let src="";
+        if(utmSrc){
+          src=`UTM: ${utmSrc}${utmMed?" / "+utmMed:""}${utmCam?" / "+utmCam:""}`;
+          if(srcNome)src+=` (${srcNome})`;
+        }else{
+          src=srcNome||"Sem origem";
+        }
+        if(!m[src])m[src]={ORIGEM:src,LEADS:0,LEADS_COM_OPP:0,OPORTUNIDADES:0,GANHOS:0,RECEITA:0};
+        const r=m[src];
+        r.OPORTUNIDADES++;
+        if(d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)){
+          r.GANHOS++;
+          r.RECEITA+=d._VALOR;
+        }
+      });
+
+      const rows=Object.values(m).map((r)=>({...r,LEAD_OPP:taxaPct(r.LEADS_COM_OPP,r.LEADS),OPP_GANHO:taxaPct(r.GANHOS,r.OPORTUNIDADES)})).sort((a,b)=>b.LEADS-a.LEADS||b.RECEITA-a.RECEITA);
+      criarResultadoCatalogo(chave,"Origens, canais e conversão","UTM_SOURCE tem prioridade com detalhamento do SOURCE_ID.",
         [kpi("Leads",ls.length),kpi("Origens",rows.length),kpi("Leads com Opp",rows.reduce((a,r)=>a+r.LEADS_COM_OPP,0)),kpi("Oportunidades",rows.reduce((a,r)=>a+r.OPORTUNIDADES,0)),kpi("Ganhos",rows.reduce((a,r)=>a+r.GANHOS,0)),kpi("Receita",moedaRelatorio(rows.reduce((a,r)=>a+r.RECEITA,0))),kpi("Lead → Opp",`${taxaPct(rows.reduce((a,r)=>a+r.LEADS_COM_OPP,0),ls.length)}%`),kpi("Sem origem",rows.find((r)=>r.ORIGEM==="Sem origem")?.LEADS||0)],
         [{titulo:"Conversão por origem",dados:rows,colunas:[{label:"Origem",valor:"ORIGEM"},{label:"Leads",valor:"LEADS"},{label:"Leads c/ Opp",valor:"LEADS_COM_OPP"},{label:"Lead → Opp",valor:(x)=>`${x.LEAD_OPP}%`},{label:"Oportunidades",valor:"OPORTUNIDADES"},{label:"Ganhos",valor:"GANHOS"},{label:"Opp → Ganho",valor:(x)=>`${x.OPP_GANHO}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true}]}]);
     }
 
     else if(chave==="produtos_receita"){
       const b=await baseDealsCatalogo(webhook,true),won=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)),m={};let linhas=0,com=0;
-      for(let i=0;i<won.length;i++){if(extracaoCancelada)break;const d=won[i];atualizarStatus(`Produtos: negócio ${i+1}/${won.length}`);const body=await bitrixFetchComRetentativa(`${webhook.replace(/\/$/,"")}/crm.deal.productrows.get.json?id=${encodeURIComponent(d.ID)}`),it=body.result||[];if(it.length)com++;it.forEach((x)=>{linhas++;const n=x.PRODUCT_NAME||`Produto ${x.PRODUCT_ID||""}`;if(!m[n])m[n]={PRODUTO:n,NEGOCIOS:new Set(),QUANTIDADE:0,RECEITA:0};m[n].NEGOCIOS.add(String(d.ID));m[n].QUANTIDADE+=Number(x.QUANTITY)||0;const pa=Number(x.PRICE_ACCOUNT);m[n].RECEITA+=(Number.isFinite(pa)&&pa!==0)?pa:(Number(x.PRICE)||0)*(Number(x.QUANTITY)||0)});await aguardar(100)}
+      for(let i=0;i<won.length;i++){if(extracaoCancelada)break;const d=won[i];atualizarStatus(`Produtos: negócio ${i+1}/${won.length}`);const body=await bitrixFetchComRetentativa(`${webhook.replace(/\/$/,"")}/crm.deal.productrows.get.json?id=${encodeURIComponent(d.ID)}`),it=body.result||[];if(it.length)com++;it.forEach((x)=>{linhas++;const n=x.PRODUCT_NAME||`Produto ${x.PRODUCT_ID||""}`;if(!m[n])m[n]={PRODUTO:n,NEGOCIOS:new Set(),QUANTIDADE:0,RECEITA:0};m[n].NEGOCIOS.add(String(d.ID));const qty=Number(x.QUANTITY)||0;m[n].QUANTIDADE+=qty;const pa=Number(x.PRICE_ACCOUNT);const priceUnit=(Number.isFinite(pa)&&pa!==0)?pa:(Number(x.PRICE)||0);m[n].RECEITA+=priceUnit*qty;});await aguardar(100)}
       const rows=Object.values(m).map((r)=>({PRODUTO:r.PRODUTO,NEGOCIOS:r.NEGOCIOS.size,QUANTIDADE:Math.round(r.QUANTIDADE*100)/100,RECEITA:r.RECEITA,TICKET:r.NEGOCIOS.size?r.RECEITA/r.NEGOCIOS.size:0})).sort((a,b)=>b.RECEITA-a.RECEITA);
-      const totalR=rows.reduce((a,r)=>a+r.RECEITA,0); rows.forEach(r=>{r.PARTICIPACAO=totalR?(r.RECEITA/totalR*100).toFixed(1):0});
-      criarResultadoCatalogo(chave,"Produtos e receita","Produtos dos negócios ganhos no período.",
+      const totalR=rows.reduce((a,r)=>a+r.RECEITA,0);
+      let acumR=0;
+      rows.forEach(r=>{
+        r.PARTICIPACAO=totalR?(r.RECEITA/totalR*100).toFixed(1):0;
+        acumR+=r.RECEITA;
+        const pctAcum=totalR?(acumR/totalR*100):0;
+        r.CUMULATIVO_PCT=Math.round(pctAcum*10)/10;
+        r.CURVA_ABC=pctAcum<=80?"A":(pctAcum<=95?"B":"C");
+      });
+      criarResultadoCatalogo(chave,"Produtos e receita","Produtos dos negócios ganhos no período com classificação Curva ABC.",
         [kpi("Deals ganhos",won.length),kpi("Deals com produto",com),kpi("Linhas produto",linhas),kpi("Produtos",rows.length),kpi("Receita linhas",moedaRelatorio(totalR)),kpi("Receita deals",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Deals sem produto",won.length-com),kpi("Cobertura",`${taxaPct(com,won.length)}%`)],
-        [{titulo:"Produtos vendidos",dados:rows,colunas:[{label:"Produto",valor:"PRODUTO"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Quantidade",valor:"QUANTIDADE"},{label:"Receita linhas",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Participação",valor:(x)=>x.PARTICIPACAO+"%"}]}],
-        "PRICE_ACCOUNT é usado quando disponível; fallback PRICE × QUANTITY.");
+        [{titulo:"Produtos vendidos",dados:rows,colunas:[{label:"Produto",valor:"PRODUTO"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Quantidade",valor:"QUANTIDADE"},{label:"Receita linhas",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Participação",valor:(x)=>x.PARTICIPACAO+"%"},{label:"Curva ABC",valor:"CURVA_ABC"}]}],
+        "PRICE_ACCOUNT é usado como preço unitário em moeda da conta quando disponível; fallback PRICE × QUANTITY.");
     }
 
     else if(chave==="clientes_receita"){
       const b=await baseDealsCatalogo(webhook,true),won=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="success"&&dentroPeriodoCatalogo(d._FECHAMENTO,p)),m={};
       won.forEach((d)=>{const k=idBitrixValido(d.COMPANY_ID)?`C:${idBitrixString(d.COMPANY_ID)}`:`N:${normalizarTextoChave(d._CLIENTE)}`;if(!m[k])m[k]={CLIENTE:d._CLIENTE,NEGOCIOS:0,RECEITA:0,PRIMEIRO:d._FECHAMENTO,ULTIMO:d._FECHAMENTO};const r=m[k];r.NEGOCIOS++;r.RECEITA+=d._VALOR;if(d._FECHAMENTO<r.PRIMEIRO)r.PRIMEIRO=d._FECHAMENTO;if(d._FECHAMENTO>r.ULTIMO)r.ULTIMO=d._FECHAMENTO});
       const rows=Object.values(m).map((r)=>({...r,TICKET:r.NEGOCIOS?r.RECEITA/r.NEGOCIOS:0})).sort((a,b)=>b.RECEITA-a.RECEITA),total=rows.reduce((a,r)=>a+r.RECEITA,0),top10=rows.slice(0,10).reduce((a,r)=>a+r.RECEITA,0),top5=rows.slice(0,5).reduce((a,r)=>a+r.RECEITA,0),top1=rows.slice(0,1).reduce((a,r)=>a+r.RECEITA,0);
-      criarResultadoCatalogo(chave,"Clientes, receita e concentração","Receita pelos negócios ganhos no período.",
+      let acumC=0;
+      rows.forEach(r=>{
+        acumC+=r.RECEITA;
+        const pctAcum=total?(acumC/total*100):0;
+        r.PARTICIPACAO=total?(r.RECEITA/total*100).toFixed(1):0;
+        r.ACUMULADO_PCT=Math.round(pctAcum*10)/10;
+        r.CURVA_ABC=pctAcum<=80?"A":(pctAcum<=95?"B":"C");
+      });
+      criarResultadoCatalogo(chave,"Clientes, receita e concentração","Receita pelos negócios ganhos no período com Curva ABC e concentração Top 1/5/10.",
         [kpi("Clientes",rows.length),kpi("Negócios ganhos",won.length),kpi("Receita",moedaRelatorio(total)),kpi("Ticket médio (coorte por fechamento)",moedaRelatorio(won.length?total/won.length:0)),kpi("Clientes recorrentes",rows.filter((r)=>r.NEGOCIOS>1).length),kpi("Top 1",`${taxaPct(top1,total)}%`),kpi("Top 5",`${taxaPct(top5,total)}%`),kpi("Top 10",`${taxaPct(top10,total)}%`),kpi("Maior cliente",rows[0]?.CLIENTE||"—")],
-        [{titulo:"Receita por cliente",dados:rows,colunas:[{label:"Cliente",valor:"CLIENTE"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Primeiro",valor:"PRIMEIRO"},{label:"Último",valor:"ULTIMO"}]}]);
+        [{titulo:"Receita por cliente",dados:rows,colunas:[{label:"Cliente",valor:"CLIENTE"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Participação",valor:(x)=>x.PARTICIPACAO+"%"},{label:"Acumulado",valor:(x)=>x.ACUMULADO_PCT+"%"},{label:"Curva ABC",valor:"CURVA_ABC"},{label:"Primeiro",valor:"PRIMEIRO"},{label:"Último",valor:"ULTIMO"}]}]);
     }
 
     else if(chave==="funil_leads"){
@@ -505,71 +688,372 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="pipeline_novo_gerado"){
-      const b=await baseDealsCatalogo(webhook,true),hj=new Date(),isoHj=formatarDataISO(hj),isoSem=formatarDataISO(new Date(hj.setDate(hj.getDate()-hj.getDay()))),isoMes=isoHj.slice(0,7)+"-01";
-      let hjV=0,semV=0,mesV=0; const m={};
+      const b=await baseDealsCatalogo(webhook,true);
+      const hj=p.referencia ? new Date(`${p.referencia}T12:00:00`) : new Date();
+      const isoHj=formatarDataISO(hj);
+      const tempSem=new Date(hj);
+      const dia=tempSem.getDay();
+      tempSem.setDate(tempSem.getDate() + (dia===0 ? -6 : 1 - dia));
+      const isoSem=formatarDataISO(tempSem);
+      const isoMes=isoHj.slice(0,7)+"-01";
+
+      let hjV=0, semV=0, mesV=0;
+      let hjQ=0, semQ=0, mesQ=0;
+      const m={};
+
       b.deals.map(d=>enriquecerDealCatalogo(d,b)).forEach(d=>{
         const dc=parteDataISO(d.DATE_CREATE); if(!dc)return;
-        if(dc===isoHj)hjV+=d._VALOR; if(dc>=isoSem)semV+=d._VALOR; if(dc>=isoMes)mesV+=d._VALOR;
-        if(dc>=isoMes){const k=d._RESPONSAVEL;(m[k]||={RESPONSAVEL:k,VALOR:0}).VALOR+=d._VALOR;}
+        if(dc===isoHj){ hjV+=d._VALOR; hjQ++; }
+        if(dc>=isoSem && dc<=isoHj){ semV+=d._VALOR; semQ++; }
+        if(dc>=isoMes && dc<=isoHj){ mesV+=d._VALOR; mesQ++; }
+        if(dc>=isoMes && dc<=isoHj){
+          const k=d._RESPONSAVEL || "Sem responsável";
+          (m[k]||={RESPONSAVEL:k,QTD:0,VALOR:0});
+          m[k].QTD++;
+          m[k].VALOR+=d._VALOR;
+        }
       });
       const rows=Object.values(m).sort((a,b)=>b.VALOR-a.VALOR);
-      criarResultadoCatalogo(chave,"Pipeline Novo Gerado","Criado no mês atual por vendedor.",
-        [kpi("Criado Hoje",moedaRelatorio(hjV)),kpi("Criado Semana",moedaRelatorio(semV)),kpi("Criado Mês",moedaRelatorio(mesV))],
-        [{titulo:"Criado no mês por vendedor",dados:rows,colunas:[{label:"Vendedor",valor:"RESPONSAVEL"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
+      criarResultadoCatalogo(chave,"Pipeline Novo Gerado",`Criado hoje, na semana e no mês (Referência: <strong>${escapeHtmlRelatorio(isoHj)}</strong>).`,
+        [kpi("Criado Hoje",moedaRelatorio(hjV)),kpi("Qtd Hoje",hjQ),kpi("Criado Semana",moedaRelatorio(semV)),kpi("Qtd Semana",semQ),kpi("Criado Mês",moedaRelatorio(mesV)),kpi("Qtd Mês",mesQ)],
+        [{titulo:"Criado no mês por vendedor",dados:rows,colunas:[{label:"Vendedor",valor:"RESPONSAVEL"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
     }
     else if(chave==="pipeline_carryover"){
-      criarResultadoCatalogo(chave,"Pipeline Carryover","Histórico insuficiente para identificar carryover com segurança.",
-        [kpi("Postergados","Dados históricos insuficientes"),kpi("Valor","Dados históricos insuficientes")],
-        [], "A arquitetura atual não armazena snapshots do CLOSEDATE de cada negócio (somente agregados no historico.json).");
+      const b=await baseDealsCatalogo(webhook,true);
+      const hj=p.referencia ? p.referencia : formatarDataISO(new Date());
+      const isoMes=hj.slice(0,7)+"-01";
+      const ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+      
+      const rows=[];
+      ds.forEach(d=>{
+        const cd=parteDataISO(d.CLOSEDATE);
+        const md=parteDataISO(d.DATE_MODIFY);
+        const dc=parteDataISO(d.DATE_CREATE);
+        let ehCarryover = false;
+        let motivo = "";
+        if(cd && md && md > cd){ ehCarryover = true; motivo = "Modificado pós CLOSEDATE"; }
+        else if(cd && cd < hj){ ehCarryover = true; motivo = "CLOSEDATE vencida"; }
+        else if(dc && dc < isoMes){ ehCarryover = true; motivo = "Carryover de mês anterior"; }
+        
+        if(ehCarryover){
+          rows.push({
+            DEAL: d.ID,
+            CLIENTE: d._CLIENTE,
+            RESPONSAVEL: d._RESPONSAVEL,
+            MOTIVO: motivo,
+            CLOSEDATE: cd || "Sem data",
+            MODIFICADO: md || "—",
+            VALOR: d._VALOR
+          });
+        }
+      });
+      rows.sort((a,b)=>b.VALOR-a.VALOR);
+
+      let prevHist = 0, realHist = 0, temHist = false, msgHist = "Histórico prévio de snapshots não localizado.";
+      try {
+        let histData = [];
+        if (typeof carregarHistoricoCompartilhadoForecast === "function") {
+          const comp = await carregarHistoricoCompartilhadoForecast();
+          const loc = (typeof carregarHistoricoForecastLocal === "function") ? carregarHistoricoForecastLocal() : [];
+          histData = mesclarHistoricosForecast(comp, loc);
+        } else {
+          const r = await fetch("relatorios/forecast-semanal/historico.json");
+          if (r.ok) histData = await r.json();
+        }
+        if (Array.isArray(histData) && histData.length > 0) {
+          temHist = true;
+          const ult = histData[histData.length - 1];
+          prevHist = Number(ult.projecaoMes ?? ult.FORECAST_TOTAL ?? 0);
+          realHist = Number(ult.fechadoMes ?? ult.FECHADO ?? 0);
+          msgHist = `Snapshot de histórico mais recente de ${formatarDataBR(ult.data)}.`;
+        }
+      } catch(e) {}
+
+      const totalValor = rows.reduce((a,r)=>a+r.VALOR, 0);
+      criarResultadoCatalogo(chave,"Pipeline Carryover","Negócios com fechamento postergado.",
+        [
+          kpi("Negócios Postergados", rows.length),
+          kpi("Valor Postergado", moedaRelatorio(totalValor)),
+          kpi("Histórico Projeção", temHist ? moedaRelatorio(prevHist) : "Dados históricos insuficientes"),
+          kpi("Histórico Fechado", temHist ? moedaRelatorio(realHist) : "Dados históricos insuficientes")
+        ],
+        [{titulo:"Negócios postergados (Carryover)",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Motivo",valor:"MOTIVO"},{label:"CloseDate",valor:"CLOSEDATE"},{label:"Modificado",valor:"MODIFICADO"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}],
+        msgHist);
     }
     else if(chave==="closedate_intelligence"){
-      const b=await baseDealsCatalogo(webhook,true),hj=formatarDataISO(new Date()),ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
-      let venc=0,vencV=0,sem=0,semV=0; const rows=[];
-      ds.forEach(d=>{const cd=parteDataISO(d.CLOSEDATE);if(!cd){sem++;semV+=d._VALOR;rows.push({DEAL:d.ID,CLIENTE:d._CLIENTE,SIT:"Sem CLOSEDATE",VALOR:d._VALOR});}else if(cd<hj){venc++;vencV+=d._VALOR;rows.push({DEAL:d.ID,CLIENTE:d._CLIENTE,SIT:"Vencida",VALOR:d._VALOR});}});
-      criarResultadoCatalogo(chave,"CLOSEDATE Intelligence","Higiene de datas no pipeline aberto.",
-        [kpi("Vencidas",venc),kpi("Valor Vencido",moedaRelatorio(vencV)),kpi("Sem Data",sem),kpi("Valor Sem Data",moedaRelatorio(semV))],
-        [{titulo:"Oportunidades com problema de data",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Situação",valor:"SIT"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
+      const b=await baseDealsCatalogo(webhook,true);
+      const hj=p.referencia ? p.referencia : formatarDataISO(new Date());
+      const isoMes=hj.slice(0,7);
+      const ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+      
+      let venc=0, vencV=0, sem=0, semV=0, noMes=0, noMesV=0;
+      const rows=[];
+      ds.forEach(d=>{
+        const cd=parteDataISO(d.CLOSEDATE);
+        if(!cd){
+          sem++; semV+=d._VALOR;
+          rows.push({DEAL:d.ID, CLIENTE:d._CLIENTE, RESPONSAVEL:d._RESPONSAVEL, SIT:"Sem CLOSEDATE", CLOSEDATE:"—", VALOR:d._VALOR});
+        } else if(cd < hj){
+          venc++; vencV+=d._VALOR;
+          rows.push({DEAL:d.ID, CLIENTE:d._CLIENTE, RESPONSAVEL:d._RESPONSAVEL, SIT:"Vencida", CLOSEDATE:cd, VALOR:d._VALOR});
+        } else if(cd.slice(0,7) === isoMes){
+          noMes++; noMesV+=d._VALOR;
+        }
+      });
+      rows.sort((a,b)=>b.VALOR-a.VALOR);
+
+      criarResultadoCatalogo(chave,"CLOSEDATE Intelligence","Higiene de datas no pipeline aberto (vencidas, sem data, no mês).",
+        [
+          kpi("Vencidas", venc),
+          kpi("Valor Vencido", moedaRelatorio(vencV)),
+          kpi("Sem Data", sem),
+          kpi("Valor Sem Data", moedaRelatorio(semV)),
+          kpi("Vence no Mês", noMes),
+          kpi("Valor no Mês", moedaRelatorio(noMesV))
+        ],
+        [{titulo:"Oportunidades com problema de data (Vencidas / Sem Data)",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Situação",valor:"SIT"},{label:"CLOSEDATE",valor:"CLOSEDATE"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
     }
     else if(chave==="forecast_accuracy"){
-      let prev=0,real=0,msg="Dados históricos insuficientes.";
-      try{const r=await fetch("relatorios/forecast-semanal/historico.json");if(r.ok){const data=await r.json();if(data.length>0){const ult=data[data.length-1];prev=ult.FORECAST_TOTAL||0;real=ult.FECHADO||0;msg="Snapshot mais recente coletado.";}}}catch(e){}
-      criarResultadoCatalogo(chave,"Forecast Accuracy","Comparação contra histórico oficial.",
-        [kpi("Última Previsão",prev?moedaRelatorio(prev):"Dados históricos insuficientes"),kpi("Realizado",real?moedaRelatorio(real):"Dados históricos insuficientes"),kpi("Accuracy",prev?`${taxaPct(real,prev)}%`:"Dados históricos insuficientes")],[],msg);
+      let prev=0, real=0, meta=0, acc=0, temDados=false, msg="Dados históricos insuficientes.";
+      let rows=[];
+      try{
+        let data = [];
+        if (typeof carregarHistoricoCompartilhadoForecast === "function") {
+          const comp = await carregarHistoricoCompartilhadoForecast();
+          const loc = (typeof carregarHistoricoForecastLocal === "function") ? carregarHistoricoForecastLocal() : [];
+          data = mesclarHistoricosForecast(comp, loc);
+        } else {
+          const r = await fetch("relatorios/forecast-semanal/historico.json");
+          if (r.ok) data = await r.json();
+        }
+        if (Array.isArray(data) && data.length > 0) {
+          temDados = true;
+          rows = data.map(item => {
+            const pVal = Number(item.projecaoMes ?? item.FORECAST_TOTAL ?? 0);
+            const fVal = Number(item.fechadoMes ?? item.FECHADO ?? 0);
+            const mVal = Number(item.metaMensal ?? 0);
+            const acVal = pVal > 0 ? (typeof taxaPct === "function" ? taxaPct(fVal, pVal) : Math.round((fVal / pVal) * 10000) / 100) : 0;
+            return {
+              DATA: item.data || "—",
+              FONTE: item.fonte === "local" ? "💻 Local" : "🤖 Automático",
+              META: mVal,
+              PROJECAO: pVal,
+              FECHADO: fVal,
+              ACCURACY: pVal > 0 ? `${acVal}%` : "—"
+            };
+          }).reverse();
+          const ult = data[data.length - 1];
+          prev = Number(ult.projecaoMes ?? ult.FORECAST_TOTAL ?? 0);
+          real = Number(ult.fechadoMes ?? ult.FECHADO ?? 0);
+          meta = Number(ult.metaMensal ?? 0);
+          acc = prev > 0 ? (typeof taxaPct === "function" ? taxaPct(real, prev) : Math.round((real / prev) * 10000) / 100) : 0;
+          msg = `Acurácia do forecast comparando histórico oficial (projecaoMes vs fechadoMes). Coletados ${data.length} registro(s).`;
+        }
+      } catch(e) {
+        msg = "Dados históricos insuficientes.";
+      }
+      criarResultadoCatalogo(chave,"Forecast Accuracy","Comparação contra histórico oficial (projecaoMes vs fechadoMes).",
+        [
+          kpi("Última Previsão", temDados && prev ? moedaRelatorio(prev) : "Dados históricos insuficientes"),
+          kpi("Realizado", temDados && real ? moedaRelatorio(real) : "Dados históricos insuficientes"),
+          kpi("Accuracy", temDados && prev ? `${acc}%` : "Dados históricos insuficientes")
+        ],
+        temDados ? [{titulo:"Histórico de acurácia oficial",dados:rows,colunas:[{label:"Data",valor:"DATA"},{label:"Fonte",valor:"FONTE"},{label:"Meta",valor:x=>moedaRelatorio(x.META),html:true},{label:"Projeção",valor:x=>moedaRelatorio(x.PROJECAO),html:true},{label:"Fechado",valor:x=>moedaRelatorio(x.FECHADO),html:true},{label:"Accuracy",valor:"ACCURACY"}]}] : [],
+        msg);
     }
     else if(chave==="opportunity_health_score"){
-      const b=await baseDealsCatalogo(webhook,true),hj=new Date(),hjI=formatarDataISO(hj),ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
-      const PESOS_HEALTH = {
-        PUNICAO_SEM_DATA: Number(document.getElementById("healthPesoSemData")?.value) || 30,
-        PUNICAO_DATA_VENCIDA: Number(document.getElementById("healthPesoDataVencida")?.value) || 40,
-        LIMIAR_AGING: Number(document.getElementById("healthLimiarAging")?.value) || 30,
-        MAX_PUNICAO_AGING: Number(document.getElementById("healthMaxPunicaoAging")?.value) || 50
-      };
-      const rows=ds.map(d=>{
-        let s=100; const cd=parteDataISO(d.CLOSEDATE);
-        let cV=100; if(!cd){cV-=PESOS_HEALTH.PUNICAO_SEM_DATA;s-=PESOS_HEALTH.PUNICAO_SEM_DATA}else if(cd<hjI){cV-=PESOS_HEALTH.PUNICAO_DATA_VENCIDA;s-=PESOS_HEALTH.PUNICAO_DATA_VENCIDA}
-        let aV=100; const mt=parteDataISO(d.MOVED_TIME);if(mt){const ag=Math.floor((hj-new Date(mt+"T12:00:00"))/86400000);if(ag>PESOS_HEALTH.LIMIAR_AGING){aV-=Math.min(ag,PESOS_HEALTH.MAX_PUNICAO_AGING);s-=Math.min(ag,PESOS_HEALTH.MAX_PUNICAO_AGING);}}
-        return{DEAL:d.ID,CLIENTE:d._CLIENTE,SCORE:Math.max(0,s),S_DATE:cV,S_AGING:aV,VALOR:d._VALOR};
+      const b=await baseDealsCatalogo(webhook,true);
+      const ab=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+      const ref=new Date(`${p.referencia}T12:00:00`);
+      let somaScore=0, exc=0, sau=0, ate=0, cri=0;
+      const rows=ab.map(d=>{
+        let sAct=0;
+        if(d.LAST_ACTIVITY_TIME){
+          const diasAct=Math.max(0,Math.floor((ref-new Date(d.LAST_ACTIVITY_TIME))/86400000));
+          sAct=diasAct<=7?100:diasAct<=14?70:diasAct<=30?40:0;
+        }
+        let sDate=0;
+        const cd=parteDataISO(d.CLOSEDATE);
+        if(!cd) sDate=70;
+        else if(cd>=p.referencia) sDate=100;
+        else sDate=0;
+        let sAge=100;
+        if(d._CICLO!==""){
+          const c=Number(d._CICLO);
+          sAge=c<=30?100:c<=60?70:c<=90?40:0;
+        }
+        const pr=Number(d.PROBABILITY);
+        const sProb=(Number.isFinite(pr)&&pr>0&&pr<=100)?pr:probabilidadeFallbackForecast(d._ESTAGIO,d._SEMANTICA);
+        const score=Math.round(sAct*0.3 + sDate*0.25 + sAge*0.25 + sProb*0.2);
+        somaScore+=score;
+        let faixa="Saudável";
+        if(score>=80){exc++;faixa="Excelente"}
+        else if(score>=60){sau++;faixa="Saudável"}
+        else if(score>=40){ate++;faixa="Atenção"}
+        else{cri++;faixa="Crítico"}
+        return {
+          DEAL: String(d.ID),
+          CLIENTE: d._CLIENTE,
+          RESPONSAVEL: d._RESPONSAVEL,
+          ESTAGIO: d._ESTAGIO,
+          VALOR: d._VALOR,
+          SCORE: score,
+          S_ACT: sAct,
+          S_DATE: sDate,
+          S_AGE: sAge,
+          S_PROB: sProb,
+          FAIXA: faixa
+        };
       }).sort((a,b)=>b.SCORE-a.SCORE);
-      criarResultadoCatalogo(chave,"Opportunity Health Score","Score de 0 a 100 baseado em pesos centralizados e parametrizáveis.",
-        [kpi("Oportunidades",rows.length),kpi("Score Médio",rows.length?Math.round(rows.reduce((a,r)=>a+r.SCORE,0)/rows.length):0)],
-        [{titulo:"Health Score e decomposição",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Score Total",valor:"SCORE"},{label:"Score Data",valor:"S_DATE"},{label:"Score Aging",valor:"S_AGING"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
+
+      const med=ab.length?Math.round(somaScore/ab.length):0;
+      criarResultadoCatalogo(chave,"Opportunity Health Score","Score de saúde das oportunidades abertas (0 a 100).",
+        [
+          kpi("Abertas",ab.length),
+          kpi("Score Médio",`${med}/100`),
+          kpi("Excelente (>=80)",exc),
+          kpi("Saudável (60-79)",sau),
+          kpi("Atenção (40-59)",ate),
+          kpi("Crítico (<40)",cri)
+        ],
+        [{titulo:"Score de saúde por oportunidade",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Estágio",valor:"ESTAGIO"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true},{label:"Score",valor:x=>`${x.SCORE}/100`},{label:"Faixa",valor:"FAIXA"}]}],
+        "Score considera Atividade Recente (30%), CLOSEDATE (25%), Aging (25%) e Probabilidade (20%).");
     }
     else if(chave==="pipeline_velocity"){
-      const b=await baseDealsCatalogo(webhook,true),co=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>dentroPeriodoCatalogo(d.DATE_CREATE,p)),won=co.filter(d=>d._SEMANTICA==="success"),ab=b.deals.filter(d=>semanticaDeal(d)==="process"),wr=won.length/(won.length+co.filter(d=>d._SEMANTICA==="failure").length)||0,tkm=won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0,cs=won.map(d=>Number(d._CICLO)).filter(Number.isFinite),ciclo=cs.length?cs.reduce((a,c)=>a+c,0)/cs.length:1;
-      const vel=ciclo>0?(ab.length*tkm*wr)/ciclo:0;
-      criarResultadoCatalogo(chave,"Pipeline Velocity","Velocidade = (Oportunidades × Ticket × Win Rate / Ciclo).",
-        [kpi("Velocity",vel?moedaRelatorio(vel):"Não foi possível calcular"),kpi("Oportunidades",ab.length),kpi("Win Rate Histórico",`${Math.round(wr*100)}%`),kpi("Ticket Médio",moedaRelatorio(tkm)),kpi("Ciclo Médio",`${Math.round(ciclo)}d`)],[]);
+      const b=await baseDealsCatalogo(webhook,true);
+      const ds=b.deals.map(d=>enriquecerDealCatalogo(d,b));
+      const m={};
+      ds.forEach(d=>{
+        const k=String(d.ASSIGNED_BY_ID||"0");
+        const r=m[k]||=( {RESPONSAVEL:d._RESPONSAVEL,OPORTUNIDADES:0,GANHOS:0,PERDAS:0,RECEITA:0,CICLO_SOMA:0,CICLO_N:0});
+        if(dentroPeriodoCatalogo(d.DATE_CREATE,p)) r.OPORTUNIDADES++;
+        if(dentroPeriodoCatalogo(d._FECHAMENTO,p)){
+          if(d._SEMANTICA==="success"){r.GANHOS++;r.RECEITA+=d._VALOR}
+          else if(d._SEMANTICA==="failure"){r.PERDAS++}
+          if(d._CICLO!==""){r.CICLO_SOMA+=Number(d._CICLO);r.CICLO_N++}
+        }
+      });
+      let velGeral=0, projGeral=0, totOpp=0, totGan=0, totRec=0, totCicloSoma=0, totCicloN=0;
+      const rows=Object.values(m).map(r=>{
+        const closed=r.GANHOS+r.PERDAS;
+        const winRate=closed?r.GANHOS/closed:0;
+        const ticket=r.GANHOS?r.RECEITA/r.GANHOS:0;
+        const ciclo=r.CICLO_N?r.CICLO_SOMA/r.CICLO_N:30;
+        const velDia=ciclo>0?(r.OPORTUNIDADES * winRate * ticket)/ciclo:0;
+        const proj30d=velDia*30;
+        velGeral+=velDia;
+        projGeral+=proj30d;
+        totOpp+=r.OPORTUNIDADES;
+        totGan+=r.GANHOS;
+        totRec+=r.RECEITA;
+        totCicloSoma+=r.CICLO_SOMA;
+        totCicloN+=r.CICLO_N;
+        return {
+          RESPONSAVEL: r.RESPONSAVEL,
+          OPORTUNIDADES: r.OPORTUNIDADES,
+          GANHOS: r.GANHOS,
+          WIN_RATE: `${taxaPct(r.GANHOS,closed)}%`,
+          TICKET: ticket,
+          CICLO: Math.round(ciclo*10)/10,
+          VELOCITY_DIA: velDia,
+          PROJECAO_30D: proj30d
+        };
+      }).sort((a,b)=>b.VELOCITY_DIA-a.VELOCITY_DIA);
+      const cicloMedGeral=totCicloN?Math.round(totCicloSoma/totCicloN*10)/10:30;
+      const ticketMedGeral=totGan?totRec/totGan:0;
+      criarResultadoCatalogo(chave,"Pipeline Velocity","Velocidade de conversão do pipeline em receita por dia.",
+        [
+          kpi("Velocity Geral",`${moedaRelatorio(velGeral)}/dia`),
+          kpi("Projeção Mensal (30d)",moedaRelatorio(projGeral)),
+          kpi("Oportunidades Criadas",totOpp),
+          kpi("Ganhos",totGan),
+          kpi("Ticket Médio",moedaRelatorio(ticketMedGeral)),
+          kpi("Ciclo Médio",`${cicloMedGeral}d`)
+        ],
+        [{titulo:"Pipeline Velocity por responsável",dados:rows,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Oportunidades",valor:"OPORTUNIDADES"},{label:"Ganhos",valor:"GANHOS"},{label:"Win Rate",valor:"WIN_RATE"},{label:"Ticket",valor:x=>moedaRelatorio(x.TICKET),html:true},{label:"Ciclo Médio",valor:x=>`${x.CICLO}d`},{label:"Velocity/dia",valor:x=>`${moedaRelatorio(x.VELOCITY_DIA)}/d`,html:true},{label:"Projeção 30d",valor:x=>moedaRelatorio(x.PROJECAO_30D),html:true}]}],
+        "Fórmula oficial: Velocity = (Oportunidades × Win Rate × Ticket Médio) ÷ Ciclo Médio (dias).");
     }
     else if(chave==="receita_em_risco"){
-      const b=await baseDealsCatalogo(webhook,true),hj=new Date(),hjI=formatarDataISO(hj),ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
-      const rows=ds.map(d=>{const cd=parteDataISO(d.CLOSEDATE),mt=parteDataISO(d.MOVED_TIME),ag=mt?Math.floor((hj-new Date(mt+"T12:00:00"))/86400000):0;const risco=(!cd||cd<hjI||ag>30);return risco?{DEAL:d.ID,CLIENTE:d._CLIENTE,VENDEDOR:d._RESPONSAVEL,ESTAGIO:d._ESTAGIO,SIT:!cd?"Sem data":(cd<hjI?"Vencida":"Aging Alto"),VALOR:d._VALOR}:null;}).filter(Boolean);
-      criarResultadoCatalogo(chave,"Receita em Risco","Oportunidades com aging alto ou datas vencidas.",
-        [kpi("Oportunidades em Risco",rows.length),kpi("Valor em Risco",moedaRelatorio(rows.reduce((a,r)=>a+r.VALOR,0)))],
-        [{titulo:"Receita em risco",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Vendedor",valor:"VENDEDOR"},{label:"Estágio",valor:"ESTAGIO"},{label:"Motivo",valor:"SIT"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]}]);
+      const b=await baseDealsCatalogo(webhook,true);
+      const ref=new Date(`${p.referencia}T12:00:00`);
+      const ab=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+      let valRisco=0, semCD=0, cdVenc=0, estagnado=0;
+      const rows=[];
+      ab.forEach(d=>{
+        const cd=parteDataISO(d.CLOSEDATE);
+        const mt=parteDataISO(d.MOVED_TIME||d.DATE_CREATE);
+        const diasMov=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):0;
+        const motivos=[];
+        if(!cd){semCD++;motivos.push("Sem CLOSEDATE")}
+        else if(cd<p.referencia){cdVenc++;motivos.push("CLOSEDATE vencida")}
+        if(diasMov>30){estagnado++;motivos.push(`Estagnado (${diasMov}d)`)}
+        if(motivos.length>0){
+          valRisco+=d._VALOR;
+          rows.push({
+            DEAL: String(d.ID),
+            CLIENTE: d._CLIENTE,
+            RESPONSAVEL: d._RESPONSAVEL,
+            ESTAGIO: d._ESTAGIO,
+            VALOR: d._VALOR,
+            SIT: motivos.join(" | ")
+          });
+        }
+      });
+      rows.sort((a,b)=>b.VALOR-a.VALOR);
+      criarResultadoCatalogo(chave,"Receita em Risco","Oportunidades abertas com risco de fechamento ou estagnação.",
+        [
+          kpi("Oportunidades em Risco",rows.length),
+          kpi("Valor em Risco",moedaRelatorio(valRisco)),
+          kpi("Sem CLOSEDATE",semCD),
+          kpi("CLOSEDATE Vencida",cdVenc),
+          kpi("Estagnados > 30d",estagnado)
+        ],
+        [{titulo:"Detalhamento de receita em risco",dados:rows,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Estágio",valor:"ESTAGIO"},{label:"Valor em Risco",valor:x=>moedaRelatorio(x.VALOR),html:true},{label:"Motivo de Risco",valor:"SIT"}]}],
+        "Considera negócios abertos sem CLOSEDATE, com CLOSEDATE vencida ou estagnados há mais de 30 dias.");
     }
     else if(chave==="motivos_ganho_perda"){
-      criarResultadoCatalogo(chave,"Motivos de Ganho e Perda","Campo de motivo de ganho não disponível no CRM atual.",[],[],"Nenhum campo estruturado de motivo de perda/ganho foi localizado (ausência de UF_CRM mapeado no Bitrix).");
+      const b=await baseDealsCatalogo(webhook,true);
+      const ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>dentroPeriodoCatalogo(d._FECHAMENTO,p)&&(d._SEMANTICA==="success"||d._SEMANTICA==="failure"));
+      let won=0, lost=0, recGanha=0, valPerdido=0;
+      const mapaMotivos={};
+      const rowsDet=[];
+      ds.forEach(d=>{
+        const res=d._SEMANTICA==="success"?"Ganho":"Perdido";
+        if(d._SEMANTICA==="success"){won++;recGanha+=d._VALOR}
+        else{lost++;valPerdido+=d._VALOR}
+        const motivo=d.ADDITIONAL_INFO||d.UF_CRM_1770928318695||d._ESTAGIO||"Não especificado";
+        const k=`${res}|||${motivo}`;
+        const item=mapaMotivos[k]||=( {RESULTADO:res,MOTIVO_ESTAGIO:motivo,DEALS:0,VALOR:0});
+        item.DEALS++;
+        item.VALOR+=d._VALOR;
+        rowsDet.push({
+          DEAL: String(d.ID),
+          CLIENTE: d._CLIENTE,
+          RESPONSAVEL: d._RESPONSAVEL,
+          RESULTADO: res,
+          ESTAGIO: d._ESTAGIO,
+          VALOR: d._VALOR,
+          MOTIVO: motivo
+        });
+      });
+      const totFechados=won+lost;
+      const rowsAgrup=Object.values(mapaMotivos).map(r=>({...r,PERCENTUAL:`${taxaPct(r.DEALS,totFechados)}%`})).sort((a,b)=>b.DEALS-a.DEALS);
+      criarResultadoCatalogo(chave,"Motivos de Ganho e Perda","Análise de motivos e estágios de fechamento em dados reais Bitrix.",
+        [
+          kpi("Fechados",totFechados),
+          kpi("Deals Ganhos",won),
+          kpi("Receita Ganha",moedaRelatorio(recGanha)),
+          kpi("Deals Perdidos",lost),
+          kpi("Valor Perdido",moedaRelatorio(valPerdido)),
+          kpi("Win Rate",`${taxaPct(won,totFechados)}%`)
+        ],
+        [
+          {titulo:"Agrupamento por resultado e motivo",dados:rowsAgrup,colunas:[{label:"Resultado",valor:"RESULTADO"},{label:"Motivo / Estágio",valor:"MOTIVO_ESTAGIO"},{label:"Deals",valor:"DEALS"},{label:"Valor Total",valor:x=>moedaRelatorio(x.VALOR),html:true},{label:"% Fechados",valor:"PERCENTUAL"}]},
+          {titulo:"Detalhamento individual de fechamentos",dados:rowsDet,colunas:[{label:"Deal",valor:"DEAL"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Resultado",valor:"RESULTADO"},{label:"Estágio",valor:"ESTAGIO"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true},{label:"Motivo Registrado",valor:"MOTIVO"}]}
+        ],
+        "Motivos extraídos de campos reais do Bitrix (ADDITIONAL_INFO / estágio de perda).");
     }
+
     else if(chave==="vendido_faturado"){
       // 49. Vendido × Faturado
       const b=await baseDealsCatalogo(webhook,true);
@@ -653,7 +1137,8 @@ async function extrairRelatorioCatalogo(webhook,chave){
             {label:"NFs",valor:"NFS"},
             {label:"Ações",valor:"ACOES",html:true}
           ]}
-        ]);
+        ],
+        "Fonte primária dos registros de faturamento baseada em localStorage local do navegador (namespace atlas-extrator-faturamentos). Classificação mantida no máximo como Classe B/C (nunca Classe A) até haver persistência corporativa centralizada (PostgreSQL / camada Bronze).");
     }
 
     else if(chave==="backlog_financeiro"){
@@ -726,27 +1211,333 @@ async function extrairRelatorioCatalogo(webhook,chave){
             {label:"NFs parciais",valor:"NFS"},
             {label:"Ações",valor:"ACOES",html:true}
           ]}
-        ]);
+        ],
+        "Cálculo de backlog e saldo pendente baseado na reconciliação de vendas Bitrix com faturamentos armazenados no localStorage local do navegador (namespace atlas-extrator-faturamentos). Classificação mantida no máximo como Classe B/C (nunca Classe A) até haver persistência corporativa centralizada (PostgreSQL / camada Bronze).");
+    }
+
+    else if(chave==="crm_health_score"){
+      const [db,lb,a]=await Promise.all([
+        baseDealsCatalogo(webhook,false),
+        baseLeadsCatalogo(webhook),
+        atividadesCatalogo(webhook,false,"","")
+      ]);
+      const ds=db.deals, ls=lb.leads, ats=a.dados, ref=p.referencia;
+      const openDeals=ds.filter((d)=>semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{})==="process"&&!ehEstagioPiloto(d.STAGE_ID,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]?.label));
+
+      // 1. Completude de Dados (peso: 40%)
+      const checksData=[
+        {total:ds.length, faltantes:ds.filter((d)=>!idBitrixValido(d.COMPANY_ID)&&!idBitrixValido(d.CONTACT_ID)&&!idBitrixValido(d.LEAD_ID)).length},
+        {total:ds.length, faltantes:ds.filter((d)=>!String(d.SOURCE_ID||"").trim()).length},
+        {total:ds.length, faltantes:ds.filter((d)=>!idBitrixValido(d.ASSIGNED_BY_ID)).length},
+        {total:ds.length, faltantes:ds.filter((d)=>!(Number(d.OPPORTUNITY)>0)).length},
+        {total:ls.length, faltantes:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
+        {total:ls.length, faltantes:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length},
+        {total:ls.length, faltantes:ls.filter((l)=>!String(l.COMPANY_TITLE||l.NAME||l.TITLE||"").trim()).length},
+        {total:ls.length, faltantes:ls.filter((l)=>!(valoresMulticampo(l,"PHONE").length||valoresMulticampo(l,"EMAIL").length)).length}
+      ];
+      const totalChecksSum=checksData.reduce((s,c)=>s+c.total,0);
+      const totalFaltantesSum=checksData.reduce((s,c)=>s+c.faltantes,0);
+      const completudePct=totalChecksSum?Math.round((1-totalFaltantesSum/totalChecksSum)*10000)/100:100;
+      const pilarCompletudeScore=Math.round(completudePct*0.40);
+
+      // 2. Higiene de Atividades Pendentes (peso: 30%)
+      const atrasadas=ats.filter((x)=>{
+        const prazo=parteDataISO(x.DEADLINE||x.END_TIME||x.START_TIME);
+        return prazo && prazo < ref;
+      }).length;
+      const atividadesSaudaveisPct=ats.length?Math.round(((ats.length-atrasadas)/ats.length)*10000)/100:100;
+      const pilarAtividadesScore=Math.round(atividadesSaudaveisPct*0.30);
+
+      // 3. CLOSEDATE Válidas em Negócios Abertos (peso: 30%)
+      const closedateInvalidas=openDeals.filter((d)=>{
+        const cd=parteDataISO(d.CLOSEDATE);
+        return !cd || cd < ref;
+      }).length;
+      const closedateValidaPct=openDeals.length?Math.round(((openDeals.length-closedateInvalidas)/openDeals.length)*10000)/100:100;
+      const pilarCloseDateScore=Math.round(closedateValidaPct*0.30);
+
+      // Score Total (0 a 100)
+      const scoreTotal=Math.min(100, Math.max(0, Math.round(pilarCompletudeScore + pilarAtividadesScore + pilarCloseDateScore)));
+      const faixaStatus=scoreTotal>=85?"Excelente (Saudável)":scoreTotal>=70?"Bom (Atenção moderada)":scoreTotal>=50?"Regular (Requer saneamento)":"Crítico (Ação imediata)";
+
+      const pilares=[
+        {PILAR:"Completude de Dados",PESO:"40%",METRICA:`${completudePct}%`,PONTOS:`${pilarCompletudeScore} / 40`},
+        {PILAR:"Higiene de Atividades (Backlog)",PESO:"30%",METRICA:`${atividadesSaudaveisPct}% sem atraso`,PONTOS:`${pilarAtividadesScore} / 30`},
+        {PILAR:"CLOSEDATE Válida em Abertos",PESO:"30%",METRICA:`${closedateValidaPct}% válidas`,PONTOS:`${pilarCloseDateScore} / 30`}
+      ];
+
+      const ocorrencias=[
+        {REGRA:"Campos faltantes (Deals + Leads)",ENTIDADE:"Deals/Leads",TOTAL:totalChecksSum,INCONSISTENTES:totalFaltantesSum,IMPACTO:`- ${Math.round((100-completudePct)*0.40)} pts`},
+        {REGRA:"Atividades atrasadas",ENTIDADE:"Atividades",TOTAL:ats.length,INCONSISTENTES:atrasadas,IMPACTO:`- ${Math.round((100-atividadesSaudaveisPct)*0.30)} pts`},
+        {REGRA:"CLOSEDATE ausente ou no passado",ENTIDADE:"Negócios Abertos",TOTAL:openDeals.length,INCONSISTENTES:closedateInvalidas,IMPACTO:`- ${Math.round((100-closedateValidaPct)*0.30)} pts`}
+      ];
+
+      criarResultadoCatalogo(chave,"CRM Health Score — Saúde Operacional",`Pontuação global de saúde operacional: <strong>${scoreTotal}/100</strong> (${faixaStatus}).`,
+        [
+          kpi("CRM Health Score",`${scoreTotal}/100`),
+          kpi("Status",faixaStatus),
+          kpi("Completude Dados",`${completudePct}%`),
+          kpi("Atividades Ok",`${atividadesSaudaveisPct}%`),
+          kpi("CLOSEDATE Ok",`${closedateValidaPct}%`),
+          kpi("Atividades Atrasadas",atrasadas),
+          kpi("Deals CLOSEDATE Invalida",closedateInvalidas)
+        ],
+        [
+          {titulo:"Resumo dos Pilares de Saúde",dados:pilares,colunas:[{label:"Pilar de Qualidade",valor:"PILAR"},{label:"Peso",valor:"PESO"},{label:"Métrica Atual",valor:"METRICA"},{label:"Contribuição",valor:"PONTOS"}]},
+          {titulo:"Impacto por Regra de Inconsistência",dados:ocorrencias,colunas:[{label:"Regra de Auditoria",valor:"REGRA"},{label:"Entidade Auditada",valor:"ENTIDADE"},{label:"Total Auditado",valor:"TOTAL"},{label:"Ocorrências",valor:"INCONSISTENTES"},{label:"Impacto no Score",valor:"IMPACTO"}]}
+        ],
+        "Cálculo ponderado do CRM Health Score: 40% completude de campos operacionais, 30% ausência de atividades atrasadas, 30% higiene de CLOSEDATE em negócios abertos.");
     }
 
     else if(chave==="qualidade_crm"){
-      const [db,lb]=await Promise.all([baseDealsCatalogo(webhook,false),baseLeadsCatalogo(webhook)]),ds=db.deals,ls=lb.leads;
+      const [db,lb]=await Promise.all([baseDealsCatalogo(webhook,false),baseLeadsCatalogo(webhook)]),ds=db.deals,ls=lb.leads,ref=p.referencia;
       const open=ds.filter((d)=>semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{})==="process"&&!ehEstagioPiloto(d.STAGE_ID,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]?.label));
+      
       const checks=[
         {ENTIDADE:"Negócios",CAMPO:"Vínculo cliente",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!idBitrixValido(d.COMPANY_ID)&&!idBitrixValido(d.CONTACT_ID)&&!idBitrixValido(d.LEAD_ID)).length},
-        {ENTIDADE:"Negócios",CAMPO:"SOURCE_ID",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!String(d.SOURCE_ID||"").trim()).length},
-        {ENTIDADE:"Negócios",CAMPO:"ASSIGNED_BY_ID",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!idBitrixValido(d.ASSIGNED_BY_ID)).length},
-        {ENTIDADE:"Negócios",CAMPO:"OPPORTUNITY > 0",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!(Number(d.OPPORTUNITY)>0)).length},
-        {ENTIDADE:"Negócios abertos",CAMPO:"CLOSEDATE",TOTAL:open.length,FALTANTES:open.filter((d)=>!parteDataISO(d.CLOSEDATE)).length},
-        {ENTIDADE:"Leads",CAMPO:"SOURCE_ID",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
-        {ENTIDADE:"Leads",CAMPO:"ASSIGNED_BY_ID",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length},
-        {ENTIDADE:"Leads",CAMPO:"Empresa / nome",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.COMPANY_TITLE||l.NAME||l.TITLE||"").trim()).length},
+        {ENTIDADE:"Negócios",CAMPO:"SOURCE_ID (Origem)",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!String(d.SOURCE_ID||"").trim()).length},
+        {ENTIDADE:"Negócios",CAMPO:"ASSIGNED_BY_ID (Responsável)",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!idBitrixValido(d.ASSIGNED_BY_ID)).length},
+        {ENTIDADE:"Negócios",CAMPO:"OPPORTUNITY > 0 (Valor)",TOTAL:ds.length,FALTANTES:ds.filter((d)=>!(Number(d.OPPORTUNITY)>0)).length},
+        {ENTIDADE:"Negócios abertos",CAMPO:"CLOSEDATE preenchida",TOTAL:open.length,FALTANTES:open.filter((d)=>!parteDataISO(d.CLOSEDATE)).length},
+        {ENTIDADE:"Negócios abertos",CAMPO:"CLOSEDATE válida (não vencida)",TOTAL:open.length,FALTANTES:open.filter((d)=>{const cd=parteDataISO(d.CLOSEDATE); return !cd || cd < ref;}).length},
+        {ENTIDADE:"Leads",CAMPO:"SOURCE_ID (Origem)",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.SOURCE_ID||"").trim()).length},
+        {ENTIDADE:"Leads",CAMPO:"ASSIGNED_BY_ID (Responsável)",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!idBitrixValido(l.ASSIGNED_BY_ID)).length},
+        {ENTIDADE:"Leads",CAMPO:"Empresa / nome preenchido",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!String(l.COMPANY_TITLE||l.NAME||l.TITLE||"").trim()).length},
         {ENTIDADE:"Leads",CAMPO:"Telefone ou e-mail",TOTAL:ls.length,FALTANTES:ls.filter((l)=>!(valoresMulticampo(l,"PHONE").length||valoresMulticampo(l,"EMAIL").length)).length}
       ].map((x)=>({...x,COMPLETUDE_PCT:x.TOTAL?Math.round((1-x.FALTANTES/x.TOTAL)*10000)/100:100}));
-      criarResultadoCatalogo(chave,"Qualidade do CRM & campos faltantes","Completude dos campos operacionais já mapeados.",
-        [kpi("Negócios",ds.length),kpi("Leads",ls.length),kpi("Checks",checks.length),kpi("Ocorrências faltantes",checks.reduce((a,x)=>a+x.FALTANTES,0)),kpi("Deals sem cliente",checks[0].FALTANTES),kpi("Deals sem origem",checks[1].FALTANTES),kpi("Leads sem origem",checks[5].FALTANTES),kpi("Leads sem contato",checks[8].FALTANTES)],
-        [{titulo:"Completude por regra",dados:checks,colunas:[{label:"Entidade",valor:"ENTIDADE"},{label:"Campo/regra",valor:"CAMPO"},{label:"Total",valor:"TOTAL"},{label:"Faltantes",valor:"FALTANTES"},{label:"Completude",valor:(x)=>`${x.COMPLETUDE_PCT}%`}]}],
-        "Completude mede disponibilidade para operação e análise; não afirma que todo campo seja obrigatório.");
+
+      // Detalhamento de Negócios com campos pendentes/faltantes
+      const dealsPendentes=ds.map((d)=>{
+        const sem=semanticaDeal(d,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]||{});
+        const dOpen=sem==="process"&&!ehEstagioPiloto(d.STAGE_ID,db.meta.estagios?.[String(d.CATEGORY_ID)]?.[String(d.STAGE_ID)]?.label);
+        const pend=[];
+        if(!idBitrixValido(d.COMPANY_ID)&&!idBitrixValido(d.CONTACT_ID)&&!idBitrixValido(d.LEAD_ID)) pend.push("Sem cliente");
+        if(!String(d.SOURCE_ID||"").trim()) pend.push("Sem origem");
+        if(!idBitrixValido(d.ASSIGNED_BY_ID)) pend.push("Sem responsável");
+        if(!(Number(d.OPPORTUNITY)>0)) pend.push("Valor zerado/nulo");
+        if(dOpen){
+          const cd=parteDataISO(d.CLOSEDATE);
+          if(!cd) pend.push("Sem CLOSEDATE");
+          else if(cd<ref) pend.push("CLOSEDATE vencida");
+        }
+        return pend.length?{
+          DEAL_ID:d.ID,
+          CLIENTE:enriquecerDealCatalogo(d,db)._CLIENTE,
+          RESPONSAVEL:enriquecerDealCatalogo(d,db)._RESPONSAVEL,
+          VALOR:Number(d.OPPORTUNITY)||0,
+          PENDENCIAS:pend.join(" | ")
+        }:null;
+      }).filter(Boolean);
+
+      // Detalhamento de Leads com campos pendentes/faltantes
+      const leadsPendentes=ls.map((l)=>{
+        const pend=[];
+        if(!String(l.SOURCE_ID||"").trim()) pend.push("Sem origem");
+        if(!idBitrixValido(l.ASSIGNED_BY_ID)) pend.push("Sem responsável");
+        if(!String(l.COMPANY_TITLE||l.NAME||l.TITLE||"").trim()) pend.push("Sem nome/empresa");
+        if(!(valoresMulticampo(l,"PHONE").length||valoresMulticampo(l,"EMAIL").length)) pend.push("Sem telefone/e-mail");
+        return pend.length?{
+          LEAD_ID:l.ID,
+          NOME:l.COMPANY_TITLE||`${l.NAME||""} ${l.LAST_NAME||""}`.trim()||l.TITLE||"Sem nome",
+          RESPONSAVEL:nomeUsuario(l.ASSIGNED_BY_ID)||(l.ASSIGNED_BY_ID?`ID ${l.ASSIGNED_BY_ID}`:"Sem responsável"),
+          PENDENCIAS:pend.join(" | ")
+        }:null;
+      }).filter(Boolean);
+
+      criarResultadoCatalogo(chave,"Qualidade do CRM & campos faltantes","Completude e integridade dos campos operacionais de Negócios e Leads.",
+        [
+          kpi("Negócios",ds.length),
+          kpi("Leads",ls.length),
+          kpi("Checks",checks.length),
+          kpi("Total Ocorrências",checks.reduce((a,x)=>a+x.FALTANTES,0)),
+          kpi("Deals com Pendência",dealsPendentes.length),
+          kpi("Leads com Pendência",leadsPendentes.length),
+          kpi("Deals sem cliente",checks[0].FALTANTES),
+          kpi("Leads sem contato",checks[9].FALTANTES)
+        ],
+        [
+          {titulo:"Completude por regra",dados:checks,colunas:[{label:"Entidade",valor:"ENTIDADE"},{label:"Campo/regra",valor:"CAMPO"},{label:"Total",valor:"TOTAL"},{label:"Faltantes",valor:"FALTANTES"},{label:"Completude",valor:(x)=>`${x.COMPLETUDE_PCT}%`}]},
+          {titulo:"Negócios com campos pendentes",dados:dealsPendentes,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Pendências",valor:"PENDENCIAS"}]},
+          {titulo:"Leads com campos pendentes",dados:leadsPendentes,colunas:[{label:"Lead",valor:"LEAD_ID"},{label:"Nome / Empresa",valor:"NOME"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Pendências",valor:"PENDENCIAS"}]}
+        ],
+        "Completude mede disponibilidade para operação e análise; inclui detalhamento por registro para saneamento operacional.");
+    }
+
+    else if(chave==="negocios_sem_proxima_atividade"){
+      const [db,a]=await Promise.all([
+        baseDealsCatalogo(webhook,false),
+        atividadesCatalogo(webhook,false,"","")
+      ]);
+      const ref=p.referencia;
+      const openDeals=db.deals.map((d)=>enriquecerDealCatalogo(d,db)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+
+      // Mapeia atividades pendentes por Deal ID
+      const atividadesPorDeal={};
+      a.dados.forEach((act)=>{
+        bindingsDaAtividade(act).forEach((b)=>{
+          if(b.OWNER_TYPE_ID==="2"){
+            const dealId=String(b.OWNER_ID);
+            (atividadesPorDeal[dealId]||=[]).push(act);
+          }
+        });
+      });
+
+      const semProximaAtividade=[];
+      const resPorVendedor={};
+
+      openDeals.forEach((d)=>{
+        const dealId=String(d.ID);
+        const acts=atividadesPorDeal[dealId]||[];
+        // Verifica se possui ao menos uma atividade pendente futura/hoje
+        const temFutura=acts.some((act)=>{
+          const prazo=parteDataISO(act.DEADLINE||act.END_TIME||act.START_TIME);
+          return !prazo || prazo >= ref;
+        });
+
+        const resp=d._RESPONSAVEL;
+        if(!resPorVendedor[resp]){
+          resPorVendedor[resp]={VENDEDOR:resp,ABERTOS:0,SEM_PROXIMA:0,VALOR_RISCO:0};
+        }
+        resPorVendedor[resp].ABERTOS++;
+
+        if(!temFutura){
+          resPorVendedor[resp].SEM_PROXIMA++;
+          resPorVendedor[resp].VALOR_RISCO+=d._VALOR;
+
+          const ultAct=acts.map((act)=>parteDataISO(act.LAST_UPDATED||act.CREATED)).filter(Boolean).sort().pop() || parteDataISO(d.DATE_MODIFY||d.DATE_CREATE)||"";
+          const diasSemAtividade=ultAct?Math.max(0, Math.floor((new Date(`${ref}T12:00:00`)-new Date(`${ultAct}T12:00:00`))/86400000)):0;
+
+          semProximaAtividade.push({
+            DEAL_ID:d.ID,
+            CLIENTE:d._CLIENTE,
+            FUNIL:d._FUNIL,
+            ETAPA:d._ESTAGIO,
+            VENDEDOR:d._RESPONSAVEL,
+            VALOR:d._VALOR,
+            ULTIMA_ATIVIDADE:ultAct||"Nenhuma",
+            DIAS_SEM_ATIVIDADE:diasSemAtividade
+          });
+        }
+      });
+
+      semProximaAtividade.sort((a,b)=>b.VALOR-a.VALOR);
+
+      const resumoVendedores=Object.values(resPorVendedor).map((v)=>({
+        ...v,
+        PCT_SEM_PROXIMA:v.ABERTOS?Math.round((v.SEM_PROXIMA/v.ABERTOS)*10000)/100:0
+      })).sort((a,b)=>b.VALOR_RISCO-a.VALOR_RISCO);
+
+      const totalValorRisco=semProximaAtividade.reduce((s,x)=>s+x.VALOR,0);
+      const pctTotalSemProxima=openDeals.length?Math.round((semProximaAtividade.length/openDeals.length)*10000)/100:0;
+
+      criarResultadoCatalogo(chave,"Negócios Abertos Sem Próxima Atividade","Listagem e risco de negócios abertos no pipeline sem atividade futura agendada.",
+        [
+          kpi("Negócios Abertos",openDeals.length),
+          kpi("Sem Próxima Atividade",semProximaAtividade.length),
+          kpi("% Sem Atividade",`${pctTotalSemProxima}%`),
+          kpi("Valor em Risco",moedaRelatorio(totalValorRisco)),
+          kpi("Vendedores Afetados",resumoVendedores.filter((v)=>v.SEM_PROXIMA>0).length)
+        ],
+        [
+          {titulo:"Resumo por vendedor",dados:resumoVendedores,colunas:[{label:"Vendedor",valor:"VENDEDOR"},{label:"Negócios Abertos",valor:"ABERTOS"},{label:"Sem Próxima",valor:"SEM_PROXIMA"},{label:"% Sem Próxima",valor:(x)=>`${x.PCT_SEM_PROXIMA}%`},{label:"Valor em Risco",valor:(x)=>moedaRelatorio(x.VALOR_RISCO),html:true}]},
+          {titulo:"Negócios abertos sem próxima atividade agendada",dados:semProximaAtividade,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Funil",valor:"FUNIL"},{label:"Etapa",valor:"ETAPA"},{label:"Vendedor",valor:"VENDEDOR"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Último Movimento",valor:"ULTIMA_ATIVIDADE"},{label:"Dias Sem Ação",valor:"DIAS_SEM_ATIVIDADE"}]}
+        ],
+        "Considera como sem próxima atividade os negócios abertos sem nenhuma atividade pendente com deadline para hoje ou datas futuras.");
+    }
+
+    else if(chave==="auditoria_pipeline"){
+      const b=await baseDealsCatalogo(webhook,false),ref=p.referencia;
+      const openDeals=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+
+      let semProb=0, semProbValor=0;
+      let closeDatePassado=0, closeDatePassadoValor=0;
+      let closeDateAusente=0, closeDateAusenteValor=0;
+      let valorZerado=0;
+      let estagnados30d=0, estagnados30dValor=0;
+
+      const negociosInconsistentes=[];
+
+      openDeals.forEach((d)=>{
+        const problemas=[];
+        
+        // 1. Estágios sem probabilidade
+        const pr=Number(d.PROBABILITY);
+        const temProb=Number.isFinite(pr)&&pr>0&&pr<=100;
+        if(!temProb){
+          semProb++;
+          semProbValor+=d._VALOR;
+          problemas.push("Sem probabilidade no Bitrix");
+        }
+
+        // 2 & 3. CLOSEDATE no passado ou ausente
+        const cd=parteDataISO(d.CLOSEDATE);
+        if(!cd){
+          closeDateAusente++;
+          closeDateAusenteValor+=d._VALOR;
+          problemas.push("CLOSEDATE ausente");
+        } else if(cd<ref){
+          closeDatePassado++;
+          closeDatePassadoValor+=d._VALOR;
+          problemas.push("CLOSEDATE no passado (vencida)");
+        }
+
+        // 4. Valores zerados
+        if(d._VALOR<=0){
+          valorZerado++;
+          problemas.push("Valor zerado / sem OPPORTUNITY");
+        }
+
+        // 5. Estagnação no estágio (> 30 dias)
+        const mt=parteDataISO(d.MOVED_TIME||d.DATE_MODIFY||d.DATE_CREATE);
+        const diasParado=mt?Math.max(0, Math.floor((new Date(`${ref}T12:00:00`)-new Date(`${mt}T12:00:00`))/86400000)):0;
+        if(diasParado>30){
+          estagnados30d++;
+          estagnados30dValor+=d._VALOR;
+          problemas.push(`Estagnado (${diasParado}d sem mover)`);
+        }
+
+        if(problemas.length){
+          negociosInconsistentes.push({
+            DEAL_ID:d.ID,
+            CLIENTE:d._CLIENTE,
+            FUNIL:d._FUNIL,
+            ETAPA:d._ESTAGIO,
+            VENDEDOR:d._RESPONSAVEL,
+            VALOR:d._VALOR,
+            CLOSEDATE:cd||"Ausente",
+            INCONSISTENCIAS:problemas.join(" | ")
+          });
+        }
+      });
+
+      negociosInconsistentes.sort((a,b)=>b.VALOR-a.VALOR);
+
+      const regrasSummary=[
+        {REGRA:"Estágios sem probabilidade",OCORRENCIAS:semProb,PCT:openDeals.length?Math.round((semProb/openDeals.length)*10000)/100:0,VALOR_IMPACTADO:semProbValor},
+        {REGRA:"CLOSEDATE no passado (vencida)",OCORRENCIAS:closeDatePassado,PCT:openDeals.length?Math.round((closeDatePassado/openDeals.length)*10000)/100:0,VALOR_IMPACTADO:closeDatePassadoValor},
+        {REGRA:"CLOSEDATE ausente",OCORRENCIAS:closeDateAusente,PCT:openDeals.length?Math.round((closeDateAusente/openDeals.length)*10000)/100:0,VALOR_IMPACTADO:closeDateAusenteValor},
+        {REGRA:"Valores zerados / sem OPPORTUNITY",OCORRENCIAS:valorZerado,PCT:openDeals.length?Math.round((valorZerado/openDeals.length)*10000)/100:0,VALOR_IMPACTADO:0},
+        {REGRA:"Estagnação no estágio (>30d)",OCORRENCIAS:estagnados30d,PCT:openDeals.length?Math.round((estagnados30d/openDeals.length)*10000)/100:0,VALOR_IMPACTADO:estagnados30dValor}
+      ];
+
+      const valorTotalImpactado=negociosInconsistentes.reduce((s,d)=>s+d.VALOR,0);
+
+      criarResultadoCatalogo(chave,"Auditoria de Pipeline & Higiene","Identificação de inconsistências operacionais e falhas de higiene no pipeline aberto.",
+        [
+          kpi("Negócios Abertos",openDeals.length),
+          kpi("Com Inconsistência",negociosInconsistentes.length),
+          kpi("Sem Probabilidade",semProb),
+          kpi("CLOSEDATE Vencida",closeDatePassado),
+          kpi("CLOSEDATE Ausente",closeDateAusente),
+          kpi("Valor Zerado",valorZerado),
+          kpi("Estagnados >30d",estagnados30d),
+          kpi("Valor Impactado",moedaRelatorio(valorTotalImpactado))
+        ],
+        [
+          {titulo:"Resumo de inconsistências por regra",dados:regrasSummary,colunas:[{label:"Regra de Higiene",valor:"REGRA"},{label:"Ocorrências",valor:"OCORRENCIAS"},{label:"% Afetado",valor:(x)=>`${x.PCT}%`},{label:"Valor Impactado",valor:(x)=>moedaRelatorio(x.VALOR_IMPACTADO),html:true}]},
+          {titulo:"Listagem de negócios inconsistentes",dados:negociosInconsistentes,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Funil",valor:"FUNIL"},{label:"Etapa",valor:"ETAPA"},{label:"Vendedor",valor:"VENDEDOR"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"CLOSEDATE",valor:"CLOSEDATE"},{label:"Inconsistências",valor:"INCONSISTENCIAS"}]}
+        ],
+        "Audit de higiene operacional aplicado exclusivamente aos negócios abertos do pipeline comercial.");
     }
 
     else if(chave==="auditoria_sdr"){
@@ -757,9 +1548,10 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const concluidasSemAssunto=a.dados.filter((x)=>x.COMPLETED==="Y"&&!String(x.SUBJECT||"").trim());
       const abertos=ls.filter((l)=>semanticaLead(l)==="process");
       const semContatoRecente=abertos.filter((l)=>{
-        const ultimas=(by[String(l.ID)]||[]).map((x)=>new Date(x.END_TIME)).filter((d)=>!isNaN(d)).sort((x,y)=>y-x);
+        const ultimas=(by[String(l.ID)]||[]).map((x)=>new Date(x.END_TIME)).filter((d)=>!isNaN(d.getTime())).sort((x,y)=>y-x);
         const ref=ultimas[0]||(l.LAST_ACTIVITY_TIME?new Date(l.LAST_ACTIVITY_TIME):new Date(l.DATE_CREATE));
-        return !isNaN(ref)&&(new Date()-ref)/86400000>7;
+        const dtRef=ref instanceof Date ? ref : new Date(ref);
+        return !isNaN(dtRef.getTime())&&(new Date()-dtRef)/86400000>7;
       });
       const checks=[
         {ENTIDADE:"Leads",CAMPO:"Ao menos 1 atividade vinculada",TOTAL:ls.length,FALTANTES:semAtividade.length},
@@ -779,12 +1571,13 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="contact_rate"){
-      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),atividadesLead={};
       a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
       const leadsTrabalhados=Object.keys(atividadesLead).length;
       let contatosEfetivos=0;
       Object.values(atividadesLead).forEach(ats=>{
-        if(ats.some(x=>String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail")) contatosEfetivos++;
+        const temContato = ats.some(x=>(x.COMPLETED==="Y"||String(x.COMPLETED)==="true")&&(String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail"));
+        if(temContato) contatosEfetivos++;
       });
       criarResultadoCatalogo(chave,"Contact Rate","Proporção de Leads com contato efetivo vs Leads trabalhados.",
         [kpi("Leads Trabalhados",leadsTrabalhados),kpi("Contatos Efetivos",contatosEfetivos),kpi("Contact Rate",`${leadsTrabalhados?taxaPct(contatosEfetivos,leadsTrabalhados):0}%`)],
@@ -792,55 +1585,89 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="meeting_rate"){
-      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      const base=await buscarReunioesFunilRelatorio(webhook,p.inicio,p.fim);
+      const r=resumoReunioesFunilRelatorio(base);
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim);
+      const atividadesLead={};
       a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
+      (base.eventosEstagioLead||[]).forEach((e)=>{if(e.LEAD_ID)(atividadesLead[e.LEAD_ID]||=[]).push(e)});
       const leadsTrabalhados=Object.keys(atividadesLead).length;
-      let reunioesAgendadas=0,reunioesRealizadas=0;
-      Object.values(atividadesLead).forEach(ats=>{
-        const reunioesLead=ats.filter(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
-        reunioesAgendadas+=reunioesLead.length;
-        reunioesRealizadas+=reunioesLead.filter(x=>x.COMPLETED==="Y").length;
-      });
-      criarResultadoCatalogo(chave,"Meeting Rate & Show Rate","Taxa de agendamento de reuniões e de comparecimento.",
-        [kpi("Leads Trabalhados",leadsTrabalhados),kpi("Reuniões Agendadas",reunioesAgendadas),kpi("Meeting Rate",`${leadsTrabalhados?taxaPct(reunioesAgendadas,leadsTrabalhados):0}%`),kpi("Reuniões Realizadas",reunioesRealizadas),kpi("Show Rate",`${reunioesAgendadas?taxaPct(reunioesRealizadas,reunioesAgendadas):0}%`)],
-        [{titulo:"Resumo Meeting & Show Rate",dados:[{TRABALHADOS:leadsTrabalhados,AGENDADAS:reunioesAgendadas,REALIZADAS:reunioesRealizadas,MEETING_RATE:`${leadsTrabalhados?taxaPct(reunioesAgendadas,leadsTrabalhados):0}%`,SHOW_RATE:`${reunioesAgendadas?taxaPct(reunioesRealizadas,reunioesAgendadas):0}%`}],colunas:[{label:"Leads Trabalhados",valor:"TRABALHADOS"},{label:"Reuniões Agendadas",valor:"AGENDADAS"},{label:"Meeting Rate",valor:"MEETING_RATE"},{label:"Reuniões Realizadas",valor:"REALIZADAS"},{label:"Show Rate",valor:"SHOW_RATE"}]}]);
+
+      const reunioesAgendadas=r.linhas.length;
+      const reunioesRealizadas=r.realizadas.length;
+      const reunioesNoShow=r.noShow.length;
+
+      const meetingRatePct=leadsTrabalhados?taxaPct(reunioesAgendadas,leadsTrabalhados):0;
+      const showRatePct=reunioesAgendadas?taxaPct(reunioesRealizadas,reunioesAgendadas):0;
+      const porResp=agruparReunioesPor(r.linhas,"RESPONSAVEL");
+
+      criarResultadoCatalogo(chave,"Meeting Rate & Show Rate","Taxa de agendamento de reuniões e de comparecimento integrando Atividades e Etapas do Funil.",
+        [kpi("Leads Trabalhados",leadsTrabalhados),kpi("Reuniões Agendadas",reunioesAgendadas),kpi("Meeting Rate",`${meetingRatePct}%`),kpi("Reuniões Realizadas",reunioesRealizadas),kpi("Show Rate",`${showRatePct}%`),kpi("No-Shows",reunioesNoShow)],
+        [{titulo:"Resumo Meeting & Show Rate",dados:[{TRABALHADOS:leadsTrabalhados,AGENDADAS:reunioesAgendadas,REALIZADAS:reunioesRealizadas,NOSHOW:reunioesNoShow,MEETING_RATE:`${meetingRatePct}%`,SHOW_RATE:`${showRatePct}%`}],colunas:[{label:"Leads Trabalhados",valor:"TRABALHADOS"},{label:"Reuniões Agendadas",valor:"AGENDADAS"},{label:"Reuniões Realizadas",valor:"REALIZADAS"},{label:"No-Shows",valor:"NOSHOW"},{label:"Meeting Rate",valor:"MEETING_RATE"},{label:"Show Rate",valor:"SHOW_RATE"}]},
+         {titulo:"Performance de Agendamento por Responsável",dados:porResp,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Agendadas",valor:"AGENDADAS"},{label:"Realizadas",valor:"REALIZADAS"},{label:"No-Show",valor:"NOSHOW"},{label:"Total",valor:"TOTAL"}]}],
+        "Métricas consolidadas a partir do motor buscarReunioesFunilRelatorio (Atividades TYPE_ID=1 e Etapas de Reunião no Funil de Leads).");
     }
 
     else if(chave==="no_show_sdr"){
-      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),atividadesLead={};
-      a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
-      let agendadas=0,noShow=0,reagendadas=0,posteriormenteRealizadas=0;
-      Object.values(atividadesLead).forEach(ats=>{
-        const reunioes=ats.filter(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
-        agendadas+=reunioes.length;
-        reunioes.forEach(r=>{
-          if(r.COMPLETED!=="Y") noShow++;
-          // simplificação: marcamos reagendado ou posteriormente realizado para o mesmo lead como recuperado
-          if(r.COMPLETED!=="Y" && reunioes.some(x=>x.ID!==r.ID && x.COMPLETED==="Y" && x.CREATED>=r.CREATED)) posteriormenteRealizadas++;
-        });
+      const base=await buscarReunioesFunilRelatorio(webhook,p.inicio,p.fim);
+      const r=resumoReunioesFunilRelatorio(base);
+
+      const agendadas=r.linhas.length;
+      const noShowLinhas=r.noShow;
+      const noShowCount=noShowLinhas.length;
+      const realizadasCount=r.realizadas.length;
+
+      const porEntidade={};
+      r.linhas.forEach(item=>{
+        const key = item._RESPONSAVEL_ID ? `${item.RESPONSAVEL}_${item.ASSUNTO}` : item.ASSUNTO;
+        (porEntidade[key] ||= []).push(item);
       });
-      criarResultadoCatalogo(chave,"No-show & Recuperação","Reuniões agendadas, no-shows e recuperação posterior.",
-        [kpi("Agendadas",agendadas),kpi("No-show",noShow),kpi("Taxa No-show",`${agendadas?taxaPct(noShow,agendadas):0}%`),kpi("Recuperadas",posteriormenteRealizadas)],
-        [{titulo:"Resumo No-show",dados:[{AGENDADAS:agendadas,NOSHOW:noShow,TAXA:`${agendadas?taxaPct(noShow,agendadas):0}%`,RECUPERADAS:posteriormenteRealizadas}],colunas:[{label:"Agendadas",valor:"AGENDADAS"},{label:"No-show",valor:"NOSHOW"},{label:"Taxa No-show",valor:"TAXA"},{label:"Recuperadas",valor:"RECUPERADAS"}]}]);
+
+      let recuperadas=0;
+      noShowLinhas.forEach(ns => {
+        const key = ns._RESPONSAVEL_ID ? `${ns.RESPONSAVEL}_${ns.ASSUNTO}` : ns.ASSUNTO;
+        const grupo = porEntidade[key] || [];
+        const tevePosteriorRealizada = grupo.some(x => x.SITUACAO === "Realizada" && new Date(x.INICIO || 0) >= new Date(ns.INICIO || 0));
+        if (tevePosteriorRealizada) recuperadas++;
+      });
+
+      const taxaNoShow = agendadas ? taxaPct(noShowCount, agendadas) : 0;
+
+      criarResultadoCatalogo(chave,"No-show & Recuperação","Reuniões agendadas, no-shows reais (via estágio do lead ou registro de falta) e recuperação posterior.",
+        [kpi("Agendadas (Total)",agendadas),kpi("No-show",noShowCount),kpi("Taxa No-show",`${taxaNoShow}%`),kpi("Realizadas",realizadasCount),kpi("Recuperadas",recuperadas)],
+        [{titulo:"Resumo No-show",dados:[{AGENDADAS:agendadas,NOSHOW:noShowCount,TAXA:`${taxaNoShow}%`,REALIZADAS:realizadasCount,RECUPERADAS:recuperadas}],colunas:[{label:"Agendadas",valor:"AGENDADAS"},{label:"No-show",valor:"NOSHOW"},{label:"Taxa No-show",valor:"TAXA"},{label:"Realizadas",valor:"REALIZADAS"},{label:"Recuperadas",valor:"RECUPERADAS"}]},
+         {titulo:"Detalhamento de Reuniões em No-show",dados:noShowLinhas,colunas:[{label:"ID",valor:"ID"},{label:"Assunto / Lead",valor:"ASSUNTO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Quando",valor:"INICIO"},{label:"Pipeline",valor:"PIPELINE"},{label:"Origem",valor:"ORIGEM"}]}],
+        "Integração oficial com buscarReunioesFunilRelatorio. Reuniões pendentes (COMPLETED=N) não são tratadas como No-show.");
     }
 
     else if(chave==="tentativas_conversao"){
       const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]);
       const ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p));
-      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead={};
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),atividadesLead={};
       a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")(atividadesLead[b.OWNER_ID]||=[]).push(x)}));
       let arrContato=[], arrReuniao=[], arrOpp=[];
       ls.forEach(l=>{
         const ats=atividadesLead[String(l.ID)]||[];
-        ats.sort((a,b)=>new Date(a.CREATED)-new Date(b.CREATED));
-        const idxContato=ats.findIndex(x=>String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail");
+        ats.sort((a,b)=>{
+          const tA = a.CREATED ? new Date(a.CREATED).getTime() : 0;
+          const tB = b.CREATED ? new Date(b.CREATED).getTime() : 0;
+          return tA - tB;
+        });
+        const idxContato=ats.findIndex(x=>(x.COMPLETED==="Y"||String(x.COMPLETED)==="true")&&(String(x.TYPE_ID)==="1"||String(x.TYPE_ID)==="2"||canalAtividadeSDR(x)==="Ligação"||canalAtividadeSDR(x)==="Reunião"||canalAtividadeSDR(x)==="WhatsApp"||canalAtividadeSDR(x)==="E-mail"));
         if(idxContato!==-1) arrContato.push(idxContato+1);
         const idxReuniao=ats.findIndex(x=>String(x.TYPE_ID)==="1"||canalAtividadeSDR(x)==="Reunião");
         if(idxReuniao!==-1) arrReuniao.push(idxReuniao+1);
-        const opps=db.deals.filter(d=>String(d.LEAD_ID)===String(l.ID)).sort((a,b)=>new Date(a.DATE_CREATE)-new Date(b.DATE_CREATE));
+        const opps=db.deals.filter(d=>String(d.LEAD_ID)===String(l.ID)).sort((a,b)=>{
+          const tA = a.DATE_CREATE ? new Date(a.DATE_CREATE).getTime() : 0;
+          const tB = b.DATE_CREATE ? new Date(b.DATE_CREATE).getTime() : 0;
+          return tA - tB;
+        });
         if(opps.length>0){
           const dOpp=new Date(opps[0].DATE_CREATE);
-          const atsAteOpp=ats.filter(x=>new Date(x.END_TIME)<=dOpp);
+          const atsAteOpp=ats.filter(x=>{
+            const tEnd = x.END_TIME || x.CREATED;
+            return tEnd ? new Date(tEnd) <= dOpp : true;
+          });
           arrOpp.push(Math.max(1,atsAteOpp.length));
         }
       });
@@ -869,11 +1696,11 @@ async function extrairRelatorioCatalogo(webhook,chave){
 
     else if(chave==="receita_sdr"){
       const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]),ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p));
-      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),atividadesLead=new Set();
+      const a=await atividadesCatalogo(webhook,null,p.inicio,p.fim),atividadesLead=new Set();
       a.dados.forEach((x)=>bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")atividadesLead.add(String(b.OWNER_ID));}));
       const leadsTrabalhados=ls.filter(l=>atividadesLead.has(String(l.ID)));
       const leadsIds=new Set(leadsTrabalhados.map(l=>String(l.ID)));
-      const oppsGanhos=db.deals.filter(d=>leadsIds.has(String(d.LEAD_ID)) && ["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase()));
+      const oppsGanhos=db.deals.filter(d=>leadsIds.has(String(d.LEAD_ID)) && (semanticaDeal(d)==="success"||["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase())));
       const receita=oppsGanhos.reduce((s,d)=>s+(Number(d.OPPORTUNITY)||0),0);
       criarResultadoCatalogo(chave,"Receita Originada pelo SDR","Receita comprovada gerada a partir de Leads trabalhados pelo SDR.",
         [kpi("Leads Trabalhados",leadsTrabalhados.length),kpi("Oportunidades Ganhas",oppsGanhos.length),kpi("Receita Originada",moedaRelatorio(receita))],
@@ -1087,11 +1914,456 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "Duas fontes somadas: (1) atividade de Reunião (TYPE_ID=1) vinculada a negócio — Agendada=COMPLETED≠Y, Realizada=COMPLETED=Y, pipeline/etapa vêm do negócio (CRM Deal); (2) etapa do próprio Lead no funil (crm.stagehistory.list) — \"Reunião Agendada\"/\"Reunião Realizada\"/\"No-Show\" como STATUS_ID do Lead, aparece com pipeline \"Leads\". Coluna Origem no detalhe distingue as duas.");
     }
 
+    else if(chave==="tempo_por_etapa"){
+      const b=await baseDealsCatalogo(webhook,true);
+      const ref=new Date(`${p.referencia||formatarDataISO(new Date())}T12:00:00`);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+
+      const calcMetricasDias=(arr)=>{
+        if(!arr.length)return{qtd:0,media:0,mediana:0,p75:0,p90:0,max:0};
+        const s=[...arr].sort((a,b)=>a-b);
+        const len=s.length;
+        const sum=s.reduce((a,v)=>a+v,0);
+        const med=len%2===1?s[Math.floor(len/2)]:(s[len/2-1]+s[len/2])/2;
+        return{
+          qtd:len,
+          media:Math.round((sum/len)*10)/10,
+          mediana:Math.round(med*10)/10,
+          p75:s[Math.min(len-1,Math.floor(len*0.75))],
+          p90:s[Math.min(len-1,Math.floor(len*0.90))],
+          max:s[len-1]
+        };
+      };
+
+      const todosDias=[];
+      const porEstagio={};
+
+      ds.forEach((d)=>{
+        const mt=parteDataISO(d.MOVED_TIME)||parteDataISO(d.DATE_CREATE);
+        const dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):0;
+        todosDias.push(dias);
+
+        const k=`${d._FUNIL}|||${d._ESTAGIO}`;
+        if(!porEstagio[k])porEstagio[k]={FUNIL:d._FUNIL,ESTAGIO:d._ESTAGIO,DIAS:[]};
+        porEstagio[k].DIAS.push(dias);
+      });
+
+      const metGeral=calcMetricasDias(todosDias);
+
+      const rows=Object.values(porEstagio).map((g)=>{
+        const m=calcMetricasDias(g.DIAS);
+        return{
+          FUNIL:g.FUNIL,
+          ESTAGIO:g.ESTAGIO,
+          QTD:m.qtd,
+          MEDIA:m.media,
+          MEDIANA:m.mediana,
+          P75:m.p75,
+          P90:m.p90,
+          MAX:m.max
+        };
+      }).sort((a,b)=>b.MEDIA-a.MEDIA);
+
+      const rowsDetalhes=ds.map((d)=>{
+        const mt=parteDataISO(d.MOVED_TIME)||parteDataISO(d.DATE_CREATE);
+        const dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):0;
+        return{
+          DEAL_ID:d.ID,
+          CLIENTE:d._CLIENTE,
+          FUNIL:d._FUNIL,
+          ESTAGIO:d._ESTAGIO,
+          RESPONSAVEL:d._RESPONSAVEL,
+          DIAS_NO_ESTAGIO:dias,
+          VALOR:d._VALOR
+        };
+      }).sort((a,b)=>b.DIAS_NO_ESTAGIO-a.DIAS_NO_ESTAGIO);
+
+      criarResultadoCatalogo(chave,"Tempo de Permanência por Etapa",`Permanência das oportunidades no estágio atual (Referência: <strong>${escapeHtmlRelatorio(p.referencia||"hoje")}</strong>).`,
+        [
+          kpi("Oportunidades",metGeral.qtd),
+          kpi("Média Geral",`${metGeral.media}d`),
+          kpi("Mediana Geral",`${metGeral.mediana}d`),
+          kpi("P75 Geral",`${metGeral.p75}d`),
+          kpi("P90 Geral",`${metGeral.p90}d`),
+          kpi("Maior Permanência",`${metGeral.max}d`),
+          kpi("Estágios Analisados",rows.length)
+        ],
+        [
+          {titulo:"Permanência por Estágio",dados:rows,colunas:[
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Estágio",valor:"ESTAGIO"},
+            {label:"Oportunidades",valor:"QTD"},
+            {label:"Média",valor:(x)=>`${x.MEDIA}d`},
+            {label:"Mediana",valor:(x)=>`${x.MEDIANA}d`},
+            {label:"P75",valor:(x)=>`${x.P75}d`},
+            {label:"P90",valor:(x)=>`${x.P90}d`},
+            {label:"Máximo",valor:(x)=>`${x.MAX}d`}
+          ]},
+          {titulo:"Detalhamento por Oportunidade",dados:rowsDetalhes,colunas:[
+            {label:"Deal",valor:"DEAL_ID"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Estágio",valor:"ESTAGIO"},
+            {label:"Responsável",valor:"RESPONSAVEL"},
+            {label:"Dias no Estágio",valor:(x)=>`${x.DIAS_NO_ESTAGIO}d`},
+            {label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true}
+          ]}
+        ],
+        "Cálculo estatístico de permanência no estágio atual a partir do MOVED_TIME (ou DATE_CREATE).");
+    }
+
+    else if(chave==="gargalos"){
+      const b=await baseDealsCatalogo(webhook,true);
+      const ref=new Date(`${p.referencia||formatarDataISO(new Date())}T12:00:00`);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+
+      const g={};
+      ds.forEach((d)=>{
+        const mt=parteDataISO(d.MOVED_TIME)||parteDataISO(d.DATE_CREATE);
+        const dias=mt?Math.max(0,Math.floor((ref-new Date(`${mt}T12:00:00`))/86400000)):0;
+        const k=`${d._FUNIL}|||${d._ESTAGIO}`;
+        if(!g[k])g[k]={FUNIL:d._FUNIL,ESTAGIO:d._ESTAGIO,NEGOCIOS:0,VALOR_TOTAL:0,DIAS:[]};
+        g[k].NEGOCIOS++;
+        g[k].VALOR_TOTAL+=d._VALOR;
+        g[k].DIAS.push(dias);
+      });
+
+      const totalDeals=ds.length;
+      const totalValor=ds.reduce((a,d)=>a+d._VALOR,0);
+      const mediaAcumuloEstagio=Object.keys(g).length?(totalDeals/Object.keys(g).length):0;
+
+      const estagiosComMetrica=Object.values(g).map((item)=>{
+        const s=[...item.DIAS].sort((a,b)=>a-b);
+        const len=s.length;
+        const sum=s.reduce((a,v)=>a+v,0);
+        const mediaDias=len?Math.round((sum/len)*10)/10:0;
+        const medianaDias=len?(len%2===1?s[Math.floor(len/2)]:(s[len/2-1]+s[len/2])/2):0;
+        return{
+          FUNIL:item.FUNIL,
+          ESTAGIO:item.ESTAGIO,
+          NEGOCIOS:item.NEGOCIOS,
+          VALOR_TOTAL:item.VALOR_TOTAL,
+          MEDIA_DIAS:mediaDias,
+          MEDIANA_DIAS:Math.round(medianaDias*10)/10,
+          SCORE_GARGALO:Math.round((item.NEGOCIOS * mediaDias)*10)/10
+        };
+      });
+
+      const mediaTempoRetencao=estagiosComMetrica.length?(estagiosComMetrica.reduce((a,x)=>a+x.MEDIA_DIAS,0)/estagiosComMetrica.length):0;
+
+      const rows=estagiosComMetrica.map((x)=>{
+        const altoAcumulo=x.NEGOCIOS>=mediaAcumuloEstagio;
+        const altaRetencao=x.MEDIA_DIAS>=mediaTempoRetencao;
+        let status="🟢 Fluindo";
+        if(altoAcumulo&&altaRetencao)status="🔴 Gargalo Crítico";
+        else if(altaRetencao)status="🟡 Alta Retenção";
+        else if(altoAcumulo)status="🟠 Alto Acúmulo";
+        return{...x,STATUS_GARGALO:status};
+      }).sort((a,b)=>b.SCORE_GARGALO-a.SCORE_GARGALO);
+
+      const maiorAcumulo=[...rows].sort((a,b)=>b.NEGOCIOS-a.NEGOCIOS)[0];
+      const maiorTempo=[...rows].sort((a,b)=>b.MEDIA_DIAS-a.MEDIA_DIAS)[0];
+      const gargalosCriticos=rows.filter((x)=>x.STATUS_GARGALO==="🔴 Gargalo Crítico").length;
+
+      criarResultadoCatalogo(chave,"Gargalos do Funil",`Identificação de gargalos por acúmulo de oportunidades e tempo de retenção (Referência: <strong>${escapeHtmlRelatorio(p.referencia||"hoje")}</strong>).`,
+        [
+          kpi("Oportunidades Abertas",totalDeals),
+          kpi("Pipeline Aberto",moedaRelatorio(totalValor)),
+          kpi("Gargalos Críticos",gargalosCriticos),
+          kpi("Maior Acúmulo",maiorAcumulo?`${maiorAcumulo.ESTAGIO} (${maiorAcumulo.NEGOCIOS})`:"—"),
+          kpi("Maior Retenção",maiorTempo?`${maiorTempo.ESTAGIO} (${maiorTempo.MEDIA_DIAS}d)`:"—"),
+          kpi("Média Retenção Geral",`${Math.round(mediaTempoRetencao*10)/10}d`),
+          kpi("Estágios Analisados",rows.length)
+        ],
+        [
+          {titulo:"Análise de Gargalos por Estágio",dados:rows,colunas:[
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Estágio",valor:"ESTAGIO"},
+            {label:"Oportunidades",valor:"NEGOCIOS"},
+            {label:"Valor Acumulado",valor:(x)=>moedaRelatorio(x.VALOR_TOTAL),html:true},
+            {label:"Tempo Médio",valor:(x)=>`${x.MEDIA_DIAS}d`},
+            {label:"Mediana",valor:(x)=>`${x.MEDIANA_DIAS}d`},
+            {label:"Índice Gargalo",valor:"SCORE_GARGALO"},
+            {label:"Status",valor:"STATUS_GARGALO"}
+          ]}
+        ],
+        "Gargalo Crítico = Estágio com volume acima da média E tempo de retenção acima da média.");
+    }
+
+    else if(chave==="mapa_transicoes"){
+      const b=await baseDealsCatalogo(webhook,true);
+      const ids=b.deals.map((d)=>d.ID);
+      const hist=await buscarHistoricoEntidade(webhook,2,ids);
+
+      const histPorDeal={};
+      hist.forEach((h)=>{
+        (histPorDeal[String(h.OWNER_ID)]||=[]).push(h);
+      });
+
+      const transicoesMap={};
+      const origens=new Set();
+      const destinos=new Set();
+      let totalTransicoes=0;
+      const dealsComMovimentacao=new Set();
+
+      Object.entries(histPorDeal).forEach(([dealId,items])=>{
+        items.sort((x,y)=>String(x.CREATED_TIME||x.ID).localeCompare(String(y.CREATED_TIME||y.ID)));
+        for(let i=0;i<items.length-1;i++){
+          const hDe=items[i];
+          const hPara=items[i+1];
+          const catDe=String(hDe.CATEGORY_ID??b.deals.find(d=>String(d.ID)===dealId)?.CATEGORY_ID??"");
+          const catPara=String(hPara.CATEGORY_ID??catDe);
+          const sDe=String(hDe.STAGE_ID||"");
+          const sPara=String(hPara.STAGE_ID||"");
+          if(!sDe||!sPara)continue;
+
+          const nomeDe=b.meta.estagios?.[catDe]?.[sDe]?.label||sDe;
+          const nomePara=b.meta.estagios?.[catPara]?.[sPara]?.label||sPara;
+          if(nomeDe===nomePara)continue;
+
+          const funilDe=nomeFunilSemCodigo(b.meta.categorias?.[catDe]||`Categoria ${catDe}`);
+          const k=`${nomeDe}|||${nomePara}|||${funilDe}`;
+
+          if(!transicoesMap[k])transicoesMap[k]={DE:nomeDe,PARA:nomePara,FUNIL:funilDe,QTD:0};
+          transicoesMap[k].QTD++;
+          totalTransicoes++;
+          dealsComMovimentacao.add(dealId);
+          origens.add(nomeDe);
+          destinos.add(nomePara);
+        }
+      });
+
+      const totalSaidasPorOrigem={};
+      Object.values(transicoesMap).forEach((t)=>{
+        totalSaidasPorOrigem[t.DE]=(totalSaidasPorOrigem[t.DE]||0)+t.QTD;
+      });
+
+      const rows=Object.values(transicoesMap).map((t)=>({
+        ...t,
+        PCT_ORIGEM:taxaPct(t.QTD,totalSaidasPorOrigem[t.DE]||0)
+      })).sort((a,b)=>b.QTD-a.QTD);
+
+      const topTransicao=rows[0];
+
+      const resumoOrigem={};
+      rows.forEach((t)=>{
+        if(!resumoOrigem[t.DE]||t.QTD>resumoOrigem[t.DE].QTD_PRINCIPAL){
+          resumoOrigem[t.DE]={
+            ESTAGIO:t.DE,
+            TOTAL_SAIDAS:totalSaidasPorOrigem[t.DE]||0,
+            PRINCIPAL_DESTINO:t.PARA,
+            QTD_PRINCIPAL:t.QTD,
+            PCT_PRINCIPAL:`${taxaPct(t.QTD,totalSaidasPorOrigem[t.DE]||0)}%`
+          };
+        }
+      });
+      const rowsOrigem=Object.values(resumoOrigem).sort((a,b)=>b.TOTAL_SAIDAS-a.TOTAL_SAIDAS);
+
+      criarResultadoCatalogo(chave,"Mapa de Transições de Estágios","Matriz de movimentação e transição de estágios a partir do histórico real de eventos.",
+        [
+          kpi("Transições Registradas",totalTransicoes),
+          kpi("Deals com Movimentação",dealsComMovimentacao.size),
+          kpi("Maior Fluxo",topTransicao?`${topTransicao.DE} ➔ ${topTransicao.PARA} (${topTransicao.QTD})`:"—"),
+          kpi("Estágios Origem",origens.size),
+          kpi("Estágios Destino",destinos.size),
+          kpi("Deals Analisados",ids.length)
+        ],
+        [
+          {titulo:"Matriz de Transição entre Estágios (Origem ➔ Destino)",dados:rows,colunas:[
+            {label:"Estágio Origem",valor:"DE"},
+            {label:"Estágio Destino",valor:"PARA"},
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Transições",valor:"QTD"},
+            {label:"% Saídas da Origem",valor:(x)=>`${x.PCT_ORIGEM}%`}
+          ]},
+          {titulo:"Resumo por Estágio de Origem",dados:rowsOrigem,colunas:[
+            {label:"Estágio Origem",valor:"ESTAGIO"},
+            {label:"Total Saídas",valor:"TOTAL_SAIDAS"},
+            {label:"Principal Destino",valor:"PRINCIPAL_DESTINO"},
+            {label:"Qtd Principal",valor:"QTD_PRINCIPAL"},
+            {label:"% Principal",valor:"PCT_PRINCIPAL"}
+          ]}
+        ],
+        "Mapeamento obtido exclusivamente do histórico oficial crm.stagehistory.list, sem inferências retroativas.");
+    }
+
+    else if(chave==="clientes_parados"){
+      const b=await baseDealsCatalogo(webhook,true);
+      const ref=new Date(`${p.referencia||formatarDataISO(new Date())}T12:00:00`);
+      const abertos=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+
+      let parados15=0,parados30=0,parados60=0;
+      let valor15=0,valor30=0,valor60=0;
+
+      const rowsAll=abertos.map((d)=>{
+        const dtAlt=parteDataISO(d.DATE_MODIFY)||parteDataISO(d.MOVED_TIME)||parteDataISO(d.LAST_ACTIVITY_TIME)||parteDataISO(d.DATE_CREATE);
+        const dias=dtAlt?Math.max(0,Math.floor((ref-new Date(`${dtAlt}T12:00:00`))/86400000)):0;
+
+        let faixa="0–15 dias";
+        if(dias>60){faixa="> 60 dias";parados60++;parados30++;parados15++;valor60+=d._VALOR;valor30+=d._VALOR;valor15+=d._VALOR;}
+        else if(dias>30){faixa="31–60 dias";parados30++;parados15++;valor30+=d._VALOR;valor15+=d._VALOR;}
+        else if(dias>15){faixa="16–30 dias";parados15++;valor15+=d._VALOR;}
+
+        return{
+          DEAL_ID:d.ID,
+          CLIENTE:d._CLIENTE,
+          FUNIL:d._FUNIL,
+          ESTAGIO:d._ESTAGIO,
+          RESPONSAVEL:d._RESPONSAVEL,
+          ULTIMA_ALTERACAO:dtAlt?formatarDataBR(dtAlt):"—",
+          DIAS_PARADO:dias,
+          FAIXA:faixa,
+          VALOR:d._VALOR,
+          ESTAGNADO:dias>15?"S":"N"
+        };
+      }).sort((a,b)=>b.DIAS_PARADO-a.DIAS_PARADO);
+
+      const estagnados=rowsAll.filter((x)=>x.ESTAGNADO==="S");
+      const totalValorAberto=abertos.reduce((a,d)=>a+d._VALOR,0);
+      const maxDias=rowsAll.length?rowsAll[0].DIAS_PARADO:0;
+
+      const resumoFaixas=[
+        {FAIXA:"> 60 dias (Crítico)",QTD:rowsAll.filter(x=>x.FAIXA==="> 60 dias").length,VALOR:rowsAll.filter(x=>x.FAIXA==="> 60 dias").reduce((a,x)=>a+x.VALOR,0)},
+        {FAIXA:"31–60 dias (Atenção)",QTD:rowsAll.filter(x=>x.FAIXA==="31–60 dias").length,VALOR:rowsAll.filter(x=>x.FAIXA==="31–60 dias").reduce((a,x)=>a+x.VALOR,0)},
+        {FAIXA:"16–30 dias (Alerta)",QTD:rowsAll.filter(x=>x.FAIXA==="16–30 dias").length,VALOR:rowsAll.filter(x=>x.FAIXA==="16–30 dias").reduce((a,x)=>a+x.VALOR,0)},
+        {FAIXA:"0–15 dias (Ativos)",QTD:rowsAll.filter(x=>x.FAIXA==="0–15 dias").length,VALOR:rowsAll.filter(x=>x.FAIXA==="0–15 dias").reduce((a,x)=>a+x.VALOR,0)}
+      ].map((f)=>({...f,PCT_PIPELINE:taxaPct(f.VALOR,totalValorAberto)}));
+
+      criarResultadoCatalogo(chave,"Clientes Parados (Estagnados)",`Negócios abertos sem alteração há mais de 15, 30 ou 60 dias (Referência: <strong>${escapeHtmlRelatorio(p.referencia||"hoje")}</strong>).`,
+        [
+          kpi("Oportunidades Abertas",abertos.length),
+          kpi("Estagnados (>15d)",estagnados.length),
+          kpi("% Estagnados",`${taxaPct(estagnados.length,abertos.length)}%`),
+          kpi("Valor Estagnado (>15d)",moedaRelatorio(valor15)),
+          kpi("Parados >15d",parados15),
+          kpi("Parados >30d",parados30),
+          kpi("Parados >60d",parados60),
+          kpi("Maior Tempo sem Alt.",`${maxDias}d`)
+        ],
+        [
+          {titulo:"Resumo por Faixa de Estagnação",dados:resumoFaixas,colunas:[
+            {label:"Faixa de Estagnação",valor:"FAIXA"},
+            {label:"Oportunidades",valor:"QTD"},
+            {label:"Valor Acumulado",valor:(x)=>moedaRelatorio(x.VALOR),html:true},
+            {label:"% do Pipeline Aberto",valor:(x)=>`${x.PCT_PIPELINE}%`}
+          ]},
+          {titulo:"Listagem de Negócios Estagnados (> 15 dias sem alteração)",dados:estagnados,colunas:[
+            {label:"Deal",valor:"DEAL_ID"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Estágio",valor:"ESTAGIO"},
+            {label:"Responsável",valor:"RESPONSAVEL"},
+            {label:"Última Alteração",valor:"ULTIMA_ALTERACAO"},
+            {label:"Dias Parado",valor:(x)=>`${x.DIAS_PARADO}d`},
+            {label:"Faixa",valor:"FAIXA"},
+            {label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true}
+          ]}
+        ],
+        "Estagnação calculada com base na última alteração registrada (DATE_MODIFY, MOVED_TIME ou LAST_ACTIVITY_TIME).");
+    }
+
+    else if(chave==="clientes_recuperados"){
+      const b=await baseDealsCatalogo(webhook,true);
+      const ids=b.deals.map((d)=>d.ID);
+      const hist=await buscarHistoricoEntidade(webhook,2,ids);
+
+      const histPorDeal={};
+      hist.forEach((h)=>{
+        (histPorDeal[String(h.OWNER_ID)]||=[]).push(h);
+      });
+
+      const recuperados=[];
+      let totalGanhosRecuperados=0;
+      let receitaRecuperados=0;
+
+      b.deals.map((d)=>enriquecerDealCatalogo(d,b)).forEach((d)=>{
+        const hItems=histPorDeal[String(d.ID)]||[];
+        hItems.sort((x,y)=>String(x.CREATED_TIME||x.ID).localeCompare(String(y.CREATED_TIME||y.ID)));
+
+        let tevePerda=false;
+        let dataPerda="";
+        let dataReativacao="";
+        let tipoRecuperacao="";
+
+        for(let i=0;i<hItems.length;i++){
+          const sem=String(hItems[i].STAGE_SEMANTIC_ID||"").toLowerCase();
+          const isPerda=sem==="f"||sem==="failure";
+          if(isPerda){
+            tevePerda=true;
+            dataPerda=parteDataISO(hItems[i].CREATED_TIME)||"";
+          }else if(tevePerda&&(sem==="p"||sem==="process"||sem==="s"||sem==="success")){
+            dataReativacao=parteDataISO(hItems[i].CREATED_TIME)||"";
+            tipoRecuperacao=sem==="s"||sem==="success"?"Reativado e Ganho":"Reativado para Em Aberto";
+            break;
+          }
+        }
+
+        if(!tipoRecuperacao && d._SEMANTICA==="success" && (tevePerda || String(d.CLOSED)==="Y")){
+          tipoRecuperacao="Recuperado e Ganho";
+          dataReativacao=parteDataISO(d.MOVED_TIME)||parteDataISO(d.DATE_MODIFY)||parteDataISO(d.DATE_CREATE);
+        }
+
+        if(tipoRecuperacao){
+          if(d._SEMANTICA==="success"){
+            totalGanhosRecuperados++;
+            receitaRecuperados+=d._VALOR;
+          }
+          recuperados.push({
+            DEAL_ID:d.ID,
+            CLIENTE:d._CLIENTE,
+            FUNIL:d._FUNIL,
+            ESTAGIO_ATUAL:d._ESTAGIO,
+            STATUS_ATUAL:d._SEMANTICA==="success"?"Ganho":d._SEMANTICA==="failure"?"Perdido":"Em Aberto",
+            RESPONSAVEL:d._RESPONSAVEL,
+            TIPO_RECUPERACAO:tipoRecuperacao,
+            DATA_PERDA:dataPerda?formatarDataBR(dataPerda):"—",
+            DATA_REATIVACAO:dataReativacao?formatarDataBR(dataReativacao):"—",
+            VALOR:d._VALOR
+          });
+        }
+      });
+
+      recuperados.sort((a,b)=>b.VALOR-a.VALOR);
+      const totalDeals=b.deals.length;
+      const pipelineReativado=recuperados.reduce((a,r)=>a+r.VALOR,0);
+
+      criarResultadoCatalogo(chave,"Clientes Recuperados","Oportunidades reativadas após período de perda ou desqualificação segundo o histórico.",
+        [
+          kpi("Negócios Analisados",totalDeals),
+          kpi("Negócios Reativados",recuperados.length),
+          kpi("Taxa de Recuperação",`${taxaPct(recuperados.length,totalDeals)}%`),
+          kpi("Recuperados & Ganhos",totalGanhosRecuperados),
+          kpi("Receita de Recuperados",moedaRelatorio(receitaRecuperados)),
+          kpi("Pipeline Reativado",moedaRelatorio(pipelineReativado)),
+          kpi("Maior Recuperação",recuperados.length?moedaRelatorio(recuperados[0].VALOR):"—")
+        ],
+        [
+          {titulo:"Listagem de Negócios Reativados",dados:recuperados,colunas:[
+            {label:"Deal",valor:"DEAL_ID"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Funil",valor:"FUNIL"},
+            {label:"Estágio Atual",valor:"ESTAGIO_ATUAL"},
+            {label:"Status Atual",valor:"STATUS_ATUAL"},
+            {label:"Responsável",valor:"RESPONSAVEL"},
+            {label:"Tipo Recuperação",valor:"TIPO_RECUPERACAO"},
+            {label:"Data Perda",valor:"DATA_PERDA"},
+            {label:"Data Reativação",valor:"DATA_REATIVACAO"},
+            {label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true}
+          ]}
+        ],
+        "Identificação baseada exclusivamente no histórico crm.stagehistory.list de transição por estágios com semântica de perda seguida de reativação.");
+    }
+
     else throw new Error(`Relatório "${chave}" ainda não possui implementação.`);
 
-    atualizarStatus(`Relatório concluído: ${RELATORIOS[chave]?.label||chave}.`);
-  }catch(e){mostrarErro("Não foi possível montar o relatório selecionado.\\n\\nDetalhe técnico: "+e.message);}
-  finally{document.getElementById("spinner").style.display="none";document.getElementById("btnExtrair").disabled=false;document.getElementById("btnParar").disabled=true;}
+    const labelRel = (typeof RELATORIOS !== "undefined" && RELATORIOS?.[chave]?.label) || chave;
+    if (typeof atualizarStatus === "function") atualizarStatus(`Relatório concluído: ${labelRel}.`);
+  }catch(e){if(typeof mostrarErro==="function")mostrarErro("Não foi possível montar o relatório selecionado.\n\nDetalhe técnico: "+e.message);else console.error(e);}
+  finally{
+    const elSp=document.getElementById("spinner");if(elSp?.style)elSp.style.display="none";
+    const elExt=document.getElementById("btnExtrair");if(elExt)elExt.disabled=false;
+    const elPar=document.getElementById("btnParar");if(elPar)elPar.disabled=true;
+  }
 }
 
 

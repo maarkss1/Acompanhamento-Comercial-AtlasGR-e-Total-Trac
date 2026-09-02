@@ -1,3 +1,5 @@
+var TIPOS_ATIVIDADE_BITRIX = (typeof TIPOS_ATIVIDADE_BITRIX !== "undefined" && TIPOS_ATIVIDADE_BITRIX) ? TIPOS_ATIVIDADE_BITRIX : { "1": "Reunião", "2": "Ligação", "3": "Tarefa", "4": "E-mail", "6": "WhatsApp" };
+
 function canalAtividadeSDR(a) {
   const prov = normalizarTextoChave(`${a.PROVIDER_TYPE_ID || ""} ${a.PROVIDER_ID || ""} ${a.SUBJECT || ""}`);
   if (prov.includes("whatsapp")) return "WhatsApp";

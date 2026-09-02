@@ -1,3 +1,7 @@
+if (typeof atualizarStatus === "undefined") var atualizarStatus = function(){};
+if (typeof esconderErro === "undefined") var esconderErro = function(){};
+if (typeof mostrarErro === "undefined") var mostrarErro = function(){};
+
 function normalizarTextoChave(valor) {
   return String(valor || "")
     .normalize("NFD")
@@ -63,8 +67,11 @@ function valoresMulticampo(registro, campo) {
   return lista.map((x) => typeof x === "object" ? (x.VALUE || x.value || "") : x).filter(Boolean);
 }
 
+var mapaUsuariosJornada = {};
+
 function nomeUsuario(id) {
-  const u = mapaUsuariosJornada[String(id || "")];
+  const map = (typeof mapaUsuariosJornada !== "undefined" && mapaUsuariosJornada) ? mapaUsuariosJornada : {};
+  const u = map[String(id || "")];
   return u ? `${u.NAME || ""} ${u.LAST_NAME || ""}`.trim() || `ID ${id}` : (id ? `ID ${id}` : "");
 }
 
@@ -577,9 +584,9 @@ function camposDeDados(dados) {
 
 function periodoCatalogo() {
   return {
-    inicio: document.getElementById("dataInicio").value || "",
-    fim: document.getElementById("dataFim").value || "",
-    referencia: document.getElementById("dataFim").value || formatarDataISO(new Date())
+    inicio: document.getElementById("dataInicio")?.value || "",
+    fim: document.getElementById("dataFim")?.value || "",
+    referencia: document.getElementById("dataFim")?.value || formatarDataISO(new Date())
   };
 }
 function fecharDataDeal(d) { return parteDataISO(d.UF_CRM_1770928318695 || d.CLOSEDATE || ""); }

@@ -47,7 +47,7 @@ function marcaAtiva() {
 // — ver PIPELINE_MAPPING.md). Se a estrutura do CRM mudar, atualize aqui.
 // ---------------------------------------------------------------------------
 
-const ENTIDADES = {
+var ENTIDADES = {
   negocios: {
     label: "Negócios (Deals)",
     method: "crm.deal.list",
@@ -299,6 +299,9 @@ const RELATORIOS = {
   reentradas: { grupo:"Jornada & Cliente", label:"🔁 Reentradas, retrabalho e mudanças de pipeline", descricao:"Reentradas históricas em estágios e mudanças reais de pipeline.", handler:"catalogo", periodo:"todas" },
   duplicidades: { grupo:"Jornada & Cliente", label:"🧬 Duplicidades e identidade do cliente", descricao:"Clientes repetidos no pipeline e possíveis empresas duplicadas por nome, e-mail ou telefone.", handler:"catalogo", periodo:"todas" },
   implantacao_posvenda: { grupo:"Jornada & Cliente", label:"🚀 Implantação, Onboarding e Pós-Venda", descricao:"Backlog e aging dos pipelines posteriores ao Comercial.", handler:"catalogo", periodo:"todas" },
+  mapa_transicoes: { grupo:"Jornada & Cliente", label:"🗺️ Mapa de Transições de Estágio", descricao:"Mapeamento dos fluxos de movimentação de negócios entre estágios e funis.", handler:"catalogo", periodo:"todas" },
+  clientes_parados: { grupo:"Jornada & Cliente", label:"🛑 Clientes & Negócios Parados", descricao:"Monitoramento de clientes e oportunidades sem movimentação recente no pipeline.", handler:"catalogo", periodo:"todas" },
+  clientes_recuperados: { grupo:"Jornada & Cliente", label:"🔄 Clientes Recuperados", descricao:"Acompanhamento de clientes reativados ou reconquistados após período de inatividade.", handler:"catalogo", periodo:"todas" },
 
   forecast_semanal: { grupo:"Comercial & Receita", label:"📈 Forecast semanal — Comercial", descricao:"Fechado, Commit, Best Case, pipeline ponderado, previsão por vendedor e higiene de CLOSEDATE.", handler:"forecast_semanal", periodo:"semana_atual" },
   forecast_mensal: { grupo:"Comercial & Receita", label:"🗓️ Forecast mensal — Comercial", descricao:"Forecast do mês, buckets de confiança e gap para a meta opcional.", handler:"catalogo", periodo:"mensal", meta:true },
@@ -311,6 +314,16 @@ const RELATORIOS = {
   origens_canais: { grupo:"Comercial & Receita", label:"🛰️ Origens, canais e conversão", descricao:"Leads, oportunidades, ganhos e receita por SOURCE_ID ou UTM_SOURCE.", handler:"catalogo", periodo:"mensal" },
   produtos_receita: { grupo:"Comercial & Receita", label:"📦 Produtos e receita", descricao:"Produtos presentes em negócios ganhos, unidades, negócios e valor das linhas.", handler:"catalogo", periodo:"mensal" },
   clientes_receita: { grupo:"Comercial & Receita", label:"🏢 Clientes, receita e concentração", descricao:"Receita por cliente, recorrência, ticket médio e concentração Top 10.", handler:"catalogo", periodo:"mensal" },
+  tempo_por_etapa: { grupo:"Comercial & Receita", label:"⏱️ Tempo por Etapa", descricao:"Análise do tempo médio e mediano de permanência das oportunidades em cada etapa do funil.", handler:"catalogo", periodo:"todas" },
+  gargalos: { grupo:"Comercial & Receita", label:"🚧 Gargalos do Funil", descricao:"Identificação das etapas com maior retenção e acúmulo de oportunidades no pipeline.", handler:"catalogo", periodo:"todas" },
+  pipeline_novo_gerado: { grupo:"Comercial & Receita", label:"🌱 Pipeline Novo Gerado", descricao:"Novo pipeline criado hoje, na semana e no mês.", handler:"catalogo", periodo:"todas" },
+  pipeline_carryover: { grupo:"Comercial & Receita", label:"📅 Pipeline Carryover", descricao:"Negócios cujo fechamento foi postergado.", handler:"catalogo", periodo:"todas" },
+  closedate_intelligence: { grupo:"Comercial & Receita", label:"📆 CLOSEDATE Intelligence", descricao:"Higiene de datas no pipeline aberto.", handler:"catalogo", periodo:"todas" },
+  forecast_accuracy: { grupo:"Comercial & Receita", label:"🎯 Forecast Accuracy", descricao:"Comparação contra histórico oficial.", handler:"catalogo", periodo:"mensal" },
+  opportunity_health_score: { grupo:"Comercial & Receita", label:"❤️ Opportunity Health Score", descricao:"Score de saúde das oportunidades abertas.", handler:"catalogo", periodo:"todas" },
+  pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
+  receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
+  motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
 
   diario_sdr: { grupo:"SDR & Leads", label:"📅 Diário SDR — atividades, Leads atendidos e potenciais", descricao:"Atividades concluídas, Leads atendidos e potenciais ainda sem atividade.", handler:"diario_sdr", periodo:"diario" },
   reunioes_sdr: { grupo:"SDR & Leads", label:"🤝 Reuniões — agendadas x realizadas", descricao:"Reuniões por atividade (TYPE_ID=1) e por etapa do funil de Leads (Reunião Agendada/Realizada/No-Show), quebradas por responsável, pipeline e etapa — qualquer funil, qualquer usuário.", handler:"catalogo", periodo:"mensal" },
@@ -329,23 +342,10 @@ const RELATORIOS = {
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
+  crm_health_score: { grupo:"Operação & Qualidade", label:"🩺 CRM Health Score", descricao:"Indicador de integridade, atualização e completude dos dados operacionais no CRM.", handler:"catalogo", periodo:"todas" },
+  negocios_sem_proxima_atividade: { grupo:"Operação & Qualidade", label:"⚠️ Negócios sem Próxima Atividade", descricao:"Listagem de oportunidades abertas no pipeline sem nenhuma atividade futura agendada.", handler:"catalogo", periodo:"todas" },
+  auditoria_pipeline: { grupo:"Operação & Qualidade", label:"🔍 Auditoria de Pipeline", descricao:"Detecção de inconsistências de datas, valores zerados e anomalias de processo no pipeline.", handler:"catalogo", periodo:"todas" },
 
-  pipeline_novo_gerado: { grupo:"Comercial & Receita", label:"🌱 Pipeline Novo Gerado", descricao:"Novo pipeline criado hoje, na semana e no mês.", handler:"catalogo", periodo:"todas" },
-  pipeline_carryover: { grupo:"Comercial & Receita", label:"📅 Pipeline Carryover", descricao:"Negócios cujo fechamento foi postergado.", handler:"catalogo", periodo:"todas" },
-  closedate_intelligence: { grupo:"Comercial & Receita", label:"📆 CLOSEDATE Intelligence", descricao:"Higiene de datas no pipeline aberto.", handler:"catalogo", periodo:"todas" },
-  forecast_accuracy: { grupo:"Comercial & Receita", label:"🎯 Forecast Accuracy", descricao:"Comparação contra histórico oficial.", handler:"catalogo", periodo:"mensal" },
-  opportunity_health_score: { grupo:"Comercial & Receita", label:"❤️ Opportunity Health Score", descricao:"Score de saúde das oportunidades abertas.", handler:"catalogo", periodo:"todas" },
-  pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
-  receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
-  motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
-  pipeline_novo_gerado: { grupo:"Comercial & Receita", label:"🌱 Pipeline Novo Gerado", descricao:"Novo pipeline criado hoje, na semana e no mês.", handler:"catalogo", periodo:"todas" },
-  pipeline_carryover: { grupo:"Comercial & Receita", label:"📅 Pipeline Carryover", descricao:"Negócios cujo fechamento foi postergado.", handler:"catalogo", periodo:"todas" },
-  closedate_intelligence: { grupo:"Comercial & Receita", label:"📆 CLOSEDATE Intelligence", descricao:"Higiene de datas no pipeline aberto.", handler:"catalogo", periodo:"todas" },
-  forecast_accuracy: { grupo:"Comercial & Receita", label:"🎯 Forecast Accuracy", descricao:"Comparação contra histórico oficial.", handler:"catalogo", periodo:"mensal" },
-  opportunity_health_score: { grupo:"Comercial & Receita", label:"❤️ Opportunity Health Score", descricao:"Score de saúde das oportunidades abertas.", handler:"catalogo", periodo:"todas" },
-  pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
-  receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
-  motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
   vendido_faturado: { grupo:"Financeiro × Comercial", label:"💸 Vendido × Faturado", descricao:"Compara o valor das vendas ganhas no Comercial com os registros financeiros de faturamento e NFs.", handler:"catalogo", periodo:"mensal" },
   backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" }
 };
@@ -389,12 +389,12 @@ const SUBENTIDADES_TUDO = [
 ];
 const LIMITE_POR_ENTIDADE_TUDO = Number.POSITIVE_INFINITY; // v3: não truncar extrações completas silenciosamente
 
-let dadosExtraidos = [];
-let camposExtraidos = [];
-let resultadoCompleto = {};
-let extracaoCancelada = false;
-let dadosProdutos = [];
-let camposProdutosAtual = [];
+var dadosExtraidos = [];
+var camposExtraidos = [];
+var resultadoCompleto = {};
+var extracaoCancelada = false;
+var dadosProdutos = [];
+var camposProdutosAtual = [];
 
 // v3 — dados derivados de qualidade/jornada. O bruto é sempre preservado em dadosExtraidos.
 let auditoriaJornada = {};

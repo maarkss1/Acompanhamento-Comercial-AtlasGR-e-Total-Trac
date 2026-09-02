@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { extrairTextoFuncao, avaliarTrechos } from "./helpers/extrair-funcoes-mjs.mjs";
+import vm from "node:vm";
+import { extrairTextoFuncao, extrairTrechoEntreAncoras, avaliarTrechos } from "./helpers/extrair-funcoes-mjs.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CAMINHO_FORECAST = path.join(__dirname, "..", "scripts", "forecast-semanal.mjs");
@@ -116,3 +117,112 @@ describe("Forecast Node — soma de Entregue Financeiro no período", () => {
     assert.equal(forecast.somarFechadosFinanceiroForecastSemanal([], metadata, "2026-08-01", "2026-08-31"), 0);
   });
 });
+
+describe("Financeiro × Comercial — persistência local e suporte a múltiplas NFs (js/financeiro.js)", () => {
+  const CAMINHO_FINANCEIRO = path.join(__dirname, "..", "js", "financeiro.js");
+
+  function criarAmbienteFinanceiro(empresa = "atlasgr") {
+    const memoryStorage = new Map();
+    const docFake = {
+      documentElement: {
+        getAttribute: (attr) => (attr === "data-empresa" ? empresa : null),
+      },
+    };
+    const storageFake = {
+      getItem: (key) => memoryStorage.get(key) || null,
+      setItem: (key, val) => memoryStorage.set(key, String(val)),
+      removeItem: (key) => memoryStorage.delete(key),
+    };
+    const code = readFileSync(CAMINHO_FINANCEIRO, "utf8");
+    const sandbox = {
+      console,
+      document: docFake,
+      localStorage: storageFake,
+      crypto: {
+        randomUUID: () => `uuid-${Math.random().toString(36).substring(2, 9)}`,
+      },
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+
+    const contexto = vm.createContext(sandbox);
+    vm.runInContext(code, contexto, { filename: CAMINHO_FINANCEIRO });
+    return { contexto, memoryStorage };
+  }
+
+  test("getChaveFaturamentos isola os dados de acordo com a empresa ativa", () => {
+    const { contexto: ctxAtlas } = criarAmbienteFinanceiro("atlasgr");
+    assert.equal(ctxAtlas.getChaveFaturamentos(), "atlas-extrator-faturamentos");
+
+    const { contexto: ctxTotal } = criarAmbienteFinanceiro("totaltrac");
+    assert.equal(ctxTotal.getChaveFaturamentos(), "atlas-extrator-faturamentos__totaltrac");
+  });
+
+  test("suporta múltiplos faturamentos (múltiplas NFs) e faturamento parcial para o mesmo negócio", () => {
+    const { contexto } = criarAmbienteFinanceiro("atlasgr");
+
+    // NF 1: Faturamento parcial (R$ 3.000 de um contrato de R$ 10.000)
+    ctxContextoSave(contexto, {
+      bitrix_id: "deal-100",
+      cliente: "Cliente ABC",
+      valor_vendido: 10000,
+      valor_faturado: 3000,
+      numero_nf: "NF-001",
+      data_faturamento: "2026-08-10",
+    });
+
+    // NF 2: Segundo faturamento parcial no mesmo deal (R$ 4.000)
+    ctxContextoSave(contexto, {
+      bitrix_id: "deal-100",
+      cliente: "Cliente ABC",
+      valor_vendido: 10000,
+      valor_faturado: 4000,
+      numero_nf: "NF-002",
+      data_faturamento: "2026-08-20",
+    });
+
+    const faturamentos = contexto.getFaturamentosPorNegocio("deal-100");
+    assert.equal(faturamentos.length, 2);
+
+    const agrupado = contexto.agruparFaturamentosPorNegocio();
+    assert.equal(agrupado["deal-100"].faturado, 7000);
+    assert.equal(agrupado["deal-100"].nfs, 2);
+
+    const saldoPendente = Math.max(0, 10000 - agrupado["deal-100"].faturado);
+    assert.equal(saldoPendente, 3000);
+  });
+});
+
+function ctxContextoSave(ctx, obj) {
+  ctx.saveFaturamento(obj);
+}
+
+describe("Financeiro × Comercial — documentação de dependência do localStorage e classificação B/C", () => {
+  const CAMINHO_CATALOGO = path.join(__dirname, "..", "js", "catalogo-relatorios.js");
+  const codigoCatalogo = readFileSync(CAMINHO_CATALOGO, "utf8");
+
+  test("Card 49 (vendido_faturado) contém ressalva explícita de localStorage e classificação B/C (nunca A)", () => {
+    const trechoVendidoFaturado = extrairTrechoEntreAncoras(
+      codigoCatalogo,
+      'else if(chave==="vendido_faturado"){',
+      'else if(chave==="backlog_financeiro"){'
+    );
+    assert.match(trechoVendidoFaturado, /localStorage/i);
+    assert.match(trechoVendidoFaturado, /Classe B\/C/i);
+    assert.match(trechoVendidoFaturado, /nunca Classe A/i);
+    assert.match(trechoVendidoFaturado, /PostgreSQL \/ camada Bronze/i);
+  });
+
+  test("Card 50 (backlog_financeiro) contém ressalva explícita de localStorage e classificação B/C (nunca A)", () => {
+    const trechoBacklog = extrairTrechoEntreAncoras(
+      codigoCatalogo,
+      'else if(chave==="backlog_financeiro"){',
+      'else if(chave==="qualidade_crm"){'
+    );
+    assert.match(trechoBacklog, /localStorage/i);
+    assert.match(trechoBacklog, /Classe B\/C/i);
+    assert.match(trechoBacklog, /nunca Classe A/i);
+    assert.match(trechoBacklog, /PostgreSQL \/ camada Bronze/i);
+  });
+});
+
