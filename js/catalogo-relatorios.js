@@ -359,13 +359,46 @@ async function extrairRelatorioCatalogo(webhook,chave){
     }
 
     else if(chave==="conversao_comercial"){
-      const b=await baseDealsCatalogo(webhook,true),co=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>dentroPeriodoCatalogo(d.DATE_CREATE,p)),won=co.filter((d)=>d._SEMANTICA==="success"),lost=co.filter((d)=>d._SEMANTICA==="failure"),closed=won.length+lost.length;
+      const b=await baseDealsCatalogo(webhook,true);
+      const co=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>dentroPeriodoCatalogo(d.DATE_CREATE,p));
+      // v25 — "Negócios Ganhos" no funil Comercial NÃO é o cliente ganho de fato:
+      // o negócio só é realmente ganho quando o contrato é assinado no Financeiro
+      // (mesmo critério de "Fechado" já usado em construirDadosModeloForecast,
+      // js/forecast.js:164-168). Um negócio marcado "Ganho" no Comercial que
+      // depois é cancelado no Financeiro ("Contrato Cancelado") é uma PERDA, e um
+      // que ainda está em assinatura fica "Em aberto" — nunca "Ganho" direto pelo
+      // Comercial. Vínculo Comercial↔Financeiro é por cliente (chaveClienteDealModelo,
+      // mesma chave usada no Forecast), não há campo de negócio-pai no Bitrix.
+      const catsFinConversao=encontrarCategoriasPorPalavras(b.meta,["financeiro"],false);
+      let finDealsConversao=[];
+      if(catsFinConversao.length){
+        const filtroFinConversao=catsFinConversao.length===1?{"CATEGORY_ID":catsFinConversao[0]}:{"@CATEGORY_ID":catsFinConversao};
+        finDealsConversao=(await listarCompletoRelatorio(webhook,"crm.deal.list",
+          ["ID","TITLE","CATEGORY_ID","STAGE_ID","STAGE_SEMANTIC_ID","OPPORTUNITY","COMPANY_ID","CONTACT_ID","LEAD_ID","DATE_CREATE"],
+          filtroFinConversao,{ID:"ASC"},"Relatório: buscando Financeiro...")).dados;
+      }
+      const finPorCliente={};
+      finDealsConversao.map((d)=>enriquecerDealCatalogo(d,b)).forEach((d)=>{(finPorCliente[chaveClienteDealModelo(d)]||=[]).push(d);});
+      const situacaoFinanceiro=(lista)=>{
+        if(lista.some((d)=>normalizarTextoChave(d._ESTAGIO).includes("contrato assinado")||(d._SEMANTICA==="success"&&normalizarTextoChave(d._ESTAGIO).includes("assin"))))return"assinado";
+        if(lista.some((d)=>d._SEMANTICA==="failure"||normalizarTextoChave(d._ESTAGIO).includes("cancelado")))return"cancelado";
+        return"pendente";
+      };
+      const classificados=co.map((d)=>{
+        if(d._SEMANTICA==="failure")return{...d,_STATUS_REAL:"perda"};
+        if(d._SEMANTICA==="process")return{...d,_STATUS_REAL:"aberto"};
+        const fin=finPorCliente[chaveClienteDealModelo(d)],sit=fin?situacaoFinanceiro(fin):"pendente";
+        return{...d,_STATUS_REAL:sit==="assinado"?"ganho":sit==="cancelado"?"perda":"aberto"};
+      });
+      const won=classificados.filter((d)=>d._STATUS_REAL==="ganho"),lost=classificados.filter((d)=>d._STATUS_REAL==="perda");
+      const aberto=classificados.filter((d)=>d._STATUS_REAL==="aberto"&&!(d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)));
+      const closed=won.length+lost.length;
       const hist=await buscarHistoricoEntidade(webhook,2,co.map((d)=>d.ID)),vis={};hist.forEach((h)=>{const d=co.find((x)=>String(x.ID)===String(h.OWNER_ID));if(!d)return;const cat=String(h.CATEGORY_ID??d.CATEGORY_ID),sid=String(h.STAGE_ID||""),lab=b.meta.estagios?.[cat]?.[sid]?.label||sid;(vis[lab]||=new Set()).add(String(h.OWNER_ID));});
       const wids=new Set(won.map((d)=>String(d.ID))),rows=Object.entries(vis).map(([stage,set])=>({ESTAGIO:stage,VISITARAM:set.size,GANHOS:[...set].filter((id)=>wids.has(id)).length})).map((x)=>({...x,CONVERSAO_PCT:taxaPct(x.GANHOS,x.VISITARAM)})).sort((a,b)=>b.VISITARAM-a.VISITARAM);
       criarResultadoCatalogo(chave,"Conversão Comercial • funil e Win Rate",`Coorte criada entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
-        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",co.filter((d)=>d._SEMANTICA==="process"&&!ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)).length),kpi("Win Rate (coorte por criação)",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
+        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",aberto.length),kpi("Win Rate (coorte por criação)",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
         [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]}],
-        "Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa.");
+        "Ganho = contrato assinado no Financeiro (não apenas \"Negócios Ganhos\" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa.");
     }
 
     else if(chave==="aging_sla"){

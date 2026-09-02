@@ -626,6 +626,38 @@ function cockpitGanhosFinanceiroPeriodo(periodo) {
     .map((d) => ({ ...d, _DIA_FECHAMENTO: cockpitDataFechamentoFinanceiro(d) }));
 }
 
+// v27 — Win Rate "Negócios" (Comercial confirmado no Financeiro): mesmo motivo
+// da correção em conversao_comercial (js/catalogo-relatorios.js) — "Negócios
+// Ganhos" no Comercial não é o cliente ganho de fato, só quando o contrato é
+// assinado no Financeiro. Um negócio marcado Ganho no Comercial e depois
+// cancelado no Financeiro ("Contrato Cancelado") conta como PERDA aqui; um
+// ainda em assinatura fica de fora do cálculo (não é ganho nem perda ainda).
+// Vínculo Comercial↔Financeiro por cliente (chaveClienteDealModelo, mesma
+// chave do Forecast — não há campo de negócio-pai no Bitrix). Mantém a mesma
+// janela/coorte de cockpitWinRateJanela (_FECHAMENTO do negócio Comercial),
+// só troca o critério de ganho/perda.
+function cockpitSituacaoFinanceiroPorCliente(dealsFinanceiro) {
+  const mapa = {};
+  (dealsFinanceiro || []).forEach((d) => { (mapa[chaveClienteDealModelo(d)] ||= []).push(d); });
+  return mapa;
+}
+function cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, janela) {
+  const mapaFin = cockpitSituacaoFinanceiroPorCliente(dealsFinanceiro);
+  const candidatos = (deals || []).filter((d) => d._SEMANTICA !== "process" && dentroPeriodoCatalogo(d._FECHAMENTO, janela));
+  const classificados = candidatos.map((d) => {
+    if (d._SEMANTICA === "failure") return { ...d, _RESULTADO: "perda" };
+    const fin = mapaFin[chaveClienteDealModelo(d)];
+    if (fin && fin.some((f) => cockpitEhFechadoFinanceiro(f))) return { ...d, _RESULTADO: "ganho" };
+    if (fin && fin.some((f) => f._SEMANTICA === "failure" || normalizarTextoChave(f._ESTAGIO || "").includes("cancelado"))) return { ...d, _RESULTADO: "perda" };
+    return { ...d, _RESULTADO: "pendente" }; // ganho no Comercial, ainda sem confirmação do Financeiro
+  });
+  const ganhosDeals = classificados.filter((d) => d._RESULTADO === "ganho");
+  const perdidosDeals = classificados.filter((d) => d._RESULTADO === "perda");
+  const totalFechados = ganhosDeals.length + perdidosDeals.length;
+  const winRate = totalFechados > 0 ? Math.round((ganhosDeals.length / totalFechados) * 1000) / 10 : null;
+  return { winRate, ganhos: ganhosDeals.length, perdidos: perdidosDeals.length, ganhosDeals, perdidosDeals };
+}
+
 // v29 — usada nos tickets médios abaixo em vez de `lista.length`: um negócio
 // "ganho"/aberto com _VALOR ausente ou 0 (dado incompleto no Bitrix) contava
 // no denominador sem contribuir no numerador, deflacionando o ticket médio em
@@ -714,23 +746,24 @@ function cockpitCalcular() {
   // acima usado por Coverage Recomendado/Pipeline Necessário).
   const anoAtual = Number(mes.hojeISO.slice(0, 4));
   const mesAtualNum = mes.hojeISO.slice(5, 7);
-  const wrMensal = cockpitWinRateJanela(deals, { inicio: mes.inicio, fim: mes.fim });
-  const wrAnual = cockpitWinRateJanela(deals, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
-  const wrTotal = cockpitWinRateJanela(deals, { inicio: "", fim: "" });
+  const dealsFinanceiro = cockpitState.dealsFinanceiroFiltrados || [];
+  const wrMensal = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: mes.inicio, fim: mes.fim });
+  const wrAnual = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
+  const wrTotal = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: "", fim: "" });
 
   // Novas janelas para o Card de Win Rate Executivo:
   // 1. Anos Anteriores (tudo até 31/12 do ano anterior)
-  const wrAnteriores = cockpitWinRateJanela(deals, { inicio: "1900-01-01", fim: `${anoAtual - 1}-12-31` });
+  const wrAnteriores = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: "1900-01-01", fim: `${anoAtual - 1}-12-31` });
 
   // 2. Mês do Ano Anterior (mês homólogo do ano passado)
   const uDiaMesAnt = new Date(anoAtual - 1, Number(mesAtualNum), 0).getDate();
-  const wrMesAnoAnterior = cockpitWinRateJanela(deals, {
+  const wrMesAnoAnterior = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, {
     inicio: `${anoAtual - 1}-${mesAtualNum}-01`,
     fim: `${anoAtual - 1}-${mesAtualNum}-${String(uDiaMesAnt).padStart(2, "0")}`
   });
 
   // 3. Ano Anterior Completo
-  const wrAnoAnterior = cockpitWinRateJanela(deals, { inicio: `${anoAtual - 1}-01-01`, fim: `${anoAtual - 1}-12-31` });
+  const wrAnoAnterior = cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, { inicio: `${anoAtual - 1}-01-01`, fim: `${anoAtual - 1}-12-31` });
 
   // Variações YoY (diferenças em pontos percentuais)
   const diffMesYoY = (wrMensal.winRate != null && wrMesAnoAnterior.winRate != null)
@@ -1491,14 +1524,14 @@ function renderizarCockpit() {
   const winRateHtml = [
     // 1. Mensal
     cockpitKpiCard("Lead → Oportunidade (Mês atual)", cockpitND(c.eficiencia.leadsConversaoMensal, (v) => `${v}%`), "leadsGanhosMensal", "", `${c.eficiencia.leadsConvertidosMensal} opps criadas`),
-    cockpitKpiCard("Win Rate Comercial (Mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
-    cockpitKpiCard("Lead → Cliente (Mês atual)", cockpitND(l2cMensal, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Comercial)"),
-    
+    cockpitKpiCard("Win Rate Negócios (Mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
+    cockpitKpiCard("Lead → Cliente (Mês atual)", cockpitND(l2cMensal, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Negócios)"),
+
     // 2. Anual
     cockpitKpiCard("Lead → Oportunidade (Ano atual)", cockpitND(c.eficiencia.leadsConversaoAnual, (v) => `${v}%`), "leadsGanhosAnual", "", `${c.eficiencia.leadsConvertidosAnual} opps criadas`),
-    cockpitKpiCard("Win Rate Comercial (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
-    cockpitKpiCard("Lead → Cliente (Ano atual)", cockpitND(l2cAnual, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Comercial)"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card de Conversão:</strong> Lead → Oportunidade avalia o funil de Leads (SDR). Win Rate avalia o funil Comercial. Lead → Cliente é o resultado end-to-end. Comparativos YoY apenas para o Win Rate Comercial.</p>`;
+    cockpitKpiCard("Win Rate Negócios (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
+    cockpitKpiCard("Lead → Cliente (Ano atual)", cockpitND(l2cAnual, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Negócios)"),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card de Conversão:</strong> Lead → Oportunidade avalia o funil de Leads (SDR). Win Rate Negócios avalia Comercial + Financeiro — só conta Ganho quando o contrato é assinado no Financeiro (Ganho no Comercial e depois cancelado no Financeiro conta como perda). Lead → Cliente é o resultado end-to-end (Lead até contrato assinado). Comparativos YoY apenas para o Win Rate Negócios.</p>`;
 
   if (cockpitEl("cockpitWinRate")) cockpitEl("cockpitWinRate").innerHTML = winRateHtml;
   if (cockpitEl("homeWinRate")) {
