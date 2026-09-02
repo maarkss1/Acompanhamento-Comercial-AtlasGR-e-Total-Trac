@@ -1452,15 +1452,26 @@ function renderizarCockpit() {
     ? ` · YoY: ${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp`
     : "";
 
-  cockpitEl("cockpitEficiencia").innerHTML = [
+  const winRateHtml = [
     cockpitKpiCard("Win Rate Mensal (mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
     cockpitKpiCard("Win Rate Anual (ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
     cockpitKpiCard("Win Rate Anos Anteriores", cockpitND(c.eficiencia.winRateAnteriores, (v) => `${v}%`), "winRateGanhosAnteriores", "", `${c.eficiencia.ganhosAnteriores} ganho(s) · ${c.eficiencia.perdidosAnteriores} perdido(s)`),
-    cockpitKpiCard("Win Rate Total (histórico)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`),
-    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
-    cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
-    cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card Win Rate Executivo:</strong> Mês atual, Ano atual, Anos Anteriores e Histórico Total usam coorte de data de fechamento em janelas fixas. Comparativos YoY: Mês Atual vs Mês Ano Anterior (${c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp` : "N/A"}) · Ano Atual vs Ano Anterior (${c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp` : "N/A"}). Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s).</p>`;
+    cockpitKpiCard("Win Rate Total (histórico)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`)
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card Win Rate Executivo:</strong> Mês atual, Ano atual, Anos Anteriores e Histórico Total usam coorte de data de fechamento em janelas fixas. Comparativos YoY: Mês Atual vs Mês Ano Anterior (${c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp` : "N/A"}) · Ano Atual vs Ano Anterior (${c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp` : "N/A"}).</p>`;
+
+  if (cockpitEl("cockpitWinRate")) cockpitEl("cockpitWinRate").innerHTML = winRateHtml;
+  if (cockpitEl("homeWinRate")) {
+    cockpitEl("homeWinRate").innerHTML = winRateHtml;
+    if (cockpitEl("homeWinRateSection")) cockpitEl("homeWinRateSection").style.display = "block";
+  }
+
+  if (cockpitEl("cockpitEficiencia")) {
+    cockpitEl("cockpitEficiencia").innerHTML = [
+      cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
+      cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
+      cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
+    ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Ticket médio vendido e Sales Cycle usam o período do filtro selecionado acima. Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s).</p>`;
+  }
 
   const maxValor = Math.max(1, ...c.estagiosForecast.map((g) => g.valor));
   cockpitEl("cockpitEstagios").innerHTML = c.estagiosForecast.map((g, i) => `
