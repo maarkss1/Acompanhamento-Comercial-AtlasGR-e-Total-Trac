@@ -104,6 +104,23 @@ function iaDiagnosticarRelatorioCatalogo(relatorio) {
     }
   });
 
+  // 1b. Coorte por criação (conversao_comercial): Win Rate pode estar
+  // subestimado se boa parte da coorte ainda não fechou — avisa quando a
+  // fatia "Em aberto" é alta em vez de deixar o número passar como definitivo.
+  if (relatorio.chave === "conversao_comercial") {
+    const kpiAberto = kpis.find((k) => (k.rotulo || "").toLowerCase().includes("em aberto"));
+    const kpiTotal = kpis.find((k) => (k.rotulo || "").toLowerCase() === "oportunidades");
+    const aberto = parseInt(String(kpiAberto?.valor || "").replace(/\D/g, ""), 10);
+    const total = parseInt(String(kpiTotal?.valor || "").replace(/\D/g, ""), 10);
+    if (!isNaN(aberto) && !isNaN(total) && total > 0) {
+      const pctAberto = Math.round((aberto / total) * 100);
+      if (pctAberto >= 30) {
+        gargalos.push(`Coorte ainda imatura: ${pctAberto}% dos negócios criados no período seguem "Em aberto", o que pode subestimar o Win Rate exibido.`);
+        acoes.push("Reavaliar este Win Rate por coorte num período já maduro (ex.: mês anterior) antes de usá-lo como referência definitiva.");
+      }
+    }
+  }
+
   // 2. Análise baseada em dados tabulares
   tabelas.forEach((tab) => {
     const dados = tab.dados || [];
