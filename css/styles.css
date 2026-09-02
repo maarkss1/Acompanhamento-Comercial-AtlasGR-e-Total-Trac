@@ -265,6 +265,7 @@
   }
   .entidade-card {
     border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; background: var(--surface);
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .12);
     transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
   }
   .entidade-card:hover {
@@ -287,9 +288,10 @@
   }
   .auditoria-kpi {
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 13px 14px;
-    background: var(--surface-2);
+    border-radius: 16px;
+    padding: 16px 18px;
+    background: var(--surface);
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .12);
   }
   .auditoria-kpi .valor {
     display: block;
@@ -335,16 +337,16 @@
   .relatorio-especial-kpi {
     border: 1px solid var(--line);
     border-radius: 16px;
-    padding: 18px 18px;
-    background: var(--surface-2);
+    padding: 18px 20px;
+    background: var(--surface);
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .12);
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
   }
   .relatorio-especial-kpi.kpi-clicavel {
     cursor: pointer;
-    background: none repeat scroll 0 0 var(--surface-2);
-    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
   }
   .relatorio-especial-kpi.kpi-clicavel:hover {
-    transform: translateY(-2px);
+    transform: translateY(-4px);
     box-shadow: var(--shadow-card);
     border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
   }
@@ -837,8 +839,8 @@
     gap: 16px; margin-top: 18px; align-items: start;
   }
   .cockpit-bloco {
-    border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
-    box-shadow: var(--shadow-card); padding: 16px 18px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2);
+    padding: 18px 20px; margin-bottom: 16px;
   }
   .cockpit-bloco-full { grid-column: 1 / -1; }
   .cockpit-bloco h3 {
@@ -888,13 +890,14 @@
   }
 
   .cockpit-kpi {
-    border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; background: var(--surface-2);
-    cursor: default;
+    border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--surface);
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .12); cursor: default;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
   }
-  .cockpit-kpi .valor { display: block; font-size: 20px; font-weight: 800; color: var(--brand); letter-spacing: -0.03em; }
-  .cockpit-kpi .rotulo { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-2); line-height: 1.35; }
-  .cockpit-kpi-clicavel { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
-  .cockpit-kpi-clicavel:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--brand); }
+  .cockpit-kpi .valor { display: block; font-size: 26px; font-weight: 800; color: var(--brand); letter-spacing: -0.03em; }
+  .cockpit-kpi .rotulo { display: block; margin-top: 5px; font-size: 12px; font-weight: 600; color: var(--ink); line-height: 1.35; }
+  .cockpit-kpi-clicavel { cursor: pointer; }
+  .cockpit-kpi-clicavel:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
   .cockpit-kpi-destaque { background: var(--soft); border-color: var(--brand); }
   .cockpit-kpi-destaque .valor { color: var(--brand-2); }
 
