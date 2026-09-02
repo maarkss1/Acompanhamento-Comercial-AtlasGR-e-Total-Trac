@@ -25,6 +25,8 @@ let cockpitState = {
   ultimaAtualizacaoDeCache: false,
   deals: [],           // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
   dealsFiltrados: [],  // após filtro de vendedor/origem
+  leads: [],           // leads já enriquecidos (_SEMANTICA, _FECHAMENTO)
+  leadsFiltrados: [],  // leads após filtro de vendedor/origem
   // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
   // fonte usada pelo Forecast para "Fechado no mês" (ver
   // cockpitBuscarDealsFinanceiro/cockpitGanhosFinanceiroPeriodo abaixo).
@@ -409,11 +411,22 @@ async function atualizarCockpit() {
   if ((cockpitEl("cockpitVendedor")?.options.length || 0) <= 1) carregarVendedoresCockpit();
   if ((cockpitEl("cockpitOrigem")?.options.length || 0) <= 1) carregarOrigensCockpit();
   try {
-    const base = await baseDealsCatalogo(webhook, true); // somenteComercial=true → CATEGORY_ID 0
+    const [base, baseLeads] = await Promise.all([
+      baseDealsCatalogo(webhook, true), // somenteComercial=true → CATEGORY_ID 0
+      baseLeadsCatalogo(webhook)        // funil de SDR / Entidade Leads
+    ]);
     const enriquecidos = base.deals.map((d) => enriquecerDealCatalogo(d, base));
     cockpitState.deals = enriquecidos;
     cockpitState.dealsFiltrados = cockpitFiltrarPorVendedorOrigem(enriquecidos);
     cockpitState.meta = base.meta;
+
+    const enriquecidosLeads = baseLeads.leads.map((l) => ({
+      ...l,
+      _SEMANTICA: semanticaLead(l),
+      _FECHAMENTO: parteDataISO(l.DATE_CLOSED)
+    }));
+    cockpitState.leads = enriquecidosLeads;
+    cockpitState.leadsFiltrados = cockpitFiltrarPorVendedorOrigem(enriquecidosLeads);
 
     // v26 — "Fechado no mês" usa o funil Financeiro, etapa "Contrato
     // Assinado" — mesma fonte já usada pelo Forecast (js/forecast.js:128-168)
@@ -615,6 +628,7 @@ function cockpitContarComValor(lista) {
 
 function cockpitCalcular() {
   const deals = cockpitState.dealsFiltrados || [];
+  const leads = cockpitState.leadsFiltrados || [];
   const mes = cockpitMesAtual();
   const drill = {};
 
@@ -718,6 +732,16 @@ function cockpitCalcular() {
   const diffAnoYoY = (wrAnual.winRate != null && wrAnoAnterior.winRate != null)
     ? Math.round((wrAnual.winRate - wrAnoAnterior.winRate) * 10) / 10
     : null;
+
+  // Conversão de Leads (SDR)
+  const leadsMensal = cockpitWinRateJanela(leads, { inicio: mes.inicio, fim: mes.fim });
+  const leadsAnual = cockpitWinRateJanela(leads, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
+  const leadsTotal = cockpitWinRateJanela(leads, { inicio: "", fim: "" });
+
+  drill.leadsGanhosMensal = leadsMensal.ganhosDeals;
+  drill.leadsPerdidosMensal = leadsMensal.perdidosDeals;
+  drill.leadsGanhosTotal = leadsTotal.ganhosDeals;
+  drill.leadsPerdidosTotal = leadsTotal.perdidosDeals;
 
   drill.winRateGanhosMensal = wrMensal.ganhosDeals;
   drill.winRatePerdidosMensal = wrMensal.perdidosDeals;
@@ -875,6 +899,9 @@ function cockpitCalcular() {
       winRateMesAnoAnterior: wrMesAnoAnterior.winRate, ganhosMesAnoAnterior: wrMesAnoAnterior.ganhos, perdidosMesAnoAnterior: wrMesAnoAnterior.perdidos,
       winRateAnoAnterior: wrAnoAnterior.winRate, ganhosAnoAnterior: wrAnoAnterior.ganhos, perdidosAnoAnterior: wrAnoAnterior.perdidos,
       diffMesYoY, diffAnoYoY,
+      leadsConversaoMensal: leadsMensal.winRate, leadsConvertidosMensal: leadsMensal.ganhos, leadsDesqualificadosMensal: leadsMensal.perdidos,
+      leadsConversaoAnual: leadsAnual.winRate, leadsConvertidosAnual: leadsAnual.ganhos, leadsDesqualificadosAnual: leadsAnual.perdidos,
+      leadsConversaoTotal: leadsTotal.winRate, leadsConvertidosTotal: leadsTotal.ganhos, leadsDesqualificadosTotal: leadsTotal.perdidos,
       ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro,
     },
     estagios: estagiosLista, totalEstagios, estagiosForecast: estagiosForecastLista,
@@ -1452,12 +1479,21 @@ function renderizarCockpit() {
     ? ` · YoY: ${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp`
     : "";
 
+  // Ponta a ponta (Lead -> Cliente)
+  const l2cMensal = (c.eficiencia.leadsConversaoMensal != null && c.eficiencia.winRateMensal != null) ? Math.round((c.eficiencia.leadsConversaoMensal * c.eficiencia.winRateMensal) / 10) / 10 : null;
+  const l2cAnual = (c.eficiencia.leadsConversaoAnual != null && c.eficiencia.winRateAnual != null) ? Math.round((c.eficiencia.leadsConversaoAnual * c.eficiencia.winRateAnual) / 10) / 10 : null;
+
   const winRateHtml = [
-    cockpitKpiCard("Win Rate Mensal (mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
-    cockpitKpiCard("Win Rate Anual (ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
-    cockpitKpiCard("Win Rate Anos Anteriores", cockpitND(c.eficiencia.winRateAnteriores, (v) => `${v}%`), "winRateGanhosAnteriores", "", `${c.eficiencia.ganhosAnteriores} ganho(s) · ${c.eficiencia.perdidosAnteriores} perdido(s)`),
-    cockpitKpiCard("Win Rate Total (histórico)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`)
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card Win Rate Executivo:</strong> Mês atual, Ano atual, Anos Anteriores e Histórico Total usam coorte de data de fechamento em janelas fixas. Comparativos YoY: Mês Atual vs Mês Ano Anterior (${c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp` : "N/A"}) · Ano Atual vs Ano Anterior (${c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp` : "N/A"}).</p>`;
+    // 1. Mensal
+    cockpitKpiCard("Lead → Oportunidade (Mês atual)", cockpitND(c.eficiencia.leadsConversaoMensal, (v) => `${v}%`), "leadsGanhosMensal", "", `${c.eficiencia.leadsConvertidosMensal} opps criadas`),
+    cockpitKpiCard("Win Rate Comercial (Mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
+    cockpitKpiCard("Lead → Cliente (Mês atual)", cockpitND(l2cMensal, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Comercial)"),
+    
+    // 2. Anual
+    cockpitKpiCard("Lead → Oportunidade (Ano atual)", cockpitND(c.eficiencia.leadsConversaoAnual, (v) => `${v}%`), "leadsGanhosAnual", "", `${c.eficiencia.leadsConvertidosAnual} opps criadas`),
+    cockpitKpiCard("Win Rate Comercial (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
+    cockpitKpiCard("Lead → Cliente (Ano atual)", cockpitND(l2cAnual, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Comercial)"),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card de Conversão:</strong> Lead → Oportunidade avalia o funil de Leads (SDR). Win Rate avalia o funil Comercial. Lead → Cliente é o resultado end-to-end. Comparativos YoY apenas para o Win Rate Comercial.</p>`;
 
   if (cockpitEl("cockpitWinRate")) cockpitEl("cockpitWinRate").innerHTML = winRateHtml;
   if (cockpitEl("homeWinRate")) {
