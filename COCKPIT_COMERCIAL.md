@@ -223,17 +223,18 @@ arquivo) — nenhum código React foi copiado.
   na média, mas contam na quantidade/valor).
 - Clique no estágio abre o drill-down com os negócios daquele estágio.
 
-### 6. Eficiência da Máquina (bloco F, `js/cockpit.js:325-336`)
-- **Fonte**: negócios fechados (`_SEMANTICA!=="process"`) com `_FECHAMENTO`
-  dentro do período filtrado — mesmo recorte do relatório
-  `ganhos_perdas_ciclo` (`js/catalogo-relatorios.js:190-196`).
-- **Win Rate** = `Ganhos / (Ganhos + Perdidos) × 100`. "não disponível" se
-  não houver nenhum fechamento no período.
+### 6. Eficiência da Máquina — Card Win Rate Executivo (bloco F, `js/cockpit.js:690-705, 1448-1463`)
+- **Fonte**: negócios fechados (`_SEMANTICA!=="process"`) com `_FECHAMENTO` em janelas temporais fixas (coorte por data de fechamento).
+- **Win Rate Executivo**:
+  - **Mês Atual**: Win Rate do mês corrente (`ganhosMensal ÷ (ganhosMensal + perdidosMensal)`).
+  - **Ano Vigente**: Win Rate do ano corrente (`ganhosAnual ÷ (ganhosAnual + perdidosAnual)`).
+  - **Anos Anteriores**: Win Rate acumulado de todos os anos anteriores ao ano corrente (`ganhosAnteriores ÷ (ganhosAnteriores + perdidosAnteriores)`).
+  - **Total Histórico**: Win Rate acumulado de toda a base carregada.
+- **Comparativos Evolutivos YoY**:
+  - **Mês YoY**: Variação em pontos percentuais ($\Delta\text{ pp}$) do Mês Atual vs Mês homólogo do ano anterior.
+  - **Ano YoY**: Variação em pontos percentuais ($\Delta\text{ pp}$) do Ano Vigente vs Ano Anterior Completo.
 - **Ticket médio vendido** = receita ganha ÷ quantidade de ganhos.
-- **Sales Cycle** = média e mediana de `_CICLO` (dias entre `DATE_CREATE` e
-  a data de fechamento, `cicloDealDias`, `js/jornada.js:508`) só dos ganhos
-  com as duas datas preenchidas. O tamanho da amostra é mostrado
-  explicitamente na nota abaixo do bloco.
+- **Sales Cycle** = média e mediana de `_CICLO` (dias entre `DATE_CREATE` e a data de fechamento).
 
 ### 7. Geração de Pipeline (bloco H, `cockpitCalcularGeracaoPipeline`, `js/cockpit.js`)
 - **Pipeline criado no período** = soma de `_VALOR` dos negócios (do funil Comercial,

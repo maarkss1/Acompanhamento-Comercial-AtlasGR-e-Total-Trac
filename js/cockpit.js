@@ -108,7 +108,7 @@ function cockpitTickerItens() {
     `Pipeline elegível: ${moedaRelatorio(c.saude.pipelineElegivel)}`,
     `Coverage: ${c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`)}`,
     `Pipeline criado no período: ${moedaRelatorio(c.saude.pipelineCriadoPeriodo)}`,
-    `Win Rate Mensal: ${cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`)} · Anual: ${cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`)} · Total: ${cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`)}`,
+    `Win Rate Mensal: ${cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`)}${c.eficiencia.diffMesYoY != null ? ` (${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp YoY)` : ""} · Anual: ${cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`)}${c.eficiencia.diffAnoYoY != null ? ` (${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp YoY)` : ""} · Anos Ant.: ${cockpitND(c.eficiencia.winRateAnteriores, (v) => `${v}%`)} · Total: ${cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`)}`,
   ];
   if (g) itens.push(`Ritmo de geração de pipeline: ${cockpitND(g.paceRitmoPct, (v) => `${v}%`)}`);
   const nAlertas = alertasInfo?.alertas?.length || 0;
@@ -490,24 +490,14 @@ function cockpitClassificarAberto(d) {
 }
 
 // ---------------------------------------------------------------------------
-// Classificação de bucket do Forecast — ESPECÍFICA DO COCKPIT.
+// Classificação de bucket do Forecast — UNIFICADA COM JORNADA/FORECAST.
 // ---------------------------------------------------------------------------
-// Convergência com a Central de Inteligência Comercial (auditoria de
-// comparação entre os dois projetos, divergência #1): o motor de forecast
-// testado da Central (CENTRAL-DE-INTELIGENCIA-COMECIAL-ATLASGR,
-// src/features/commercial-intelligence/application/forecastEngine.ts,
-// FORECAST_RULES) usa Commit ≥70%, Best Case ≥40%, Pipeline ≥10%, e abaixo
-// disso é "Upside" (baixíssima probabilidade).
-//
-// NÃO reaproveitamos classificarBucketForecast (js/jornada.js, thresholds
-// 80%/50%, sem tier "Upside") porque essa função é a fonte de verdade do
-// Forecast Semanal (js/forecast.js) e do relatório "Forecast Mensal" do
-// Catálogo (js/catalogo-relatorios.js) — mudar os thresholds ali quebraria os
-// dois relatórios, que não fizeram parte desta convergência com a Central.
-// Por isso o Cockpit ganhou esta função própria, só para si.
+// Alinhada com as definições universais de js/jornada.js (classificarBucketForecast)
+// e js/forecast.js: Commit ≥ 80% e Best Case ≥ 50%.
+// O Cockpit mantêm o piso ≥ 10% para "Pipeline" e abaixo disso vira "Upside".
 function cockpitClassificarBucketForecast(prob) {
-  if (prob >= 70) return "Commit";
-  if (prob >= 40) return "Best Case";
+  if (prob >= 80) return "Commit";
+  if (prob >= 50) return "Best Case";
   if (prob >= 10) return "Pipeline";
   return "Upside";
 }
@@ -697,17 +687,44 @@ function cockpitCalcular() {
   drill.winRatePerdidos = perdidosPeriodo;
   drill.cicloVenda = ganhosPeriodo;
 
-  // Win Rate Mensal / Anual / Total — janelas fixas, sempre calculadas juntas
+  // Win Rate Mensal / Anual / Anteriores / Total — janelas fixas, sempre calculadas juntas
   // (não dependem do filtro de período da tela, que só afeta o `winRate`
   // acima usado por Coverage Recomendado/Pipeline Necessário).
   const anoAtual = Number(mes.hojeISO.slice(0, 4));
+  const mesAtualNum = mes.hojeISO.slice(5, 7);
   const wrMensal = cockpitWinRateJanela(deals, { inicio: mes.inicio, fim: mes.fim });
   const wrAnual = cockpitWinRateJanela(deals, { inicio: `${anoAtual}-01-01`, fim: `${anoAtual}-12-31` });
   const wrTotal = cockpitWinRateJanela(deals, { inicio: "", fim: "" });
+
+  // Novas janelas para o Card de Win Rate Executivo:
+  // 1. Anos Anteriores (tudo até 31/12 do ano anterior)
+  const wrAnteriores = cockpitWinRateJanela(deals, { inicio: "1900-01-01", fim: `${anoAtual - 1}-12-31` });
+
+  // 2. Mês do Ano Anterior (mês homólogo do ano passado)
+  const uDiaMesAnt = new Date(anoAtual - 1, Number(mesAtualNum), 0).getDate();
+  const wrMesAnoAnterior = cockpitWinRateJanela(deals, {
+    inicio: `${anoAtual - 1}-${mesAtualNum}-01`,
+    fim: `${anoAtual - 1}-${mesAtualNum}-${String(uDiaMesAnt).padStart(2, "0")}`
+  });
+
+  // 3. Ano Anterior Completo
+  const wrAnoAnterior = cockpitWinRateJanela(deals, { inicio: `${anoAtual - 1}-01-01`, fim: `${anoAtual - 1}-12-31` });
+
+  // Variações YoY (diferenças em pontos percentuais)
+  const diffMesYoY = (wrMensal.winRate != null && wrMesAnoAnterior.winRate != null)
+    ? Math.round((wrMensal.winRate - wrMesAnoAnterior.winRate) * 10) / 10
+    : null;
+
+  const diffAnoYoY = (wrAnual.winRate != null && wrAnoAnterior.winRate != null)
+    ? Math.round((wrAnual.winRate - wrAnoAnterior.winRate) * 10) / 10
+    : null;
+
   drill.winRateGanhosMensal = wrMensal.ganhosDeals;
   drill.winRatePerdidosMensal = wrMensal.perdidosDeals;
   drill.winRateGanhosAnual = wrAnual.ganhosDeals;
   drill.winRatePerdidosAnual = wrAnual.perdidosDeals;
+  drill.winRateGanhosAnteriores = wrAnteriores.ganhosDeals;
+  drill.winRatePerdidosAnteriores = wrAnteriores.perdidosDeals;
   drill.winRateGanhosTotal = wrTotal.ganhosDeals;
   drill.winRatePerdidosTotal = wrTotal.perdidosDeals;
 
@@ -853,7 +870,11 @@ function cockpitCalcular() {
       winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length,
       winRateMensal: wrMensal.winRate, ganhosMensal: wrMensal.ganhos, perdidosMensal: wrMensal.perdidos,
       winRateAnual: wrAnual.winRate, ganhosAnual: wrAnual.ganhos, perdidosAnual: wrAnual.perdidos,
+      winRateAnteriores: wrAnteriores.winRate, ganhosAnteriores: wrAnteriores.ganhos, perdidosAnteriores: wrAnteriores.perdidos,
       winRateTotal: wrTotal.winRate, ganhosTotal: wrTotal.ganhos, perdidosTotal: wrTotal.perdidos,
+      winRateMesAnoAnterior: wrMesAnoAnterior.winRate, ganhosMesAnoAnterior: wrMesAnoAnterior.ganhos, perdidosMesAnoAnterior: wrMesAnoAnterior.perdidos,
+      winRateAnoAnterior: wrAnoAnterior.winRate, ganhosAnoAnterior: wrAnoAnterior.ganhos, perdidosAnoAnterior: wrAnoAnterior.perdidos,
+      diffMesYoY, diffAnoYoY,
       ticketMedioVendido, cicloMedia, cicloMediana, amostraCiclo: ciclos.length, periodoFiltro,
     },
     estagios: estagiosLista, totalEstagios, estagiosForecast: estagiosForecastLista,
@@ -1202,7 +1223,10 @@ function cockpitGerarSituacaoAgora() {
     ["Pipeline criado no período", fmtMoeda(c.saude.pipelineCriadoPeriodo)],
     ["Win Rate Mensal (mês atual)", fmtPct(c.eficiencia.winRateMensal)],
     ["Win Rate Anual (ano atual)", fmtPct(c.eficiencia.winRateAnual)],
-    ["Win Rate Total (todo o período com dados)", fmtPct(c.eficiencia.winRateTotal)],
+    ["Win Rate Anos Anteriores", fmtPct(c.eficiencia.winRateAnteriores)],
+    ["Win Rate Total (histórico acumulado)", fmtPct(c.eficiencia.winRateTotal)],
+    ["Comparativo Mês YoY (vs mês ano anterior)", c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? '+' : ''}${c.eficiencia.diffMesYoY} pp` : "não disponível"],
+    ["Comparativo Ano YoY (vs ano anterior)", c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? '+' : ''}${c.eficiencia.diffAnoYoY} pp` : "não disponível"],
     ["Sales Cycle (média)", c.eficiencia.cicloMedia != null ? `${c.eficiencia.cicloMedia}d` : "não disponível"],
     ["Oportunidades abertas", c.saude.qtdAberto],
     ["Oportunidades em risco (vencidas/aging alto)", `${emRiscoQtd}`],
@@ -1420,11 +1444,24 @@ function renderizarCockpit() {
       `<td>${p.coverageRecomendado != null ? `${p.coverageRecomendado.toFixed(2)}x` : "não disponível"}</td>` +
       `</tr>`).join("") + `</tbody></table>`;
 
-  // E) Pipeline por Estágio — v26: só negócios parados na etapa atual há até
-  // 60 dias, sem estágios Piloto (mesmo recorte do Forecast; ver
-  // cockpitCalcular/abertosPipelineEstagio). O alerta de aging alto continua
-  // olhando o pipeline sem esse filtro (c.estagios), para não perder de
-  // vista os negócios mais parados.
+  // F) Eficiência da Máquina — Win Rate Executivo
+  const subMesYoY = c.eficiencia.diffMesYoY != null
+    ? ` · YoY: ${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp`
+    : "";
+  const subAnoYoY = c.eficiencia.diffAnoYoY != null
+    ? ` · YoY: ${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp`
+    : "";
+
+  cockpitEl("cockpitEficiencia").innerHTML = [
+    cockpitKpiCard("Win Rate Mensal (mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
+    cockpitKpiCard("Win Rate Anual (ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
+    cockpitKpiCard("Win Rate Anos Anteriores", cockpitND(c.eficiencia.winRateAnteriores, (v) => `${v}%`), "winRateGanhosAnteriores", "", `${c.eficiencia.ganhosAnteriores} ganho(s) · ${c.eficiencia.perdidosAnteriores} perdido(s)`),
+    cockpitKpiCard("Win Rate Total (histórico)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`),
+    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
+    cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
+    cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;"><strong>Card Win Rate Executivo:</strong> Mês atual, Ano atual, Anos Anteriores e Histórico Total usam coorte de data de fechamento em janelas fixas. Comparativos YoY: Mês Atual vs Mês Ano Anterior (${c.eficiencia.diffMesYoY != null ? `${c.eficiencia.diffMesYoY > 0 ? "+" : ""}${c.eficiencia.diffMesYoY} pp` : "N/A"}) · Ano Atual vs Ano Anterior (${c.eficiencia.diffAnoYoY != null ? `${c.eficiencia.diffAnoYoY > 0 ? "+" : ""}${c.eficiencia.diffAnoYoY} pp` : "N/A"}). Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s).</p>`;
+
   const maxValor = Math.max(1, ...c.estagiosForecast.map((g) => g.valor));
   cockpitEl("cockpitEstagios").innerHTML = c.estagiosForecast.map((g, i) => `
     <div class="cockpit-estagio-linha" onclick="cockpitAbrirDrill('estagioFc_${i}','Negócios em ${escapeHtmlRelatorio(g.estagio)}')">
@@ -1433,18 +1470,6 @@ function renderizarCockpit() {
       <div class="cockpit-estagio-stats">${g.qtd} negócio(s) · ${moedaRelatorio(g.valor)} · ${g.pctTotal}% · aging médio ${g.agingMedio != null ? `${g.agingMedio}d` : "não disponível"}</div>
     </div>`).join("") || `<p class="rodape-nota">Nenhum negócio elegível (≤60 dias na etapa, sem Piloto).</p>`;
 
-  // F) Eficiência da Máquina — Win Rate sempre calculado em 3 janelas fixas
-  // (Mensal/Anual/Total), lado a lado, independente do filtro de período
-  // selecionado acima (que só afeta Ticket médio/Sales Cycle abaixo e o
-  // Coverage Recomendado/Pipeline Necessário em outros blocos).
-  cockpitEl("cockpitEficiencia").innerHTML = [
-    cockpitKpiCard("Win Rate Mensal (mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)`),
-    cockpitKpiCard("Win Rate Anual (ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)`),
-    cockpitKpiCard("Win Rate Total (todo o período com dados)", cockpitND(c.eficiencia.winRateTotal, (v) => `${v}%`), "winRateGanhosTotal", "", `${c.eficiencia.ganhosTotal} ganho(s) · ${c.eficiencia.perdidosTotal} perdido(s)`),
-    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
-    cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
-    cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Win Rate Mensal/Anual/Total usam janelas fixas de data (mês atual, ano atual, todo o histórico carregado) e não mudam com o filtro de período acima. Ticket médio vendido e Sales Cycle continuam usando o período do filtro selecionado. Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s) com data de criação e de fechamento preenchidas, dentro do período do filtro.</p>`;
 
   // H) Geração de Pipeline
   const g = cockpitCalcularGeracaoPipeline(c);
@@ -1626,9 +1651,20 @@ function cockpitListaKpisExport(cache) {
   add("Eficiência da Máquina", "Win Rate Anual (ano atual)", pct(c.eficiencia.winRateAnual), "%");
   add("Eficiência da Máquina", "Ganhos no ano", num(c.eficiencia.ganhosAnual), "qtd");
   add("Eficiência da Máquina", "Perdidos no ano", num(c.eficiencia.perdidosAnual), "qtd");
-  add("Eficiência da Máquina", "Win Rate Total (todo o período com dados)", pct(c.eficiencia.winRateTotal), "%");
+  add("Eficiência da Máquina", "Win Rate Anos Anteriores", pct(c.eficiencia.winRateAnteriores), "%");
+  add("Eficiência da Máquina", "Ganhos anos anteriores", num(c.eficiencia.ganhosAnteriores), "qtd");
+  add("Eficiência da Máquina", "Perdidos anos anteriores", num(c.eficiencia.perdidosAnteriores), "qtd");
+  add("Eficiência da Máquina", "Win Rate Total (histórico acumulado)", pct(c.eficiencia.winRateTotal), "%");
   add("Eficiência da Máquina", "Ganhos no total", num(c.eficiencia.ganhosTotal), "qtd");
   add("Eficiência da Máquina", "Perdidos no total", num(c.eficiencia.perdidosTotal), "qtd");
+  add("Eficiência da Máquina", "Win Rate Mês Ano Anterior (homólogo)", pct(c.eficiencia.winRateMesAnoAnterior), "%");
+  add("Eficiência da Máquina", "Ganhos mês ano anterior", num(c.eficiencia.ganhosMesAnoAnterior), "qtd");
+  add("Eficiência da Máquina", "Perdidos mês ano anterior", num(c.eficiencia.perdidosMesAnoAnterior), "qtd");
+  add("Eficiência da Máquina", "Win Rate Ano Anterior Completo", pct(c.eficiencia.winRateAnoAnterior), "%");
+  add("Eficiência da Máquina", "Ganhos ano anterior", num(c.eficiencia.ganhosAnoAnterior), "qtd");
+  add("Eficiência da Máquina", "Perdidos ano anterior", num(c.eficiencia.perdidosAnoAnterior), "qtd");
+  add("Eficiência da Máquina", "Comparativo Mês YoY (Δ pp)", c.eficiencia.diffMesYoY != null ? String(c.eficiencia.diffMesYoY) : null, "pp");
+  add("Eficiência da Máquina", "Comparativo Ano YoY (Δ pp)", c.eficiencia.diffAnoYoY != null ? String(c.eficiencia.diffAnoYoY) : null, "pp");
   add("Eficiência da Máquina", "Win Rate (período do filtro selecionado)", pct(c.eficiencia.winRate), "%");
   add("Eficiência da Máquina", "Ticket médio vendido (Comercial)", moeda(c.eficiencia.ticketMedioVendido), "R$");
   add("Eficiência da Máquina", "Sales Cycle (média)", num(c.eficiencia.cicloMedia), "dias");
