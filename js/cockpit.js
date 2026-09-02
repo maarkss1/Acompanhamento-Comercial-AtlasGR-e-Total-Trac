@@ -149,21 +149,29 @@ function cockpitIniciarAutoAtualizacao() {
   }, COCKPIT_AUTO_ATUALIZACAO_MS);
 }
 
+function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = "") {
+  const clique = chaveDrill ? ` onclick="cockpitAbrirDrill('${chaveDrill}','${escapeHtmlRelatorio(rotulo).replace(/'/g, "\\'")}')"` : "";
+  const cls = chaveDrill ? "cockpit-kpi cockpit-kpi-clicavel" : "cockpit-kpi";
+  const sub = subTexto ? `<div style="font-size:10px; margin-top:4px; color:var(--ink-2); line-height:1.2;">${subTexto}</div>` : "";
+  return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span>${sub}</div>`;
+}
+
 function atualizarRelogioCockpit() {
   const el = cockpitEl("cockpitUltimaAtualizacao");
-  if (!el) return;
+  const elHome = cockpitEl("homeCockpitUltimaAtualizacao");
+  if (!el && !elHome) return;
   if (!cockpitState.ultimaAtualizacao) {
-    el.textContent = "Última atualização: ainda não carregado nesta sessão.";
+    if (el) el.textContent = "Última atualização: ainda não carregado nesta sessão.";
+    if (elHome) elHome.textContent = "Última atualização: ainda não carregado nesta sessão.";
     return;
   }
   const d = cockpitState.ultimaAtualizacao;
   const dd = String(d.getDate()).padStart(2, "0"), mm = String(d.getMonth() + 1).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0"), mi = String(d.getMinutes()).padStart(2, "0");
-  // v29 — sinaliza quando parte dos dados veio do cache local (até 5min)
-  // em vez de fresca do Bitrix, pra "Última atualização" não sugerir mais
-  // atualidade do que realmente existe.
   const sufixoCache = cockpitState.ultimaAtualizacaoDeCache ? " · ⚠️ parcialmente do cache local (até 5min)" : "";
-  el.textContent = `Última atualização: ${dd}/${mm}/${d.getFullYear()} ${hh}:${mi} · Fonte: Bitrix24${sufixoCache}`;
+  const texto = `Última atualização: ${dd}/${mm}/${d.getFullYear()} às ${hh}:${mi}${sufixoCache}`;
+  if (el) el.textContent = texto;
+  if (elHome) elHome.textContent = texto;
 }
 
 // ---------------------------------------------------------------------------
@@ -1382,6 +1390,7 @@ function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = 
 const COCKPIT_CONTAINERS_KPI = [
   "cockpitResultadoMes", "cockpitForecast", "cockpitSaudePipeline",
   "cockpitEficiencia", "cockpitGeracaoPipeline", "cockpitSdrResumo", "cockpitQualidadeDados",
+  "homeResultadoMes", "homeForecast", "homeSaudePipeline", "homeWinRate", "homeEficiencia",
 ];
 const COCKPIT_CONTAINERS_LISTA = ["cockpitAlertas", "cockpitEstagios"];
 
@@ -1423,7 +1432,7 @@ function renderizarCockpit() {
   const c = cockpitCalcular();
 
   // A) Resultado do Mês
-  cockpitEl("cockpitResultadoMes").innerHTML = [
+  const resultadoMesHtml = [
     cockpitKpiCard("Meta New MRR (mês)", c.resultadoMes.metaMensal ? moedaRelatorio(c.resultadoMes.metaMensal) : "não informada", null),
     cockpitKpiCard("Fechado no mês", moedaRelatorio(c.resultadoMes.fechadoMes), "resultadoMesFechado", "", c.resultadoMes.fechadoMesMom),
     cockpitKpiCard("% da Meta", cockpitND(c.resultadoMes.pctMeta, (v) => `${v}%`), "resultadoMesFechado"),
@@ -1431,11 +1440,13 @@ function renderizarCockpit() {
     cockpitKpiCard("Negócios ganhos", c.resultadoMes.qtd, "resultadoMesFechado", "", c.resultadoMes.qtdMom),
     cockpitKpiCard("Ticket médio (mês, Financeiro)", cockpitND(c.resultadoMes.ticketMedioMes, moedaRelatorio), "resultadoMesFechado", "", c.resultadoMes.ticketMom),
   ].join("");
+  if (cockpitEl("cockpitResultadoMes")) cockpitEl("cockpitResultadoMes").innerHTML = resultadoMesHtml;
+  if (cockpitEl("homeResultadoMes")) cockpitEl("homeResultadoMes").innerHTML = resultadoMesHtml;
 
   // B) Forecast — visualmente separado do Pipeline (cor/bloco diferentes).
   // Commit e Best Case = valor cheio; Pipeline entra ponderado; Upside fica
   // de fora do forecast total (ver cockpitCalcular, bloco B).
-  cockpitEl("cockpitForecast").innerHTML = [
+  const forecastHtml = [
     cockpitKpiCard("Commit (valor cheio)", moedaRelatorio(c.forecast.commit), "forecastCommit"),
     cockpitKpiCard("Best Case (valor cheio)", moedaRelatorio(c.forecast.bestCase), "forecastBestCase"),
     cockpitKpiCard("Pipeline (bruto)", moedaRelatorio(c.forecast.pipelineForecast), "forecastPipeline"),
@@ -1444,11 +1455,13 @@ function renderizarCockpit() {
     cockpitKpiCard("Forecast total do mês", moedaRelatorio(c.forecast.forecastTotal), "forecastTotal", "cockpit-kpi-destaque"),
     cockpitKpiCard("Gap do Forecast", cockpitND(c.forecast.gapForecast, moedaRelatorio), "forecastTotal"),
   ].join("");
+  if (cockpitEl("cockpitForecast")) cockpitEl("cockpitForecast").innerHTML = forecastHtml;
+  if (cockpitEl("homeForecast")) cockpitEl("homeForecast").innerHTML = forecastHtml;
 
   // C) Saúde do Pipeline
   const covTxt = c.saude.coverage === "meta batida" ? "meta já batida" : cockpitND(c.saude.coverage, (v) => `${v.toFixed(2)}x`);
   const covRecTxt = cockpitND(c.saude.coverageRecomendado, (v) => `${v.toFixed(2)}x`);
-  cockpitEl("cockpitSaudePipeline").innerHTML = [
+  const saudePipelineHtml = [
     cockpitKpiCard("Pipeline Total", moedaRelatorio(c.saude.pipelineTotal), "pipelineTotal"),
     cockpitKpiCard("Pipeline Elegível (filtro)", moedaRelatorio(c.saude.pipelineElegivel), "pipelineElegivel"),
     cockpitKpiCard("Pipeline inelegível (com motivo)", c.saude.pipelineInelegivelQtd, "pipelineInelegivel"),
@@ -1457,19 +1470,27 @@ function renderizarCockpit() {
     cockpitKpiCard("Pipeline criado no período", moedaRelatorio(c.saude.pipelineCriadoPeriodo), "pipelineCriado"),
     cockpitKpiCard("Ticket médio do pipeline", cockpitND(c.saude.ticketMedioPipeline, moedaRelatorio), "pipelineTotal"),
   ].join("");
-  cockpitEl("cockpitAvisoPipelineForecast").textContent =
-    `Pipeline Total (${moedaRelatorio(c.saude.pipelineTotal)}) é o valor bruto de tudo que está aberto no Comercial — não é previsão de fechamento. A previsão fica nos cards de Forecast acima (Commit/Best Case/Pipeline ponderado). Coverage atual: ${covTxt} · recomendado (baseado no Win Rate histórico do período): ${covRecTxt}.`;
+  if (cockpitEl("cockpitSaudePipeline")) cockpitEl("cockpitSaudePipeline").innerHTML = saudePipelineHtml;
+  if (cockpitEl("homeSaudePipeline")) cockpitEl("homeSaudePipeline").innerHTML = saudePipelineHtml;
+  const avisoPipelineEl = cockpitEl("cockpitAvisoPipelineForecast");
+  if (avisoPipelineEl) {
+    avisoPipelineEl.textContent =
+      `Pipeline Total (${moedaRelatorio(c.saude.pipelineTotal)}) é o valor bruto de tudo que está aberto no Comercial — não é previsão de fechamento. A previsão fica nos cards de Forecast acima (Commit/Best Case/Pipeline ponderado). Coverage atual: ${covTxt} · recomendado (baseado no Win Rate histórico do período): ${covRecTxt}.`;
+  }
 
   // D) Proteção de Receita
-  cockpitEl("cockpitProtecaoTabela").innerHTML = `<table><thead><tr><th>Mês</th><th>Meta</th><th>Pipeline Elegível</th><th>Coverage</th><th>Status (chão fixo)</th><th>Recomendado (Win Rate)</th></tr></thead><tbody>` +
-    c.protecao.map((p, i) => `<tr class="cockpit-linha-clicavel" onclick="cockpitAbrirDrill('protecao_${i}','Pipeline elegível — ${escapeHtmlRelatorio(p.label)}')">` +
-      `<td>${escapeHtmlRelatorio(p.label)}</td>` +
-      `<td>${p.meta ? moedaRelatorio(p.meta) : "não informada"}</td>` +
-      `<td>${moedaRelatorio(p.pipeline)}</td>` +
-      `<td>${p.coverage != null ? `${p.coverage.toFixed(2)}x` : "não disponível"}</td>` +
-      `<td><span class="cockpit-status-badge ${p.status.classe}">${p.status.rotulo}</span></td>` +
-      `<td>${p.coverageRecomendado != null ? `${p.coverageRecomendado.toFixed(2)}x` : "não disponível"}</td>` +
-      `</tr>`).join("") + `</tbody></table>`;
+  const protecaoTabelaEl = cockpitEl("cockpitProtecaoTabela");
+  if (protecaoTabelaEl) {
+    protecaoTabelaEl.innerHTML = `<table><thead><tr><th>Mês</th><th>Meta</th><th>Pipeline Elegível</th><th>Coverage</th><th>Status (chão fixo)</th><th>Recomendado (Win Rate)</th></tr></thead><tbody>` +
+      c.protecao.map((p, i) => `<tr class="cockpit-linha-clicavel" onclick="cockpitAbrirDrill('protecao_${i}','Pipeline elegível — ${escapeHtmlRelatorio(p.label)}')">` +
+        `<td>${escapeHtmlRelatorio(p.label)}</td>` +
+        `<td>${p.meta ? moedaRelatorio(p.meta) : "não informada"}</td>` +
+        `<td>${moedaRelatorio(p.pipeline)}</td>` +
+        `<td>${p.coverage != null ? `${p.coverage.toFixed(2)}x` : "não disponível"}</td>` +
+        `<td><span class="cockpit-status-badge ${p.status.classe}">${p.status.rotulo}</span></td>` +
+        `<td>${p.coverageRecomendado != null ? `${p.coverageRecomendado.toFixed(2)}x` : "não disponível"}</td>` +
+        `</tr>`).join("") + `</tbody></table>`;
+  }
 
   // F) Eficiência da Máquina — Win Rate Executivo
   const subMesYoY = c.eficiencia.diffMesYoY != null
@@ -1501,58 +1522,72 @@ function renderizarCockpit() {
     if (cockpitEl("homeWinRateSection")) cockpitEl("homeWinRateSection").style.display = "block";
   }
 
-  if (cockpitEl("cockpitEficiencia")) {
-    cockpitEl("cockpitEficiencia").innerHTML = [
-      cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
-      cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
-      cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
-    ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Ticket médio vendido e Sales Cycle usam o período do filtro selecionado acima. Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s).</p>`;
+  const eficienciaHtml = [
+    cockpitKpiCard("Ticket médio vendido (Comercial)", cockpitND(c.eficiencia.ticketMedioVendido, moedaRelatorio), "winRateGanhos"),
+    cockpitKpiCard("Sales Cycle (média)", cockpitND(c.eficiencia.cicloMedia, (v) => `${v}d`), "cicloVenda"),
+    cockpitKpiCard("Sales Cycle (mediana)", cockpitND(c.eficiencia.cicloMediana, (v) => `${v}d`), "cicloVenda"),
+  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Ticket médio vendido e Sales Cycle usam o período do filtro selecionado acima. Amostra do ciclo de vendas: ${c.eficiencia.amostraCiclo} negócio(s) ganho(s).</p>`;
+  if (cockpitEl("cockpitEficiencia")) cockpitEl("cockpitEficiencia").innerHTML = eficienciaHtml;
+  if (cockpitEl("homeEficiencia")) cockpitEl("homeEficiencia").innerHTML = eficienciaHtml;
+
+  const estagiosEl = cockpitEl("cockpitEstagios");
+  if (estagiosEl) {
+    const maxValor = Math.max(1, ...c.estagiosForecast.map((g) => g.valor));
+    estagiosEl.innerHTML = c.estagiosForecast.map((g, i) => `
+      <div class="cockpit-estagio-linha" onclick="cockpitAbrirDrill('estagioFc_${i}','Negócios em ${escapeHtmlRelatorio(g.estagio)}')">
+        <div class="cockpit-estagio-nome">${escapeHtmlRelatorio(g.estagio)}</div>
+        <div class="cockpit-estagio-barra"><div class="cockpit-estagio-barra-fill" style="width:${Math.max(2, (g.valor / maxValor) * 100).toFixed(1)}%"></div></div>
+        <div class="cockpit-estagio-stats">${g.qtd} negócio(s) · ${moedaRelatorio(g.valor)} · ${g.pctTotal}% · aging médio ${g.agingMedio != null ? `${g.agingMedio}d` : "não disponível"}</div>
+      </div>`).join("") || `<p class="rodape-nota">Nenhum negócio elegível (≤60 dias na etapa, sem Piloto).</p>`;
   }
 
-  const maxValor = Math.max(1, ...c.estagiosForecast.map((g) => g.valor));
-  cockpitEl("cockpitEstagios").innerHTML = c.estagiosForecast.map((g, i) => `
-    <div class="cockpit-estagio-linha" onclick="cockpitAbrirDrill('estagioFc_${i}','Negócios em ${escapeHtmlRelatorio(g.estagio)}')">
-      <div class="cockpit-estagio-nome">${escapeHtmlRelatorio(g.estagio)}</div>
-      <div class="cockpit-estagio-barra"><div class="cockpit-estagio-barra-fill" style="width:${Math.max(2, (g.valor / maxValor) * 100).toFixed(1)}%"></div></div>
-      <div class="cockpit-estagio-stats">${g.qtd} negócio(s) · ${moedaRelatorio(g.valor)} · ${g.pctTotal}% · aging médio ${g.agingMedio != null ? `${g.agingMedio}d` : "não disponível"}</div>
-    </div>`).join("") || `<p class="rodape-nota">Nenhum negócio elegível (≤60 dias na etapa, sem Piloto).</p>`;
-
-
   // H) Geração de Pipeline
-  const g = cockpitCalcularGeracaoPipeline(c);
-  cockpitEl("cockpitGeracaoPipeline").innerHTML = [
-    cockpitKpiCard("Pipeline criado no período", moedaRelatorio(g.pipelineCriado), "geracaoCriado"),
-    cockpitKpiCard("Pipeline necessário (Meta M+1 ÷ Win Rate)", cockpitND(g.pipelineNecessario, moedaRelatorio), null),
-    cockpitKpiCard("Gap de geração", cockpitND(g.gapGeracao, moedaRelatorio), null),
-    cockpitKpiCard("Creation Coverage", cockpitND(g.creationCoverage, (v) => `${(v * 100).toFixed(1)}%`), null),
-    cockpitKpiCard("Dias úteis decorridos / total do mês", `${g.diasUteisDecorridos} / ${g.diasUteisTotal}`, null),
-    cockpitKpiCard("Esperado até hoje (pace)", cockpitND(g.paceEsperadoAteHoje, moedaRelatorio), null),
-    cockpitKpiCard("Gap de ritmo", g.paceGap != null ? moedaRelatorio(g.paceGap) : "não disponível", null),
-    cockpitKpiCard("Ritmo de criação", cockpitND(g.paceRitmoPct, (v) => `${v}%`), null, g.paceRitmoPct != null && g.paceRitmoPct < 100 ? "cockpit-status-atencao" : ""),
-  ].join("");
+  const geracaoPipelineEl = cockpitEl("cockpitGeracaoPipeline");
+  if (geracaoPipelineEl) {
+    const g = cockpitCalcularGeracaoPipeline(c);
+    geracaoPipelineEl.innerHTML = [
+      cockpitKpiCard("Pipeline criado no período", moedaRelatorio(g.pipelineCriado), "geracaoCriado"),
+      cockpitKpiCard("Pipeline necessário (Meta M+1 ÷ Win Rate)", cockpitND(g.pipelineNecessario, moedaRelatorio), null),
+      cockpitKpiCard("Gap de geração", cockpitND(g.gapGeracao, moedaRelatorio), null),
+      cockpitKpiCard("Creation Coverage", cockpitND(g.creationCoverage, (v) => `${(v * 100).toFixed(1)}%`), null),
+      cockpitKpiCard("Dias úteis decorridos / total do mês", `${g.diasUteisDecorridos} / ${g.diasUteisTotal}`, null),
+      cockpitKpiCard("Esperado até hoje (pace)", cockpitND(g.paceEsperadoAteHoje, moedaRelatorio), null),
+      cockpitKpiCard("Gap de ritmo", g.paceGap != null ? moedaRelatorio(g.paceGap) : "não disponível", null),
+      cockpitKpiCard("Ritmo de criação", cockpitND(g.paceRitmoPct, (v) => `${v}%`), null, g.paceRitmoPct != null && g.paceRitmoPct < 100 ? "cockpit-status-atencao" : ""),
+    ].join("");
+  }
 
   // I) SDR — resumo executivo
+  const sdrAvisoEl = cockpitEl("cockpitSdrAviso");
+  if (sdrAvisoEl) {
+    sdrAvisoEl.textContent =
+      "Este resumo usa só os negócios do Comercial já carregados (não busca Leads/atividades). Leads trabalhados e conversão Lead→Oportunidade completa: ver Análise SDR / Diário SDR (links abaixo). Reuniões agendadas/realizadas: bloco dedicado logo abaixo (busca sob demanda).";
+  }
+  const sdrResumoEl = cockpitEl("cockpitSdrResumo");
   const s = cockpitCalcularResumoSdr(c);
-  cockpitEl("cockpitSdrAviso").textContent =
-    "Este resumo usa só os negócios do Comercial já carregados (não busca Leads/atividades). Leads trabalhados e conversão Lead→Oportunidade completa: ver Análise SDR / Diário SDR (links abaixo). Reuniões agendadas/realizadas: bloco dedicado logo abaixo (busca sob demanda).";
-  cockpitEl("cockpitSdrResumo").innerHTML = [
-    cockpitKpiCard("Negócios criados no período", s.totalCriados, null),
-    cockpitKpiCard("Originados de Lead (proxy SDR)", s.viaLeadQtd, "sdrViaLead"),
-    cockpitKpiCard("Valor originado de Lead", moedaRelatorio(s.viaLeadValor), "sdrViaLead"),
-    cockpitKpiCard("% originado de Lead", cockpitND(s.pctViaLead, (v) => `${v}%`), "sdrViaLead"),
-    cockpitKpiCard("Leads trabalhados", "não disponível", null),
-  ].join("");
+  if (sdrResumoEl) {
+    sdrResumoEl.innerHTML = [
+      cockpitKpiCard("Negócios criados no período", s.totalCriados, null),
+      cockpitKpiCard("Originados de Lead (proxy SDR)", s.viaLeadQtd, "sdrViaLead"),
+      cockpitKpiCard("Valor originado de Lead", moedaRelatorio(s.viaLeadValor), "sdrViaLead"),
+      cockpitKpiCard("% originado de Lead", cockpitND(s.pctViaLead, (v) => `${v}%`), "sdrViaLead"),
+      cockpitKpiCard("Leads trabalhados", "não disponível", null),
+    ].join("");
+  }
 
   // J) Qualidade dos Dados (CRM) — Data Quality Score
+  const qualidadeDadosEl = cockpitEl("cockpitQualidadeDados");
   const q = cockpitCalcularQualidadeDados(c);
-  cockpitEl("cockpitQualidadeDados").innerHTML = [
-    ...q.campos.map((f, i) => cockpitKpiCard(`Completude — ${f.label}`, cockpitND(f.pct, (v) => `${v}%`), `qualidade_${i}`)),
-    cockpitKpiCard("Motivo de perda informado", q.perdidosQtd ? "0% (campo não existe no projeto)" : "sem negócios perdidos no período", "qualidadeMotivoPerda"),
-    cockpitKpiCard("Data Quality Score", cockpitND(q.dataQualityScore, (v) => `${v}%`), null, "cockpit-kpi-destaque"),
-  ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Base: ${q.baseTotal} negócio(s) (aberto(s), quando houver; senão todos os filtrados). Data Quality Score = completude de cadastro no CRM, não é confiança de forecast.</p>`;
+  if (qualidadeDadosEl) {
+    qualidadeDadosEl.innerHTML = [
+      ...q.campos.map((f, i) => cockpitKpiCard(`Completude — ${f.label}`, cockpitND(f.pct, (v) => `${v}%`), `qualidade_${i}`)),
+      cockpitKpiCard("Motivo de perda informado", q.perdidosQtd ? "0% (campo não existe no projeto)" : "sem negócios perdidos no período", "qualidadeMotivoPerda"),
+      cockpitKpiCard("Data Quality Score", cockpitND(q.dataQualityScore, (v) => `${v}%`), null, "cockpit-kpi-destaque"),
+    ].join("") + `<p class="rodape-nota" style="grid-column:1/-1;">Base: ${q.baseTotal} negócio(s) (aberto(s), quando houver; senão todos os filtrados). Data Quality Score = completude de cadastro no CRM, não é confiança de forecast.</p>`;
+  }
 
-  // K) Alertas Gerenciais — reaproveita c e g já calculados acima, nenhuma
-  // fórmula nova de negócio, só thresholds/leitura (ver cockpitCalcularAlertas).
+  // K) Alertas Gerenciais
+  const g = typeof cockpitCalcularGeracaoPipeline === "function" ? cockpitCalcularGeracaoPipeline(c) : null;
   const alertasInfo = cockpitCalcularAlertas(c, g);
   cockpitRenderAlertas(alertasInfo);
 

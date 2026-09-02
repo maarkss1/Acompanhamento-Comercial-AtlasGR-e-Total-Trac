@@ -397,24 +397,24 @@ var dadosProdutos = [];
 var camposProdutosAtual = [];
 
 // v3 — dados derivados de qualidade/jornada. O bruto é sempre preservado em dadosExtraidos.
-let auditoriaJornada = {};
-let dadosJornadaNormalizada = [];
-let dadosDuplicidadesJornada = [];
-let dadosHistoricoEstagios = [];
-let dadosHandoffsCliente = [];
-let mapaUsuariosJornada = {};
-let metadadosFunisJornada = { categorias: {}, estagios: {}, dinamico: false };
+var auditoriaJornada = {};
+var dadosJornadaNormalizada = [];
+var dadosDuplicidadesJornada = [];
+var dadosHistoricoEstagios = [];
+var dadosHandoffsCliente = [];
+var mapaUsuariosJornada = {};
+var metadadosFunisJornada = { categorias: {}, estagios: {}, dinamico: false };
 
 // v5 — relatórios gerenciais especiais.
-let resultadoForecastSemanal = {};
-let resultadoDiarioSDR = {};
-let resultadoAnaliseSDR = {};
-let resultadoRelatorioCatalogo = {};
+var resultadoForecastSemanal = {};
+var resultadoDiarioSDR = {};
+var resultadoAnaliseSDR = {};
+var resultadoRelatorioCatalogo = {};
 
 // Cache por entidade da lista completa de campos já carregada direto do Bitrix
 // (via "Carregar todos os campos do Bitrix", passo 4) — evita rebuscar toda vez
 // que o usuário troca de entidade e volta.
-let camposCompletosCache = {};
+var camposCompletosCache = {};
 
 // Campos de identificação (vêm do negócio já extraído / da empresa vinculada,
 // não da API de linhas de produto).

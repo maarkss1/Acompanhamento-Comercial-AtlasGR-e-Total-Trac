@@ -80,12 +80,6 @@
   </div>
 </header>
 
-<nav class="quick-nav" aria-label="Navegação do portal">
-  <div class="quick-nav-inner"><div class="quick-nav-shell">
-    <span class="quick-nav-grupo">🏠 Portal</span><a href="totaltrac-home.html">Início</a><a href="totaltrac-cockpit.html">Cockpit Executivo</a><a href="totaltrac-forecast.html">Relatórios Comerciais</a><a href="totaltrac-sdr.html">SDR &amp; Operação</a><a href="totaltrac-extracao.html">Extração &amp; Diagnóstico</a><a href="totaltrac-evolucao.html">Evolução</a><a href="index.html" title="Trocar de empresa (AtlasGR / Total Trac)">🔀 Trocar empresa</a><a href="#" onclick="sairDoPortal();return false;" title="Sair e pedir a senha novamente">🔒 Sair</a>
-  </div></div>
-</nav>
-
 <main>
 
   <div class="cockpit-ticker" id="cockpitTicker" aria-live="polite">
@@ -98,10 +92,47 @@
     <a href="totaltrac-cockpit.html" class="cockpit-ticker-link">Ver Cockpit completo →</a>
   </div>
 
-  <section class="cockpit-bloco cockpit-bloco-full" style="margin-top: 16px; margin-bottom: 24px; display: none;" id="homeWinRateSection">
-    <h3>🏆 Win Rate Executivo (Visão Geral)</h3>
-    <div class="relatorio-especial-grid" id="homeWinRate"></div>
-  </section>
+  <div class="card cockpit-card" id="homeCockpitCard" style="margin-top: 18px; margin-bottom: 24px;">
+    <div class="cockpit-header">
+      <div>
+        <div class="hero-eyebrow" style="color:var(--brand);">⚡ VISÃO GERAL · COCKPIT COMERCIAL</div>
+        <h2 style="margin:4px 0 0; font-size:18px; font-weight:800; border:none; padding:0; background:none; min-height:auto;">Cockpit Comercial</h2>
+        <p class="rodape-nota" style="margin-top:2px;" id="homeCockpitUltimaAtualizacao">Snapshot dos principais indicadores calculados nesta sessão.</p>
+      </div>
+      <div class="row" style="gap:8px; align-items:center;">
+        <a href="totaltrac-cockpit.html" class="hero-btn" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:var(--brand)!important; color:#fff!important; font-weight:700; border-radius:var(--radius-control); padding:9px 16px;">
+          Abrir Cockpit Completo →
+        </a>
+      </div>
+    </div>
+
+    <div class="cockpit-blocos" style="margin-top:16px;">
+      <section class="cockpit-bloco" id="bloco-home-resultado">
+        <h3>💰 Resultado do Mês</h3>
+        <div class="relatorio-especial-grid" id="homeResultadoMes"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="bloco-home-forecast">
+        <h3>🔮 Forecast Comercial</h3>
+        <div class="relatorio-especial-grid" id="homeForecast"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="bloco-home-saude">
+        <h3>🩺 Saúde do Pipeline</h3>
+        <div class="relatorio-especial-grid" id="homeSaudePipeline"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="bloco-home-winrate">
+        <h3>🏆 Win Rate Executivo &amp; Conversão</h3>
+        <div class="relatorio-especial-grid" id="homeWinRate"></div>
+      </section>
+
+      <section class="cockpit-bloco" id="bloco-home-eficiencia">
+        <h3>⚙️ Eficiência da Máquina</h3>
+        <div class="relatorio-especial-grid" id="homeEficiencia"></div>
+      </section>
+    </div>
+  </div>
 
   <div class="card" id="conexao">
     <h2>🔑 Conexão rápida com o Bitrix</h2>

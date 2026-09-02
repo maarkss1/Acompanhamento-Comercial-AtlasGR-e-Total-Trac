@@ -734,7 +734,7 @@ function renderizarForecastSemanal() {
 
 // ---------------------------- Diário SDR -----------------------------------
 
-const TIPOS_ATIVIDADE_BITRIX = {
+var TIPOS_ATIVIDADE_BITRIX = {
   "1": "Reunião",
   "2": "Ligação",
   "3": "Tarefa",
