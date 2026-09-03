@@ -27,14 +27,60 @@
   .pfa-kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:12px; }
   .pfa-kpi-sub { font-size:11px; margin-top:4px; color:var(--ink-2); line-height:1.2; }
   .pfa-kpi-ativo { outline:2px solid var(--brand); }
-  .pfa-linha { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--surface); }
-  .pfa-linha-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
   .pfa-link-negocio { margin-left:8px; font-size:12.5px; }
   .pfa-linha-acoes { display:flex; align-items:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap; }
   .pfa-tarefa-ok { font-size:12.5px; color:var(--sucesso); padding:8px 0; }
-  .pfa-form-tarefa { margin-top:10px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; background:var(--soft); }
-  .pfa-form-tarefa label { margin-top:8px; }
-  .pfa-form-tarefa label:first-child { margin-top:0; }
+
+  /* Cards de vendedor lado a lado, recolhidos por padrão (mesmo padrão dos
+     cards de grupo da Home — ver GRUPOS_PRINCIPAIS_HOME em js/ui.js): cada
+     um só mostra os negócios dele quando clicado, e ao abrir ocupa a largura
+     toda pra caber os itens confortavelmente. */
+  .pfa-vendor-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; margin-top:12px; align-items:start; }
+  .pfa-vendor-card { position:relative; background:var(--surface); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .pfa-vendor-card[open] { grid-column:1 / -1; }
+  .pfa-vendor-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:linear-gradient(var(--brand),var(--gold)); }
+  .pfa-vendor-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:12px; padding:14px 16px 14px 20px; }
+  .pfa-vendor-card > summary::-webkit-details-marker { display:none; }
+  .pfa-vendor-card > summary:hover { background:var(--soft); }
+  .pfa-vendor-avatar { width:36px; height:36px; border-radius:50%; background:var(--soft); color:var(--brand); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; flex-shrink:0; border:1px solid var(--line); }
+  .pfa-vendor-info { flex:1; }
+  .pfa-vendor-nome { font-weight:800; font-size:14.5px; }
+  .pfa-vendor-stats { font-size:12px; color:var(--ink-2); margin-top:1px; }
+  .pfa-vendor-chevron { font-size:13px; color:var(--brand); transition:transform .15s; }
+  .pfa-vendor-card[open] > summary .pfa-vendor-chevron { transform:rotate(180deg); }
+  .pfa-vendor-body { padding:0 16px 16px 20px; display:flex; flex-direction:column; gap:10px; border-top:1px solid var(--line); margin-top:2px; padding-top:14px; }
+
+  .pfa-item-card { border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--soft); }
+
+  /* Estágio / dias parado / valor viram 3 mini-cards, não uma linha de texto. */
+  .pfa-item-stats { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .pfa-mini-stat { flex:1; min-width:110px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--surface); }
+  .pfa-mini-label { display:block; font-size:10.5px; font-weight:700; color:var(--ink-2); text-transform:uppercase; letter-spacing:.03em; }
+  .pfa-mini-valor { display:block; font-size:14px; font-weight:800; margin-top:2px; color:var(--ink); }
+  .pfa-mini-stat.pfa-mini-alerta { border-color:color-mix(in srgb, var(--danger) 45%, var(--line)); }
+  .pfa-mini-stat.pfa-mini-alerta .pfa-mini-valor { color:var(--danger); }
+  .pfa-mini-stat.pfa-mini-ok .pfa-mini-valor { color:var(--ok); }
+
+  /* Só a criação de tarefa segue o visual do Bitrix24 (pedido explícito) —
+     todo o resto da página segue o estilo da própria plataforma acima. */
+  .bx-task-panel { border:1px solid var(--line); border-radius:10px; margin-top:10px; overflow:hidden; }
+  .bx-task-head { background:#2FC6F6; color:#fff; padding:10px 16px; font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:8px; }
+  .bx-task-body { padding:16px; background:var(--surface); }
+  .bx-task-field { margin-bottom:14px; }
+  .bx-task-field label { display:block; font-size:11.5px; font-weight:700; color:#7a7a7a; text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; }
+  .bx-task-field input[type=text], .bx-task-field textarea, .bx-task-field input[type=date] { width:100%; border:1px solid #e0e0e0; border-radius:6px; padding:9px 11px; font-size:14px; font-family:inherit; box-sizing:border-box; }
+  .bx-task-row { display:flex; gap:14px; flex-wrap:wrap; }
+  .bx-task-row > div { flex:1; min-width:160px; }
+  .bx-responsavel-chip { display:inline-flex; align-items:center; gap:8px; background:#f4f5f7; border:1px solid #e0e0e0; border-radius:20px; padding:5px 12px 5px 5px; font-size:13px; font-weight:600; color:#222; }
+  .bx-responsavel-chip .avatar { width:24px; height:24px; border-radius:50%; background:#2FC6F6; color:#fff; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:800; }
+  .bx-prioridade { display:flex; gap:6px; margin-top:4px; }
+  .bx-flag { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:13px; border:1px solid #e0e0e0; cursor:pointer; background:#fff; }
+  .bx-flag.selecionada.baixa { background:#f4f5f7; border-color:#c2c2c2; }
+  .bx-flag.selecionada.normal { background:#fff4d6; border-color:#f5c453; }
+  .bx-flag.selecionada.alta { background:#ffe1e1; border-color:#f08a8a; }
+  .bx-task-actions { display:flex; gap:10px; padding:12px 16px; background:#f8f9fa; border-top:1px solid #eee; }
+  .bx-btn-criar { background:#2FC6F6; color:#fff; border:none; border-radius:6px; padding:9px 22px; font-weight:700; font-size:13.5px; cursor:pointer; }
+  .bx-btn-cancelar { background:transparent; color:#666; border:none; padding:9px 14px; font-weight:600; font-size:13.5px; cursor:pointer; }
 </style>
 </head>
 <body class="aguardando-login">

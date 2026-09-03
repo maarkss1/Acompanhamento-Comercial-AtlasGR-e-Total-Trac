@@ -249,6 +249,41 @@ function pfaSituacaoBadgeHTML(it) {
   return `<span class="badge-relatorio alerta">Em aberto</span>`;
 }
 
+// Motivos comuns pra cada estágio — só preenchem o texto do comentário (o
+// campo continua editável/livre depois), não substituem a digitação manual.
+const PFA_MOTIVOS_COMUNS = {
+  documentos: [
+    "Aguardando envio de documentos pelo cliente",
+    "Documento enviado com erro/pendência — aguardando reenvio",
+    "Aguardando validação jurídica/interna",
+    "Cliente sem retorno",
+    "Aguardando atualização de CNPJ/Contrato Social",
+  ],
+  assinatura: [
+    "Aguardando assinatura do cliente",
+    "Cliente pediu prazo adicional",
+    "Contrato em revisão jurídica (cliente ou Atlas)",
+    "Aguardando aprovação interna do cliente",
+    "Cliente sem retorno",
+  ],
+};
+
+function pfaPreencherComentario(idInterno, valor) {
+  if (!valor) return;
+  const campo = document.getElementById(`pfaComentario_${idInterno}`);
+  if (!campo) return;
+  campo.value = valor;
+  pfaSalvarComentario(idInterno, valor);
+}
+
+// Iniciais pro avatar do vendedor (até 2 letras: primeiro + último nome).
+function pfaIniciais(nome) {
+  const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
 function pfaLinhaHTML(it) {
   const linkNegocio = pfaLinkNegocio(it);
   const tarefaHTML = it.tarefa
@@ -256,16 +291,38 @@ function pfaLinhaHTML(it) {
     : `<button type="button" class="secundario" onclick="pfaAbrirFormTarefa('${it.idInterno}')"${it.vendedorId ? "" : ' disabled title="Este negócio não tem responsável válido no Bitrix"'}>📌 Criar tarefa no Bitrix</button>
        <div class="oculto pfa-form-tarefa" id="pfaFormTarefa_${it.idInterno}"></div>`;
 
-  return `<div class="pfa-linha" id="pfaLinha_${it.idInterno}">
+  const motivos = PFA_MOTIVOS_COMUNS[it.estagioChave] || [];
+  const selectMotivos = motivos.length
+    ? `<select onchange="pfaPreencherComentario('${it.idInterno}', this.value); this.value='';" style="margin-bottom:6px;">
+        <option value="">Escolher motivo comum...</option>
+        ${motivos.map((m) => `<option value="${escapeHtmlRelatorio(m)}">${escapeHtmlRelatorio(m)}</option>`).join("")}
+      </select>`
+    : "";
+
+  return `<div class="pfa-item-card" id="pfaLinha_${it.idInterno}">
     <div class="pfa-linha-topo">
       <div>
         <strong>${escapeHtmlRelatorio(it.cliente)}</strong>
         ${linkNegocio ? `<a href="${linkNegocio}" target="_blank" rel="noopener noreferrer" class="pfa-link-negocio">Abrir negócio no Bitrix ↗</a>` : ""}
-        <div class="rodape-nota" style="margin-top:2px;">${escapeHtmlRelatorio(it.estagioLabel)} · ${it.diasParado != null ? `${it.diasParado} dia(s) parado` : "sem data de referência"} · ${moedaRelatorio(it.valor)}</div>
       </div>
       <div>${pfaSituacaoBadgeHTML(it)}</div>
     </div>
-    <label for="pfaComentario_${it.idInterno}" style="margin-top:8px;">Comentário (motivo apurado com o vendedor)</label>
+    <div class="pfa-item-stats">
+      <div class="pfa-mini-stat">
+        <span class="pfa-mini-label">Estágio</span>
+        <span class="pfa-mini-valor">${escapeHtmlRelatorio(it.estagioLabel)}</span>
+      </div>
+      <div class="pfa-mini-stat${it.diasParado != null && it.diasParado > 30 ? " pfa-mini-alerta" : ""}">
+        <span class="pfa-mini-label">Dias parado</span>
+        <span class="pfa-mini-valor">${it.diasParado != null ? it.diasParado : "—"}</span>
+      </div>
+      <div class="pfa-mini-stat pfa-mini-ok">
+        <span class="pfa-mini-label">Valor</span>
+        <span class="pfa-mini-valor">${moedaRelatorio(it.valor)}</span>
+      </div>
+    </div>
+    <label for="pfaComentario_${it.idInterno}" style="margin-top:10px;">Comentário (motivo apurado com o vendedor)</label>
+    ${selectMotivos}
     <textarea id="pfaComentario_${it.idInterno}" rows="2" placeholder="Ex: cliente pediu prazo até dia 10 para enviar os documentos societários." onchange="pfaSalvarComentario('${it.idInterno}', this.value)">${escapeHtmlRelatorio(it.comentario)}</textarea>
     <div class="pfa-linha-acoes">
       <button type="button" class="secundario" onclick="pfaAlternarStatus('${it.idInterno}')">${it.status === "resolvido" ? "↺ Reabrir" : "✔️ Marcar resolvido"}</button>
@@ -290,15 +347,23 @@ function pfaRenderTabela() {
     (porVendedor[chave] ||= []).push(it);
   });
   const nomes = Object.keys(porVendedor).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  cont.innerHTML = nomes.map((nome) => {
+  const cards = nomes.map((nome) => {
     const lista = porVendedor[nome].slice().sort((a, b) => (b.diasParado || 0) - (a.diasParado || 0));
     const valorTotal = lista.reduce((s, it) => s + (Number(it.valor) || 0), 0);
     const linhas = lista.map(pfaLinhaHTML).join("");
-    return `<details class="vcard section-card" open>
-      <summary><span class="vcard-name">👤 ${escapeHtmlRelatorio(nome)}</span><span class="vcard-stats">${lista.length} negócio(s) · ${moedaRelatorio(valorTotal)}</span><span class="vcard-chevron">▾</span></summary>
-      <div class="vcard-body">${linhas}</div>
+    return `<details class="pfa-vendor-card">
+      <summary>
+        <span class="pfa-vendor-avatar">${escapeHtmlRelatorio(pfaIniciais(nome))}</span>
+        <span class="pfa-vendor-info">
+          <span class="pfa-vendor-nome">${escapeHtmlRelatorio(nome)}</span>
+          <span class="pfa-vendor-stats">${lista.length} negócio(s) · ${moedaRelatorio(valorTotal)}</span>
+        </span>
+        <span class="pfa-vendor-chevron">▾</span>
+      </summary>
+      <div class="pfa-vendor-body">${linhas}</div>
     </details>`;
   }).join("");
+  cont.innerHTML = `<div class="pfa-vendor-grid">${cards}</div>`;
 }
 
 function pfaRenderStatus() {
@@ -363,6 +428,23 @@ function pfaDescricaoTarefaPadrao(it) {
   return linhas.filter((l) => l !== "").join("\n");
 }
 
+// Só este painel (criação de tarefa) segue o visual do Bitrix24 — pedido
+// explícito: o resto da página usa o estilo da própria plataforma.
+const PFA_PRIORIDADES = [
+  { valor: "0", chave: "baixa", label: "Baixa", icone: "▾" },
+  { valor: "1", chave: "normal", label: "Normal", icone: "■" },
+  { valor: "2", chave: "alta", label: "Alta", icone: "▲" },
+];
+
+function pfaSelecionarPrioridade(idInterno, valor) {
+  const grupo = document.getElementById(`pfaPrioridade_${idInterno}`);
+  if (!grupo) return;
+  grupo.dataset.valor = valor;
+  grupo.querySelectorAll(".bx-flag").forEach((el) => {
+    el.classList.toggle("selecionada", el.dataset.valor === valor);
+  });
+}
+
 function pfaAbrirFormTarefa(idInterno) {
   const it = pfaState.itens.find((x) => x.idInterno === idInterno);
   if (!it) return;
@@ -374,16 +456,38 @@ function pfaAbrirFormTarefa(idInterno) {
     return;
   }
   const tituloPadrao = `Pipeline Financeiro parado — ${it.cliente} (${it.estagioLabel})`;
+  const flagsHTML = PFA_PRIORIDADES.map((p) => `<div class="bx-flag ${p.chave}${p.valor === "1" ? " selecionada" : ""}" data-valor="${p.valor}" title="${p.label}" onclick="pfaSelecionarPrioridade('${idInterno}','${p.valor}')">${p.icone}</div>`).join("");
   box.innerHTML = `
-    <label for="pfaTarefaTitulo_${idInterno}">Título da tarefa</label>
-    <input type="text" id="pfaTarefaTitulo_${idInterno}" value="${escapeHtmlRelatorio(tituloPadrao)}">
-    <label for="pfaTarefaDescricao_${idInterno}">Descrição</label>
-    <textarea id="pfaTarefaDescricao_${idInterno}" rows="5">${escapeHtmlRelatorio(pfaDescricaoTarefaPadrao(it))}</textarea>
-    <label for="pfaTarefaPrazo_${idInterno}">Prazo (opcional)</label>
-    <input type="date" id="pfaTarefaPrazo_${idInterno}">
-    <div class="row" style="margin-top:8px;">
-      <button type="button" class="primario" onclick="pfaCriarTarefa('${idInterno}')">Criar tarefa no Bitrix</button>
-      <button type="button" class="secundario" onclick="pfaAbrirFormTarefa('${idInterno}')">Cancelar</button>
+    <div class="bx-task-panel">
+      <div class="bx-task-head">📌 Nova tarefa (Bitrix24)</div>
+      <div class="bx-task-body">
+        <div class="bx-task-field">
+          <label>Título da tarefa</label>
+          <input type="text" id="pfaTarefaTitulo_${idInterno}" value="${escapeHtmlRelatorio(tituloPadrao)}">
+        </div>
+        <div class="bx-task-row">
+          <div class="bx-task-field">
+            <label>Responsável</label>
+            <div class="bx-responsavel-chip"><span class="avatar">${escapeHtmlRelatorio(pfaIniciais(it.vendedorNome))}</span>${escapeHtmlRelatorio(it.vendedorNome || "Sem responsável")}</div>
+          </div>
+          <div class="bx-task-field">
+            <label>Prazo final</label>
+            <input type="date" id="pfaTarefaPrazo_${idInterno}">
+          </div>
+        </div>
+        <div class="bx-task-field">
+          <label>Descrição</label>
+          <textarea id="pfaTarefaDescricao_${idInterno}" rows="5">${escapeHtmlRelatorio(pfaDescricaoTarefaPadrao(it))}</textarea>
+        </div>
+        <div class="bx-task-field" style="margin-bottom:0;">
+          <label>Prioridade</label>
+          <div class="bx-prioridade" id="pfaPrioridade_${idInterno}" data-valor="1">${flagsHTML}</div>
+        </div>
+      </div>
+      <div class="bx-task-actions">
+        <button type="button" class="bx-btn-criar" onclick="pfaCriarTarefa('${idInterno}')">Criar tarefa</button>
+        <button type="button" class="bx-btn-cancelar" onclick="pfaAbrirFormTarefa('${idInterno}')">Cancelar</button>
+      </div>
     </div>
     <p class="rodape-nota" id="pfaTarefaStatus_${idInterno}"></p>
   `;
@@ -412,6 +516,7 @@ async function pfaCriarTarefa(idInterno) {
   const titulo = document.getElementById(`pfaTarefaTitulo_${idInterno}`)?.value.trim();
   const descricao = document.getElementById(`pfaTarefaDescricao_${idInterno}`)?.value.trim();
   const prazo = document.getElementById(`pfaTarefaPrazo_${idInterno}`)?.value;
+  const prioridade = document.getElementById(`pfaPrioridade_${idInterno}`)?.dataset.valor || "1";
   if (!titulo) {
     if (statusEl) statusEl.textContent = "Preencha o título da tarefa.";
     return;
@@ -423,6 +528,7 @@ async function pfaCriarTarefa(idInterno) {
       TITLE: titulo,
       DESCRIPTION: descricao || "",
       RESPONSIBLE_ID: Number(it.vendedorId),
+      PRIORITY: prioridade,
       UF_CRM_TASK: [`D_${it.negocioId}`],
     };
     if (prazo) fields.DEADLINE = `${prazo}T18:00:00`;
