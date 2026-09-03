@@ -11,6 +11,33 @@ if(typeof globalThis!=="undefined"){
   if(typeof globalThis.extracaoCancelada==="undefined") globalThis.extracaoCancelada=false;
 }
 
+// v30 — motivo real de perda (usado por "motivos_ganho_perda" abaixo).
+// Auditoria ao vivo (ver AUDITORIA_CAMPOS_PIPELINES_BITRIX.md) achou DOIS
+// campos de "Motivo da Negociação Perdida" no Negócio, com listas de opção
+// diferentes, os dois em uso real e paralelo pelo time (~45% de preenchimento
+// cada, em negócios realmente perdidos — não um "principal" e um "abandonado":
+// batem juntos em 57/150 casos e cada um sozinho em ~10/150, cobrindo ~52% dos
+// perdidos somando os dois). Por isso o relatório consulta os dois e usa o
+// mais novo (N) como preferência, caindo para o antigo se só ele estiver
+// preenchido — cobre mais casos do que confiar em só um. Bitrix devolve o
+// valor do negócio como ID(s) da lista — para virar texto lido, precisa do
+// de-para ID→VALUE, que só vem em crm.deal.fields (não em crm.deal.list). Sem
+// hardcodar o de-para (o time pode adicionar motivos novos a qualquer momento).
+const CAMPO_MOTIVO_PERDA = "UF_CRM_1582845737741"; // "Motivo da Negociação Perdida (N)"
+const CAMPO_MOTIVO_PERDA_ANTIGO = "UF_CRM_6908AECC40696"; // "Motivo da Negociação Perdida" (sem "(N)")
+async function mapaOpcoesEnumeracaoDeal(webhook, campoCodigo){
+  const body = await bitrixFetchComRetentativa(`${webhook.replace(/\/$/,"")}/crm.deal.fields.json`);
+  const meta = body?.result?.[campoCodigo];
+  const mapa = {};
+  (meta?.items||[]).forEach((it)=>{ mapa[String(it.ID)] = it.VALUE; });
+  return mapa;
+}
+function resolverValorEnumeracao(valor, mapaOpcoes){
+  if (valor === null || valor === undefined || valor === "" || valor === false) return "";
+  const lista = Array.isArray(valor) ? valor : [valor];
+  return lista.map((id)=>mapaOpcoes[String(id)] || "").filter(Boolean).join("; ");
+}
+
 async function mapaOrigensRelatorio(webhook){
   const a=await carregarListaPaginada(webhook,"crm.status.list",{"filter[ENTITY_ID]":"SOURCE","order[SORT]":"ASC"});
   const m={};a.forEach((x)=>m[String(x.STATUS_ID)]=x.NAME||x.STATUS_ID);return m;
@@ -38,6 +65,35 @@ function enriquecerDealCatalogo(d,b){
   return{...d,_FUNIL:nomeFunilSemCodigo(b.meta.categorias?.[cat]||`Categoria ${cat}`),_ESTAGIO:sm.label||d.STAGE_ID||"",
     _SEMANTICA:sem,_CLIENTE:emp?.TITLE||d.TITLE||"",_RESPONSAVEL:nomeUsuario(d.ASSIGNED_BY_ID)||(d.ASSIGNED_BY_ID?`ID ${d.ASSIGNED_BY_ID}`:"Sem responsável"),
     _VALOR:valorDeal(d),_FECHAMENTO:fecharDataDeal(d),_CICLO:cicloDealDias(d)};
+}
+
+// v30 — igual a baseDealsCatalogo, mas busca só o(s) funil(is) que batem com
+// `palavras` (mesmo casamento por nome de encontrarCategoriasPorPalavras) em
+// vez de "só Comercial" ou "tudo". Usado pelos relatórios dedicados de
+// Reembolsos/Pós-Vendas/Chamados SC/Negócios Perdidos (ver
+// AUDITORIA_CAMPOS_PIPELINES_BITRIX.md) — funis com volume real que antes só
+// apareciam misturados dentro de "Implantação, Onboarding e Pós-Venda" ou nem
+// apareciam (Reembolsos é tratado como funil interno em outros relatórios).
+async function baseDealsPorFunil(webhook,palavras){
+  const [meta]=await Promise.all([buscarMetadadosFunisEEstagios(webhook),buscarUsuariosJornada(webhook)]);
+  const cats=encontrarCategoriasPorPalavras(meta,palavras,false);
+  if(!cats.length) return{meta,deals:[],empresas:{},cats:[]};
+  const filtro=cats.length===1?{CATEGORY_ID:cats[0]}:{"@CATEGORY_ID":cats};
+  const busca=await listarCompletoRelatorio(webhook,"crm.deal.list",[
+    "ID","TITLE","CATEGORY_ID","STAGE_ID","STAGE_SEMANTIC_ID","OPPORTUNITY","CURRENCY_ID",
+    "ASSIGNED_BY_ID","COMPANY_ID","CONTACT_ID","DATE_CREATE","DATE_MODIFY","MOVED_TIME","CLOSEDATE","CLOSED"
+  ],filtro,{ID:"ASC"},"Relatório: buscando negócios...");
+  const ids=[...new Set(busca.dados.map((d)=>d.COMPANY_ID).filter(idBitrixValido).map(idBitrixString))];
+  const empresas=await buscarEntidadesPorIds(webhook,"crm.company.list",ids,["ID","TITLE","PHONE","EMAIL","DATE_CREATE","ASSIGNED_BY_ID"]);
+  return{meta,deals:busca.dados,empresas,cats};
+}
+// Dias parados na etapa atual (MOVED_TIME até agora) — mesmo cálculo usado em
+// vários relatórios do catálogo, extraído aqui pra não repetir em cada um dos
+// 4 relatórios novos de funil dedicado.
+function diasParadoNaEtapa(d,ref){
+  const mt=parteDataISO(d.MOVED_TIME)||parteDataISO(d.DATE_MODIFY)||parteDataISO(d.DATE_CREATE);
+  if(!mt) return "";
+  return Math.max(0,Math.floor((new Date(`${ref}T12:00:00`)-new Date(`${mt}T12:00:00`))/86400000));
 }
 
 async function baseLeadsCatalogo(webhook){
@@ -1052,6 +1108,12 @@ async function extrairRelatorioCatalogo(webhook,chave){
     else if(chave==="motivos_ganho_perda"){
       const b=await baseDealsCatalogo(webhook,true);
       const ds=b.deals.map(d=>enriquecerDealCatalogo(d,b)).filter(d=>dentroPeriodoCatalogo(d._FECHAMENTO,p)&&(d._SEMANTICA==="success"||d._SEMANTICA==="failure"));
+      const idsFechados=ds.map((d)=>d.ID);
+      const [mapaMotivoPerda, mapaMotivoPerdaAntigo, camposMotivoPorId]=await Promise.all([
+        mapaOpcoesEnumeracaoDeal(webhook, CAMPO_MOTIVO_PERDA),
+        mapaOpcoesEnumeracaoDeal(webhook, CAMPO_MOTIVO_PERDA_ANTIGO),
+        buscarEntidadesPorIds(webhook, "crm.deal.list", idsFechados, ["ID", CAMPO_MOTIVO_PERDA, CAMPO_MOTIVO_PERDA_ANTIGO]),
+      ]);
       let won=0, lost=0, recGanha=0, valPerdido=0;
       const mapaMotivos={};
       const rowsDet=[];
@@ -1059,7 +1121,15 @@ async function extrairRelatorioCatalogo(webhook,chave){
         const res=d._SEMANTICA==="success"?"Ganho":"Perdido";
         if(d._SEMANTICA==="success"){won++;recGanha+=d._VALOR}
         else{lost++;valPerdido+=d._VALOR}
-        const motivo=d.ADDITIONAL_INFO||d.UF_CRM_1770928318695||d._ESTAGIO||"Não especificado";
+        // Perdido: motivo real, consultando os dois campos de "motivo de perda"
+        // que existem no Bitrix (ver comentário acima de CAMPO_MOTIVO_PERDA) —
+        // não a data de contrato assinado que estava aqui antes por engano.
+        // Ganho: sem campo de "motivo de ganho" configurado no Bitrix — mantém o estágio.
+        const registro=camposMotivoPorId[String(d.ID)];
+        const motivoPerda=res==="Perdido"
+          ?(resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA],mapaMotivoPerda)||resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA_ANTIGO],mapaMotivoPerdaAntigo))
+          :"";
+        const motivo=motivoPerda||d._ESTAGIO||"Não especificado";
         const k=`${res}|||${motivo}`;
         const item=mapaMotivos[k]||=( {RESULTADO:res,MOTIVO_ESTAGIO:motivo,DEALS:0,VALOR:0});
         item.DEALS++;
@@ -1251,6 +1321,164 @@ async function extrairRelatorioCatalogo(webhook,chave){
           ]}
         ],
         "Cálculo de backlog e saldo pendente baseado na reconciliação de vendas Bitrix com faturamentos armazenados no localStorage local do navegador (namespace atlas-extrator-faturamentos). Classificação mantida no máximo como Classe B/C (nunca Classe A) até haver persistência corporativa centralizada (PostgreSQL / camada Bronze).");
+    }
+
+    // v30 — quatro funis com volume real (ver AUDITORIA_CAMPOS_PIPELINES_BITRIX.md,
+    // seção "o que dá pra construir") que até aqui não tinham relatório dedicado:
+    // Reembolsos (maior volume da conta, tratado como "funil interno" nos demais
+    // relatórios), Pós-Vendas (2º maior volume, semântica de estágio quebrada no
+    // Bitrix), Chamados SC (backlog de reclamações do Sucesso do Cliente) e o
+    // arquivo de Negócios Perdidos.
+    else if(chave==="reembolsos_financeiro"){
+      const b=await baseDealsPorFunil(webhook,["reembolso"]);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
+      const ref=p.referencia;
+      const abertos=ds.filter((d)=>d._SEMANTICA==="process");
+      const pagos=ds.filter((d)=>d._SEMANTICA==="success");
+      const recusados=ds.filter((d)=>d._SEMANTICA==="failure");
+      const criadosPeriodo=ds.filter((d)=>dentroPeriodoCatalogo(parteDataISO(d.DATE_CREATE),p));
+
+      const porEstagio={};
+      ds.forEach((d)=>{
+        const e=porEstagio[d._ESTAGIO]||=(porEstagio[d._ESTAGIO]={ESTAGIO:d._ESTAGIO,QTD:0,VALOR:0});
+        e.QTD++;e.VALOR+=d._VALOR;
+      });
+
+      const backlog=abertos.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ESTAGIO:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,DIAS:diasParadoNaEtapa(d,ref),VALOR:d._VALOR}))
+        .sort((a,b)=>(Number(b.DIAS)||0)-(Number(a.DIAS)||0));
+
+      criarResultadoCatalogo(chave,"Financeiro — Reembolsos","Funil dedicado de solicitações de reembolso — separado do Financeiro de vendas, e até aqui sem relatório próprio nesta ferramenta.",
+        [
+          kpi("Solicitações (total)",ds.length),
+          kpi("Em aberto",abertos.length),
+          kpi("Pagas",pagos.length),
+          kpi("Recusadas",recusados.length),
+          kpi("Valor solicitado (total)",moedaRelatorio(ds.reduce((s,d)=>s+d._VALOR,0))),
+          kpi("Valor em aberto",moedaRelatorio(abertos.reduce((s,d)=>s+d._VALOR,0))),
+          kpi("Valor pago",moedaRelatorio(pagos.reduce((s,d)=>s+d._VALOR,0))),
+          kpi("Criadas no período",criadosPeriodo.length),
+        ],
+        [
+          {titulo:"Por estágio",dados:Object.values(porEstagio),colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+          {titulo:"Backlog em aberto (mais antigas primeiro)",dados:backlog,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Estágio",valor:"ESTAGIO"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias parado",valor:"DIAS"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+        ],
+        "Funil \"Financeiro - Reembolsos\" no Bitrix (categoria 44) — maior volume de negócios da conta e, até este relatório, sem nenhuma visão dedicada (só era excluído dos relatórios cross-pipeline por ser tratado como funil interno).");
+    }
+
+    else if(chave==="situacao_posvendas"){
+      const b=await baseDealsPorFunil(webhook,["pos vendas"]);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
+      const ref=p.referencia;
+      const comDias=ds.map((d)=>({...d,_DIAS:diasParadoNaEtapa(d,ref)}));
+
+      const porEstagio={};
+      comDias.forEach((d)=>{
+        const e=porEstagio[d._ESTAGIO]||=(porEstagio[d._ESTAGIO]={ESTAGIO:d._ESTAGIO,QTD:0,VALOR:0,SOMA_DIAS:0});
+        e.QTD++;e.VALOR+=d._VALOR;e.SOMA_DIAS+=Number(d._DIAS)||0;
+      });
+      const resumoEstagios=Object.values(porEstagio).map((e)=>({...e,DIAS_MEDIO:e.QTD?Math.round(e.SOMA_DIAS/e.QTD):0})).sort((a,b)=>b.QTD-a.QTD);
+
+      const estagnados=comDias.filter((d)=>Number(d._DIAS)>30).sort((a,b)=>(Number(b._DIAS)||0)-(Number(a._DIAS)||0));
+
+      const porResponsavel={};
+      comDias.forEach((d)=>{
+        const r=porResponsavel[d._RESPONSAVEL]||=(porResponsavel[d._RESPONSAVEL]={RESPONSAVEL:d._RESPONSAVEL,QTD:0,VALOR:0});
+        r.QTD++;r.VALOR+=d._VALOR;
+      });
+
+      criarResultadoCatalogo(chave,"Situação do Pós-Vendas",
+        "Funil \"Pós-Vendas\" — visão descritiva por nome de etapa, sem usar ganho/perda: os nomes de estágio deste funil no Bitrix hoje não representam sucesso/falha de verdade (um estágio de sucesso chamado \"Cancelamento\", outros com nome de pessoa — ver AUDITORIA_CAMPOS_PIPELINES_BITRIX.md). Corrigir isso no Bitrix é o que destrava um relatório de ganho/perda de verdade aqui.",
+        [
+          kpi("Negócios no funil",ds.length),
+          kpi("Valor total",moedaRelatorio(ds.reduce((s,d)=>s+d._VALOR,0))),
+          kpi("Etapas em uso",Object.keys(porEstagio).length),
+          kpi("Parados > 30 dias",estagnados.length),
+          kpi("Responsáveis",Object.keys(porResponsavel).length),
+        ],
+        [
+          {titulo:"Distribuição por etapa",dados:resumoEstagios,colunas:[{label:"Etapa (nome no Bitrix)",valor:"ESTAGIO"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true},{label:"Dias médio parado",valor:"DIAS_MEDIO"}]},
+          {titulo:"Por responsável",dados:Object.values(porResponsavel).sort((a,b)=>b.QTD-a.QTD),colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+          {titulo:"Parados há mais de 30 dias",dados:estagnados.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ETAPA:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,DIAS:d._DIAS,VALOR:d._VALOR})),colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Etapa",valor:"ETAPA"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias parado",valor:"DIAS"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+        ]);
+    }
+
+    else if(chave==="chamados_sucesso_cliente"){
+      const b=await baseDealsPorFunil(webhook,["chamados sc"]);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
+      const ref=p.referencia;
+      const abertos=ds.filter((d)=>d._SEMANTICA==="process");
+      const concluidos=ds.filter((d)=>d._SEMANTICA==="success");
+      const improcedentes=ds.filter((d)=>d._SEMANTICA==="failure");
+      const criadosPeriodo=ds.filter((d)=>dentroPeriodoCatalogo(parteDataISO(d.DATE_CREATE),p));
+
+      const temposResolucao=[...concluidos,...improcedentes].map((d)=>{
+        const criado=parteDataISO(d.DATE_CREATE);
+        const fechado=parteDataISO(d.CLOSEDATE)||parteDataISO(d.MOVED_TIME);
+        if(!criado||!fechado) return null;
+        const dias=diferencaDiasBrutaAteReferencia(criado,fechado);
+        return typeof dias==="number"&&dias>=0?dias:null;
+      }).filter((x)=>x!==null);
+      const tempoMedioResolucao=temposResolucao.length?Math.round(temposResolucao.reduce((s,x)=>s+x,0)/temposResolucao.length):null;
+
+      const porEstagio={};
+      abertos.forEach((d)=>{
+        const e=porEstagio[d._ESTAGIO]||=(porEstagio[d._ESTAGIO]={ESTAGIO:d._ESTAGIO,QTD:0});
+        e.QTD++;
+      });
+
+      const backlog=abertos.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,ETAPA:d._ESTAGIO,RESPONSAVEL:d._RESPONSAVEL,DIAS:diasParadoNaEtapa(d,ref)}))
+        .sort((a,b)=>(Number(b.DIAS)||0)-(Number(a.DIAS)||0));
+
+      criarResultadoCatalogo(chave,"Chamados SC (Sucesso do Cliente)","Funil de chamados/reclamações do Sucesso do Cliente — até aqui sem relatório dedicado nesta ferramenta.",
+        [
+          kpi("Chamados (total)",ds.length),
+          kpi("Em aberto",abertos.length),
+          kpi("Concluídos",concluidos.length),
+          kpi("Improcedentes",improcedentes.length),
+          kpi("Tempo médio de resolução",tempoMedioResolucao!=null?`${tempoMedioResolucao} dia(s)`:"sem dado"),
+          kpi("Abertos > 15 dias",abertos.filter((d)=>Number(diasParadoNaEtapa(d,ref))>15).length),
+          kpi("Criados no período",criadosPeriodo.length),
+        ],
+        [
+          {titulo:"Backlog aberto por etapa",dados:Object.values(porEstagio).sort((a,b)=>b.QTD-a.QTD),colunas:[{label:"Etapa",valor:"ESTAGIO"},{label:"Qtd",valor:"QTD"}]},
+          {titulo:"Chamados em aberto (mais antigos primeiro)",dados:backlog,colunas:[{label:"Deal",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Etapa",valor:"ETAPA"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Dias parado",valor:"DIAS"}]},
+        ],
+        "Funil \"Chamados SC\" no Bitrix (categoria 56) — pode ser a fonte real de dado por trás de um card \"Sucesso do Cliente\"; a ferramenta também tem um funil separado chamado literalmente \"Sucesso do Cliente\" (categoria 46, baixo volume) sem relatório próprio ainda.");
+    }
+
+    else if(chave==="arquivo_negocios_perdidos"){
+      const b=await baseDealsPorFunil(webhook,["negocios perdidos"]);
+      const ds=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
+      const criadosPeriodo=ds.filter((d)=>dentroPeriodoCatalogo(parteDataISO(d.DATE_CREATE),p));
+
+      const rotuloSemantica={success:"Ganho (arquivado)",failure:"Perdido",process:"Pendente/Cancelado"};
+      const porResultado={};
+      ds.forEach((d)=>{
+        const chaveR=rotuloSemantica[d._SEMANTICA]||d._SEMANTICA;
+        const r=porResultado[chaveR]||=(porResultado[chaveR]={RESULTADO:chaveR,QTD:0,VALOR:0});
+        r.QTD++;r.VALOR+=d._VALOR;
+      });
+
+      const porMes={};
+      ds.forEach((d)=>{
+        const m=chaveMesISO(d.DATE_CREATE);
+        const r=porMes[m]||=(porMes[m]={MES:m,QTD:0,VALOR:0});
+        r.QTD++;r.VALOR+=d._VALOR;
+      });
+      const resumoMes=Object.values(porMes).sort((a,b)=>b.MES.localeCompare(a.MES));
+
+      criarResultadoCatalogo(chave,"Negócios Perdidos — Arquivo",
+        "Funil separado \"Negócios Perdidos\" no Bitrix (arquivo histórico, categoria 30) — até aqui sem relatório dedicado. Atenção: no Bitrix, os estágios de ganho e de perda deste funil têm o MESMO nome (\"Negócios Fechados\") — a coluna Resultado abaixo usa a semântica do estágio (sucesso/falha), não o nome, para diferenciar (ver AUDITORIA_CAMPOS_PIPELINES_BITRIX.md).",
+        [
+          kpi("Negócios arquivados (total)",ds.length),
+          kpi("Valor total",moedaRelatorio(ds.reduce((s,d)=>s+d._VALOR,0))),
+          kpi("Criados no período",criadosPeriodo.length),
+          kpi("Valor no período",moedaRelatorio(criadosPeriodo.reduce((s,d)=>s+d._VALOR,0))),
+        ],
+        [
+          {titulo:"Por resultado",dados:Object.values(porResultado),colunas:[{label:"Resultado",valor:"RESULTADO"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+          {titulo:"Por mês de criação",dados:resumoMes,colunas:[{label:"Mês",valor:"MES"},{label:"Qtd",valor:"QTD"},{label:"Valor",valor:x=>moedaRelatorio(x.VALOR),html:true}]},
+        ]);
     }
 
     else if(chave==="crm_health_score"){

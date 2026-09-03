@@ -4,14 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>AtlasGR — Portal Comercial · Bitrix24 v10.0</title>
+<title>AtlasGR — Acompanhamento do Pipeline Financeiro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
-  // Aplica o tema salvo (ou o do sistema operacional) antes da primeira pintura,
-  // pra não piscar claro→escuro ao carregar. Preferência de tema não é credencial —
-  // pode ficar em localStorage. O webhook só persiste após ação explícita no botão Salvar webhook.
   (function () {
     try {
       // v29 — chave por empresa (data-empresa), pra tema de uma marca
@@ -27,20 +24,17 @@
 </script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
-  .home-grupos-grid { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
-  .home-grupo-card { padding:0!important; }
-  .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:14px; padding:16px 18px; }
-  .home-grupo-card > summary::-webkit-details-marker { display:none; }
-  .home-grupo-card > summary:hover { background:var(--soft); }
-  .home-grupo-icone { font-size:24px; line-height:1; }
-  .home-grupo-texto { flex:1; display:flex; flex-direction:column; gap:2px; }
-  .home-grupo-titulo { font-size:15px; font-weight:800; }
-  .home-grupo-desc { font-size:12px; color:var(--ink-2); font-weight:500; }
-  .home-grupo-chevron { font-size:14px; color:var(--brand); transition:transform .15s; }
-  .home-grupo-card[open] > summary .home-grupo-chevron { transform:rotate(180deg); }
-  .home-grupo-body { padding:6px 18px 18px; border-top:1px solid var(--line); }
-  .home-grupo-link-btn { text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:var(--brand); color:#fff; font-weight:700; border-radius:var(--radius-control); padding:9px 16px; margin-top:8px; }
-  .home-grupo-extra-link { border-color:var(--brand)!important; }
+  .pfa-kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:12px; }
+  .pfa-kpi-sub { font-size:11px; margin-top:4px; color:var(--ink-2); line-height:1.2; }
+  .pfa-kpi-ativo { outline:2px solid var(--brand); }
+  .pfa-linha { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--surface); }
+  .pfa-linha-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  .pfa-link-negocio { margin-left:8px; font-size:12.5px; }
+  .pfa-linha-acoes { display:flex; align-items:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .pfa-tarefa-ok { font-size:12.5px; color:var(--sucesso); padding:8px 0; }
+  .pfa-form-tarefa { margin-top:10px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; background:var(--soft); }
+  .pfa-form-tarefa label { margin-top:8px; }
+  .pfa-form-tarefa label:first-child { margin-top:0; }
 </style>
 </head>
 <body class="aguardando-login">
@@ -81,9 +75,9 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Portal Comercial</div>
-      <h1>Extraia, entenda e atualize o CRM em um só lugar.</h1>
-      <p>Portal com páginas dedicadas: Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico. Comece escolhendo o que você quer descobrir abaixo, ou use a navegação no topo.</p>
+      <div class="hero-eyebrow">AtlasGR · Bitrix24 · Pipeline Financeiro</div>
+      <h1>Acompanhamento — Documentos &amp; Assinatura de Contrato.</h1>
+      <p>Extrai os negócios do funil Financeiro parados em "Análise de Documentos" e "Aguardando Assinatura de Contrato", deixa a lista salva neste navegador para acompanhamento contínuo, e permite registrar o motivo apurado com o vendedor e cobrar resposta dele direto no Bitrix — tudo agrupado por responsável, pronto para virar relatório para o CEO.</p>
     </div>
     <div class="hero-actions">
       <span class="connection-pill" id="statusConexaoTopo"><span class="connection-dot"></span><span id="statusConexaoTexto">Conexão não testada</span></span>
@@ -95,29 +89,8 @@
 
 <main>
 
-  <section class="workspace-intro" id="inicio">
-    <div class="workspace-title">
-      <div><h2>Comece pelo pipeline que você quer olhar</h2><p>Um card por pipeline/área. Clique em qualquer um para abrir os relatórios daquele grupo — fica recolhido até você clicar.</p></div>
-      <button type="button" class="secundario" onclick="abrirAjuda('visaoGeral')">Como usar esta tela?</button>
-    </div>
-    <label for="buscaGruposPrincipaisHome">Buscar relatório (nome, palavra-chave ou grupo)</label>
-    <input type="text" id="buscaGruposPrincipaisHome" placeholder="Ex: forecast, SDR, pipeline, aging, clientes..." oninput="filtrarGruposPrincipaisHome()">
-    <div class="home-grupos-grid" id="homeGruposPrincipais"></div>
-  </section>
-
-  <div class="cockpit-ticker" id="cockpitTicker" aria-live="polite">
-    <div class="cockpit-ticker-label"><span class="cockpit-ticker-dot"></span> Cockpit ao vivo</div>
-    <div class="cockpit-ticker-track-wrap">
-      <div class="cockpit-ticker-track" id="cockpitTickerTrack">
-        <span class="cockpit-ticker-item">Sem dados carregados nesta sessão — cole o webhook abaixo e clique em "Ver Cockpit completo", ou salve o webhook para o ticker atualizar sozinho a cada 5 minutos.</span>
-      </div>
-    </div>
-    <a href="cockpit.html" class="cockpit-ticker-link">Ver Cockpit completo →</a>
-  </div>
-
   <div class="card" id="conexao">
-    <h2>🔑 Conexão rápida com o Bitrix</h2>
-    <p class="rodape-nota" style="margin-top:-6px;">Só é necessária para o ticker acima atualizar sozinho e para testar a conexão por aqui. Cada relatório abaixo também pede o webhook na própria página, se ainda não estiver salvo.</p>
+    <h2>🔑 Conexão com o Bitrix</h2>
     <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
     <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/.../" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
     <div class="row" style="margin-top:9px;align-items:center;">
@@ -129,11 +102,76 @@
         <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook fixo ativo</span></span>
       </div>
     </div>
-    <p class="rodape-nota">Nenhum webhook padrão pré-configurado (removido por seguranca, ver AUDITORIA_ESTADO_ATUAL.md). Cole o webhook do Bitrix24 no campo acima e clique em "Salvar webhook" para ele ficar disponível neste navegador nas próximas visitas.</p>
+    <p class="rodape-nota">Nenhum webhook padrão pré-configurado (removido por seguranca, ver AUDITORIA_ESTADO_ATUAL.md). Cole o webhook do Bitrix24 no campo acima e clique em "Salvar webhook" para ele ficar disponível neste navegador nas próximas visitas. Este webhook precisa de leitura em CRM e, para criar tarefas, escrita no módulo Tarefas.</p>
   </div>
 
+  <div class="card">
+    <h2>📊 Negócios parados agora</h2>
+    <p class="rodape-nota" style="margin-top:-6px;" id="pfaUltimaAtualizacao">Ainda não atualizado nesta sessão.</p>
+    <div class="row" style="align-items:center;">
+      <button type="button" class="primario" id="pfaBtnAtualizar" onclick="pfaAtualizarDoBitrix()">↻ Atualizar do Bitrix</button>
+      <div>
+        <label for="pfaFiltroStatus" style="margin-top:0;">Mostrar</label>
+        <select id="pfaFiltroStatus" onchange="pfaAoTrocarFiltroStatus()">
+          <option value="aberto" selected>Em aberto</option>
+          <option value="resolvido">Resolvidos</option>
+          <option value="todos">Todos</option>
+        </select>
+      </div>
+    </div>
+    <div class="pfa-kpi-row" id="pfaCards"></div>
+    <p class="rodape-nota">Clique em um card acima para filtrar a lista abaixo só por aquele estágio (clique de novo para tirar o filtro).</p>
+  </div>
+
+  <div class="card">
+    <h2>✅ Habilitar escrita no Bitrix</h2>
+    <div class="checkbox-linha"><input type="checkbox" id="pfaHabilitarEscrita"><label for="pfaHabilitarEscrita" style="margin:0;">Habilitar criação de tarefas no Bitrix (tasks.task.add) para o vendedor responsável</label></div>
+    <p class="rodape-nota">Enquanto desmarcado, o botão "Criar tarefa no Bitrix" em cada negócio não envia nada — só monta o rascunho. A tarefa criada fica vinculada ao negócio no Bitrix (aba Tarefas do CRM) e atribuída ao responsável atual.</p>
+  </div>
+
+  <div class="card" id="pfa-bloco-lista">
+    <h2>👥 Negócios por vendedor</h2>
+    <div id="pfaListaPorVendedor"></div>
+  </div>
+
+  <div class="card">
+    <h2>📄 Relatório para o CEO</h2>
+    <p class="rodape-nota" style="margin-top:-6px;">Agrupado por vendedor: cliente, estágio, dias parado, valor, comentário apurado e status da tarefa no Bitrix.</p>
+    <div class="botoes-download">
+      <button type="button" class="primario" onclick="pfaAbrirRelatorio()">Abrir modelo visual</button>
+      <button type="button" class="secundario" onclick="pfaBaixarRelatorio()">⬇️ Baixar HTML</button>
+    </div>
+  </div>
+
+  <div class="card run-zone" id="execucao">
+    <div class="status-linha">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusTexto"></span>
+    </div>
+    <div class="erro oculto" id="areaErro"></div>
+  </div>
 
 </main>
+
+<div class="relatorio-modal-overlay oculto" id="relatorioVisualInlineCard" onclick="if(event.target===this)fecharRelatorioVisualInline()">
+  <div class="relatorio-modal-sheet">
+    <div class="relatorio-modal-head">
+      <h2 id="relatorioModalTitulo">📊 Modelo visual do relatório</h2>
+      <div class="relatorio-modal-acoes">
+        <button type="button" class="secundario" onclick="alternarPainelRelatoriosSalvos()" title="Ver relatórios salvos neste navegador">📂 Salvos</button>
+        <button type="button" class="secundario" onclick="salvarRelatorioVisualAtual()" title="Salvar este relatório neste navegador">💾 Salvar</button>
+        <button type="button" class="secundario" onclick="baixarRelatorioVisualAtual()" title="Baixar como arquivo .html">⬇️ Baixar</button>
+        <button type="button" class="secundario" onclick="baixarRelatorioVisualPDF()" title="Imprimir ou salvar como PDF">🖨️ PDF</button>
+        <button type="button" class="secundario" onclick="abrirRelatorioVisualEmNovaAba()" title="Abrir em uma aba nova">🌐 Abrir em nova aba</button>
+        <button type="button" class="relatorio-modal-fechar" onclick="fecharRelatorioVisualInline()" aria-label="Fechar">✕</button>
+      </div>
+    </div>
+    <div class="relatorio-salvos-painel oculto" id="relatorioSalvosPainel">
+      <div id="relatorioSalvosLista"></div>
+    </div>
+    <iframe id="relatorioVisualInlineFrame" class="relatorio-visual-inline-frame" title="Modelo visual do relatório"></iframe>
+  </div>
+</div>
 
 <div class="help-modal" id="helpModal" onclick="fecharAjudaPorFundo(event)">
   <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitulo">
@@ -153,14 +191,15 @@
 <script src="js/exportacoes.js"></script>
 <script src="js/cockpit.js"></script>
 <script src="js/financeiro.js"></script>
+<script src="js/pipeline-financeiro-acompanhamento.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/ia-engine.js"></script>
 <script src="js/app.js"></script>
 
 <script>
-  // Init específico desta página: monta os cards de grupo (pipeline) da tela
-  // inicial — recolhidos por padrão, cada um só expande ao clicar.
-  renderizarGruposPrincipaisHome();
+  // Init específico desta página: carrega o webhook salvo e a lista já salva
+  // neste navegador assim que a página abre (sem depender de nova extração).
+  pfaIniciarPagina();
 </script>
 
 </body>

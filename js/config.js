@@ -299,6 +299,8 @@ const RELATORIOS = {
   reentradas: { grupo:"Jornada & Cliente", label:"🔁 Reentradas, retrabalho e mudanças de pipeline", descricao:"Reentradas históricas em estágios e mudanças reais de pipeline.", handler:"catalogo", periodo:"todas" },
   duplicidades: { grupo:"Jornada & Cliente", label:"🧬 Duplicidades e identidade do cliente", descricao:"Clientes repetidos no pipeline e possíveis empresas duplicadas por nome, e-mail ou telefone.", handler:"catalogo", periodo:"todas" },
   implantacao_posvenda: { grupo:"Jornada & Cliente", label:"🚀 Implantação, Onboarding e Pós-Venda", descricao:"Backlog e aging dos pipelines posteriores ao Comercial.", handler:"catalogo", periodo:"todas" },
+  situacao_posvendas: { grupo:"Jornada & Cliente", label:"📮 Situação do Pós-Vendas", descricao:"Backlog e aging do funil Pós-Vendas por etapa e responsável — visão dedicada, sem depender de ganho/perda.", handler:"catalogo", periodo:"todas" },
+  chamados_sucesso_cliente: { grupo:"Jornada & Cliente", label:"🎧 Chamados SC (Sucesso do Cliente)", descricao:"Backlog de chamados/reclamações do Sucesso do Cliente, tempo médio de resolução e aging por etapa.", handler:"catalogo", periodo:"todas" },
   mapa_transicoes: { grupo:"Jornada & Cliente", label:"🗺️ Mapa de Transições de Estágio", descricao:"Mapeamento dos fluxos de movimentação de negócios entre estágios e funis.", handler:"catalogo", periodo:"todas" },
   clientes_parados: { grupo:"Jornada & Cliente", label:"🛑 Clientes & Negócios Parados", descricao:"Monitoramento de clientes e oportunidades sem movimentação recente no pipeline.", handler:"catalogo", periodo:"todas" },
   clientes_recuperados: { grupo:"Jornada & Cliente", label:"🔄 Clientes Recuperados", descricao:"Acompanhamento de clientes reativados ou reconquistados após período de inatividade.", handler:"catalogo", periodo:"todas" },
@@ -324,6 +326,7 @@ const RELATORIOS = {
   pipeline_velocity: { grupo:"Comercial & Receita", label:"🚀 Pipeline Velocity", descricao:"Velocidade de conversão do pipeline.", handler:"catalogo", periodo:"mensal" },
   receita_em_risco: { grupo:"Comercial & Receita", label:"⚠️ Receita em Risco", descricao:"Oportunidades abertas com risco.", handler:"catalogo", periodo:"todas" },
   motivos_ganho_perda: { grupo:"Comercial & Receita", label:"📉 Motivos de Ganho e Perda", descricao:"Análise de motivos.", handler:"catalogo", periodo:"todas" },
+  arquivo_negocios_perdidos: { grupo:"Comercial & Receita", label:"🗄️ Negócios Perdidos — Arquivo", descricao:"Funil separado de arquivo histórico: volume e valor por resultado e por mês.", handler:"catalogo", periodo:"todas" },
 
   diario_sdr: { grupo:"SDR & Leads", label:"📅 Diário SDR — atividades, Leads atendidos e potenciais", descricao:"Atividades concluídas, Leads atendidos e potenciais ainda sem atividade.", handler:"diario_sdr", periodo:"diario" },
   reunioes_sdr: { grupo:"SDR & Leads", label:"🤝 Reuniões — agendadas x realizadas", descricao:"Reuniões por atividade (TYPE_ID=1) e por etapa do funil de Leads (Reunião Agendada/Realizada/No-Show), quebradas por responsável, pipeline e etapa — qualquer funil, qualquer usuário.", handler:"catalogo", periodo:"mensal" },
@@ -347,7 +350,8 @@ const RELATORIOS = {
   auditoria_pipeline: { grupo:"Operação & Qualidade", label:"🔍 Auditoria de Pipeline", descricao:"Detecção de inconsistências de datas, valores zerados e anomalias de processo no pipeline.", handler:"catalogo", periodo:"todas" },
 
   vendido_faturado: { grupo:"Financeiro × Comercial", label:"💸 Vendido × Faturado", descricao:"Compara o valor das vendas ganhas no Comercial com os registros financeiros de faturamento e NFs.", handler:"catalogo", periodo:"mensal" },
-  backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" }
+  backlog_financeiro: { grupo:"Financeiro × Comercial", label:"⏳ Backlog Financeiro de Vendas", descricao:"Listagem de negócios vendidos que ainda possuem saldo pendente de faturamento, categorizados por tempo de espera.", handler:"catalogo", periodo:"todas" },
+  reembolsos_financeiro: { grupo:"Financeiro × Comercial", label:"💵 Financeiro — Reembolsos", descricao:"Funil dedicado de solicitações de reembolso: backlog por estágio, tempo de aprovação e valores solicitado/pago/recusado.", handler:"catalogo", periodo:"todas" }
 };
 
 // v11 — Metas mensais do forecast Comercial (R$), usadas como valor padrão da

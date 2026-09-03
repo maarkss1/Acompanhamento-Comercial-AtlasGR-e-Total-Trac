@@ -395,6 +395,67 @@ function renderizarAtalhosRelatoriosGrupo(nomeGrupo, containerId){
   const itens=Object.entries(RELATORIOS).filter(([,rel])=>rel.grupo===nomeGrupo);
   c.innerHTML=`<div class="quick-report-grid">${itens.map(([chave,rel])=>cardRelatorioRapidoHTML(chave,rel)).join("")}</div>`;
 }
+// ---------------------------------------------------------------------------
+// Home — cards de grupo (nível principal da tela inicial), recolhidos por
+// padrão: só mostram os relatórios daquele grupo quando clicados ("a primeira
+// tela deverá ter esses cards ... só deverão ser mostrados se eu clicar no
+// card principal"). É uma curadoria própria da home — não mexe em
+// RELATORIOS.grupo (usado por extracao.html/forecast.html/sdr.html), só
+// decide o que aparece sob cada card aqui.
+// "Closer e Account" e "Sucesso do Cliente" ainda não têm relatório mapeado
+// (jornada do cliente em mapeamento) — ficam como "em construção" em vez de
+// forçar um relatório que não é realmente sobre esse tema.
+// ---------------------------------------------------------------------------
+const GRUPOS_PRINCIPAIS_HOME = [
+  { chave:"jornada", icone:"🧭", titulo:"Jornada & Cliente", descricao:"Histórico de estágios, duplicidade, handoffs, clientes parados.", relatoriosGrupo:"Jornada & Cliente" },
+  { chave:"comercial", icone:"📈", titulo:"Comercial & Receita", descricao:"Forecast, pipeline, conversão, performance por vendedor.", relatoriosGrupo:"Comercial & Receita" },
+  { chave:"cockpit", icone:"⚡", titulo:"Cockpit Comercial", descricao:"Visão executiva ao vivo: resultado do mês, forecast, saúde do pipeline.", link:"cockpit.html", linkLabel:"Abrir Cockpit completo" },
+  { chave:"sdr", icone:"🎯", titulo:"SDR & Leads", descricao:"Reuniões, atendimento de leads, conversão Lead → Oportunidade.", relatoriosGrupo:"SDR & Leads" },
+  { chave:"closer", icone:"🤝", titulo:"Closer e Account", descricao:"Em mapeamento pelo time — os relatórios deste pipeline entram aqui assim que definidos.", vazio:true },
+  { chave:"operacao", icone:"🔍", titulo:"Operação & Qualidade", descricao:"Auditoria de pipeline, negócios sem próxima atividade, qualidade dos dados.", relatoriosGrupo:"Operação & Qualidade" },
+  { chave:"financeiro", icone:"💰", titulo:"Financeiro × Comercial", descricao:"Vendido × faturado, backlog financeiro, documentos e assinatura de contrato.", relatoriosGrupo:"Financeiro × Comercial", extraLink:{href:"acompanhamento-financeiro.html", icone:"📄", titulo:"Acompanhamento — Documentos & Assinatura de Contrato", descricao:"Negócios parados, por vendedor, com comentário e criação de tarefa no Bitrix."} },
+  { chave:"implantacao", icone:"🚀", titulo:"Implantação", descricao:"Backlog e aging da Implantação/Onboarding pós-venda.", relatorios:["implantacao_posvenda"] },
+  { chave:"sucesso_cliente", icone:"🌟", titulo:"Sucesso do Cliente", descricao:"Chamados/reclamações do time de Sucesso do Cliente. O funil \"Sucesso do Cliente\" propriamente dito (baixo volume, 46 negócios) ainda não tem relatório dedicado — avise se quiser um.", relatorios:["chamados_sucesso_cliente"] },
+];
+
+function cardGrupoPrincipalHomeHTML(g){
+  let corpo;
+  if (g.link) {
+    corpo = `<a href="${g.link}" class="home-grupo-link-btn">${escapeHtmlRelatorio(g.linkLabel||"Abrir")} →</a>`;
+  } else if (g.vazio) {
+    corpo = `<p class="rodape-nota" style="margin:0;">Nenhum relatório configurado ainda neste grupo.</p>`;
+  } else {
+    const chaves = g.relatorios || Object.entries(RELATORIOS).filter(([,rel])=>rel.grupo===g.relatoriosGrupo).map(([chave])=>chave);
+    const cards = chaves.map((chave)=>cardRelatorioRapidoHTML(chave, RELATORIOS[chave])).join("");
+    const extra = g.extraLink ? `<a href="${g.extraLink.href}" class="quick-report-card home-grupo-extra-link"><span class="report-icon">${g.extraLink.icone}</span><strong>${escapeHtmlRelatorio(g.extraLink.titulo)}</strong><span>${escapeHtmlRelatorio(g.extraLink.descricao)}</span></a>` : "";
+    corpo = `<div class="quick-report-grid">${extra}${cards}</div>`;
+  }
+  return `<details class="card home-grupo-card" id="homeGrupo_${g.chave}">
+    <summary><span class="home-grupo-icone">${g.icone}</span><span class="home-grupo-texto"><span class="home-grupo-titulo">${escapeHtmlRelatorio(g.titulo)}</span><span class="home-grupo-desc">${escapeHtmlRelatorio(g.descricao)}</span></span><span class="home-grupo-chevron">▾</span></summary>
+    <div class="home-grupo-body">${corpo}</div>
+  </details>`;
+}
+
+function renderizarGruposPrincipaisHome(){
+  const cont=document.getElementById("homeGruposPrincipais");if(!cont)return;
+  cont.innerHTML=GRUPOS_PRINCIPAIS_HOME.map(cardGrupoPrincipalHomeHTML).join("");
+}
+
+function filtrarGruposPrincipaisHome(){
+  const termo=(document.getElementById("buscaGruposPrincipaisHome")?.value||"").trim().toLowerCase();
+  document.querySelectorAll("#homeGruposPrincipais .home-grupo-card").forEach((det)=>{
+    if(!termo){det.open=false;det.querySelectorAll(".quick-report-card").forEach((c)=>c.style.display="");return;}
+    let visiveis=0;
+    det.querySelectorAll(".quick-report-card").forEach((card)=>{
+      const ok=(card.dataset.busca||"").includes(termo);
+      card.style.display=ok?"":"none";
+      if(ok)visiveis++;
+    });
+    const tituloOk=det.querySelector(".home-grupo-titulo")?.textContent.toLowerCase().includes(termo);
+    det.open = visiveis>0 || !!tituloOk;
+  });
+}
+
 function filtrarAtalhosRelatorios(){
   const termo=(document.getElementById("buscaAtalhosRelatorios")?.value||"").trim().toLowerCase();
   let visiveis=0;
