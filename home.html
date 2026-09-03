@@ -27,8 +27,9 @@
 </script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
-  .home-grupos-grid { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
-  .home-grupo-card { padding:0!important; }
+  .home-grupos-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-top:14px; align-items:start; }
+  .home-grupo-card { padding:0!important; margin:0; }
+  .home-grupo-card[open] { grid-column:1 / -1; }
   .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:14px; padding:16px 18px; }
   .home-grupo-card > summary::-webkit-details-marker { display:none; }
   .home-grupo-card > summary:hover { background:var(--soft); }
