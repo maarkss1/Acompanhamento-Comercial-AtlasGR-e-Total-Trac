@@ -27,21 +27,100 @@
 </script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
-  .home-grupos-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-top:14px; align-items:start; }
-  .home-grupo-card { padding:0!important; margin:0; }
+  .home-grupos-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; margin-top:14px; align-items:start; }
+  .home-grupo-card { padding:0!important; margin:0; transition:transform .15s, box-shadow .15s; }
+  .home-grupo-card:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(0,0,0,.08); }
   .home-grupo-card[open] { grid-column:1 / -1; }
-  .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:14px; padding:16px 18px; }
+  .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:18px; padding:24px 26px; }
   .home-grupo-card > summary::-webkit-details-marker { display:none; }
   .home-grupo-card > summary:hover { background:var(--soft); }
-  .home-grupo-icone { font-size:24px; line-height:1; }
-  .home-grupo-texto { flex:1; display:flex; flex-direction:column; gap:2px; }
-  .home-grupo-titulo { font-size:15px; font-weight:800; }
-  .home-grupo-desc { font-size:12px; color:var(--ink-2); font-weight:500; }
-  .home-grupo-chevron { font-size:14px; color:var(--brand); transition:transform .15s; }
+  .home-grupo-icone {
+    font-size:30px; line-height:1; flex-shrink:0; width:60px; height:60px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; background:var(--soft);
+    border:1px solid var(--line);
+  }
+  .home-grupo-texto { flex:1; display:flex; flex-direction:column; gap:4px; }
+  .home-grupo-titulo { font-size:18px; font-weight:800; }
+  .home-grupo-desc { font-size:13px; color:var(--ink-2); font-weight:500; line-height:1.4; }
+  .home-grupo-chevron { font-size:16px; color:var(--brand); transition:transform .15s; }
   .home-grupo-card[open] > summary .home-grupo-chevron { transform:rotate(180deg); }
-  .home-grupo-body { padding:6px 18px 18px; border-top:1px solid var(--line); }
+  .home-grupo-body { padding:6px 26px 24px; border-top:1px solid var(--line); }
   .home-grupo-link-btn { text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:var(--brand); color:#fff; font-weight:700; border-radius:var(--radius-control); padding:9px 16px; margin-top:8px; }
   .home-grupo-extra-link { border-color:var(--brand)!important; }
+
+  /* -------------------- Dashboard ao vivo -------------------- */
+  .home-dashboard { margin-top:22px; }
+  .home-dashboard-topo { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .home-widgets-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin:14px 0 18px; }
+  .home-widget-card { border:1px solid var(--line); border-radius:16px; padding:18px; background:var(--surface); display:flex; flex-direction:column; align-items:center; gap:10px; }
+
+  .home-relogio-svg { width:140px; height:140px; }
+  .relogio-face { fill:var(--surface-2); stroke:var(--line); stroke-width:2; }
+  .relogio-tick { stroke:var(--ink-2); stroke-width:2; }
+  .relogio-ponteiro { transform-origin:100px 100px; stroke-linecap:round; }
+  .relogio-hora { stroke:var(--ink); stroke-width:6; }
+  .relogio-minuto { stroke:var(--ink); stroke-width:4; }
+  .relogio-segundo { stroke:var(--brand); stroke-width:2; }
+  .relogio-centro { fill:var(--brand); }
+  .home-relogio-digital { font-weight:800; font-size:15px; font-variant-numeric:tabular-nums; color:var(--ink-2); }
+
+  .home-calendario-card { align-items:stretch; }
+  .home-cal-header { display:flex; align-items:center; justify-content:space-between; font-weight:800; font-size:13.5px; }
+  .home-cal-header button { background:var(--soft); border:none; border-radius:50%; width:26px; height:26px; cursor:pointer; color:var(--brand); font-weight:800; }
+  .home-cal-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; margin-top:8px; }
+  .home-cal-cabecalho { font-size:10px; font-weight:700; color:var(--ink-2); text-align:center; }
+  .home-cal-dia { font-size:11.5px; text-align:center; padding:4px 0; border-radius:6px; }
+  .home-cal-dia-vazio { visibility:hidden; }
+  .home-cal-dia-hoje { background:var(--brand); color:#fff; font-weight:800; }
+
+  .home-widget-meta { position:relative; justify-content:center; }
+  .home-anel-meta { width:130px; height:130px; transform:rotate(-90deg); }
+  .anel-fundo { fill:none; stroke:var(--line); stroke-width:10; }
+  .anel-progresso { fill:none; stroke:var(--brand); stroke-width:10; stroke-linecap:round; }
+  .anel-progresso.home-anel-acima-meta { stroke:var(--ok); }
+  .home-anel-texto { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
+  .home-anel-texto span:first-child { display:block; font-size:26px; font-weight:900; }
+  .home-anel-label { font-size:10.5px; color:var(--ink-2); font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+
+  .home-dashboard-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+  .home-dashboard-grid .cockpit-bloco { border:1px solid var(--line); border-radius:14px; padding:16px 18px; background:var(--surface-2); margin:0; }
+  .home-dashboard-grid .cockpit-bloco h3 { margin:0 0 10px; font-size:13.5px; font-weight:800; }
+
+  /* Números que "correm" (contagem) + barra que oscila de cor até assentar */
+  .cockpit-kpi { position:relative; overflow:hidden; }
+  .cockpit-kpi::after {
+    content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
+    background:var(--brand); opacity:.25; transition:opacity .3s;
+  }
+  .home-kpi-oscilando::after {
+    opacity:1; background:linear-gradient(90deg, var(--brand), var(--gold), var(--brand));
+    background-size:200% 100%; animation:home-bar-oscilar .7s linear;
+  }
+  @keyframes home-bar-oscilar { from { background-position:0% 0; } to { background-position:200% 0; } }
+  .home-valor-animando { color:var(--brand); }
+
+  /* -------------------- Chatbot buscador de relatórios -------------------- */
+  .home-chat-botao {
+    position:fixed; right:22px; bottom:22px; z-index:200; width:58px; height:58px; border-radius:50%;
+    background:var(--brand); color:#fff; border:none; font-size:26px; cursor:pointer;
+    box-shadow:0 8px 22px rgba(0,0,0,.22); display:flex; align-items:center; justify-content:center;
+  }
+  .home-chat-painel {
+    position:fixed; right:22px; bottom:90px; z-index:200; width:min(340px, calc(100vw - 44px)); max-height:70vh;
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:0 16px 40px rgba(0,0,0,.22);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .home-chat-cabecalho { padding:14px 16px; background:var(--brand); color:#fff; font-weight:800; font-size:13.5px; display:flex; align-items:center; gap:8px; }
+  .home-chat-mensagens { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; min-height:160px; max-height:360px; }
+  .home-chat-bolha { font-size:13px; line-height:1.4; padding:9px 12px; border-radius:12px; max-width:88%; }
+  .home-chat-bot { background:var(--soft); align-self:flex-start; border-bottom-left-radius:2px; }
+  .home-chat-usuario { background:var(--brand); color:#fff; align-self:flex-end; border-bottom-right-radius:2px; }
+  .home-chat-chips { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .home-chat-chip { text-align:left; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px; cursor:pointer; color:var(--ink); }
+  .home-chat-chip:hover { border-color:var(--brand); }
+  .home-chat-rodape { display:flex; gap:8px; padding:10px; border-top:1px solid var(--line); }
+  .home-chat-rodape input { flex:1; margin:0; }
+  .home-chat-rodape button { flex-shrink:0; }
 </style>
 </head>
 <body class="aguardando-login">
@@ -82,7 +161,7 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Portal Comercial</div>
+      <div class="hero-eyebrow">AtlasGR · Portal Comercial</div>
       <h1>Extraia, entenda e atualize o CRM em um só lugar.</h1>
       <p>Portal com páginas dedicadas: Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico. Comece escolhendo o que você quer descobrir abaixo, ou use a navegação no topo.</p>
     </div>
@@ -106,19 +185,77 @@
     <div class="home-grupos-grid" id="homeGruposPrincipais"></div>
   </section>
 
-  <div class="cockpit-ticker" id="cockpitTicker" aria-live="polite">
-    <div class="cockpit-ticker-label"><span class="cockpit-ticker-dot"></span> Cockpit ao vivo</div>
-    <div class="cockpit-ticker-track-wrap">
-      <div class="cockpit-ticker-track" id="cockpitTickerTrack">
-        <span class="cockpit-ticker-item">Sem dados carregados nesta sessão — cole o webhook abaixo e clique em "Ver Cockpit completo", ou salve o webhook para o ticker atualizar sozinho a cada 5 minutos.</span>
+  <section class="card home-dashboard" id="home-bloco-dashboard">
+    <div class="home-dashboard-topo">
+      <div>
+        <h2 style="margin:0;">📊 Dashboard ao vivo</h2>
+        <p class="rodape-nota" style="margin-top:2px;" id="homeCockpitUltimaAtualizacao">Última atualização: ainda não carregado nesta sessão.</p>
+      </div>
+      <a href="cockpit.html" class="home-grupo-link-btn">Ver Cockpit completo →</a>
+    </div>
+
+    <div class="home-widgets-row">
+      <div class="home-widget-card">
+        <svg id="homeRelogioSvg" class="home-relogio-svg" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="96" class="relogio-face"/>
+          <g class="relogio-tick">
+            <line x1="100" y1="10" x2="100" y2="22"/><line x1="100" y1="178" x2="100" y2="190"/>
+            <line x1="10" y1="100" x2="22" y2="100"/><line x1="178" y1="100" x2="190" y2="100"/>
+            <line x1="34.8" y1="34.8" x2="43" y2="43" transform="rotate(0)"/>
+          </g>
+          <line id="homeRelogioHora" x1="100" y1="100" x2="100" y2="58" class="relogio-ponteiro relogio-hora"/>
+          <line id="homeRelogioMinuto" x1="100" y1="100" x2="100" y2="38" class="relogio-ponteiro relogio-minuto"/>
+          <line id="homeRelogioSegundo" x1="100" y1="100" x2="100" y2="28" class="relogio-ponteiro relogio-segundo"/>
+          <circle cx="100" cy="100" r="5" class="relogio-centro"/>
+        </svg>
+        <div class="home-relogio-digital" id="homeRelogioDigital">--:--:--</div>
+      </div>
+
+      <div class="home-widget-card home-calendario-card">
+        <div class="home-cal-header">
+          <button type="button" onclick="homeCalMudarMes(-1)" aria-label="Mês anterior">‹</button>
+          <span id="homeCalTitulo" style="cursor:pointer;" onclick="homeCalHoje()" title="Voltar para hoje">—</span>
+          <button type="button" onclick="homeCalMudarMes(1)" aria-label="Próximo mês">›</button>
+        </div>
+        <div class="home-cal-grid" id="homeCalGrid"></div>
+      </div>
+
+      <div class="home-widget-card home-widget-meta">
+        <svg class="home-anel-meta" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" class="anel-fundo"/>
+          <circle cx="60" cy="60" r="52" class="anel-progresso" id="homeAnelMetaCirculo"/>
+        </svg>
+        <div class="home-anel-texto"><span id="homeAnelMetaValor">—</span><span class="home-anel-label">da Meta (mês)</span></div>
       </div>
     </div>
-    <a href="cockpit.html" class="cockpit-ticker-link">Ver Cockpit completo →</a>
-  </div>
+
+    <div class="home-dashboard-grid">
+      <div class="cockpit-bloco">
+        <h3>💰 Resultado do Mês</h3>
+        <div class="relatorio-especial-grid" id="homeResultadoMes"></div>
+      </div>
+      <div class="cockpit-bloco">
+        <h3>🔮 Forecast</h3>
+        <div class="relatorio-especial-grid" id="homeForecast"></div>
+      </div>
+      <div class="cockpit-bloco">
+        <h3>🩺 Saúde do Pipeline</h3>
+        <div class="relatorio-especial-grid" id="homeSaudePipeline"></div>
+      </div>
+      <div class="cockpit-bloco">
+        <h3>⚙️ Eficiência da Máquina</h3>
+        <div class="relatorio-especial-grid" id="homeEficiencia"></div>
+      </div>
+    </div>
+    <div class="cockpit-bloco cockpit-bloco-full" id="homeWinRateSection" style="display:none; margin-top:14px;">
+      <h3>🏆 Win Rate Executivo</h3>
+      <div class="relatorio-especial-grid" id="homeWinRate"></div>
+    </div>
+  </section>
 
   <div class="card" id="conexao">
     <h2>🔑 Conexão rápida com o Bitrix</h2>
-    <p class="rodape-nota" style="margin-top:-6px;">Só é necessária para o ticker acima atualizar sozinho e para testar a conexão por aqui. Cada relatório abaixo também pede o webhook na própria página, se ainda não estiver salvo.</p>
+    <p class="rodape-nota" style="margin-top:-6px;">Só é necessária para o Dashboard ao vivo acima atualizar sozinho e para testar a conexão por aqui. Cada relatório abaixo também pede o webhook na própria página, se ainda não estiver salvo.</p>
     <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
     <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/.../" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
     <div class="row" style="margin-top:9px;align-items:center;">
@@ -143,6 +280,16 @@
   </div>
 </div>
 
+<button type="button" class="home-chat-botao" onclick="homeChatToggle()" aria-label="Abrir chat de relatórios" title="Buscar relatório mais rápido">💬</button>
+<div class="home-chat-painel oculto" id="homeChatPainel">
+  <div class="home-chat-cabecalho">🤖 Achador de relatórios <button type="button" onclick="homeChatToggle()" style="margin-left:auto;background:transparent;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button></div>
+  <div class="home-chat-mensagens" id="homeChatMensagens"></div>
+  <div class="home-chat-rodape">
+    <input type="text" id="homeChatInput" placeholder="Ex: win rate deste mês..." onkeydown="homeChatEnterEnvia(event)">
+    <button type="button" onclick="homeChatEnviar()">Enviar</button>
+  </div>
+</div>
+
 <script src="js/auth.js"></script>
 <script src="js/config.js"></script>
 <script src="js/bitrix-api.js"></script>
@@ -156,12 +303,15 @@
 <script src="js/financeiro.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/ia-engine.js"></script>
+<script src="js/home-dashboard.js"></script>
 <script src="js/app.js"></script>
 
 <script>
   // Init específico desta página: monta os cards de grupo (pipeline) da tela
-  // inicial — recolhidos por padrão, cada um só expande ao clicar.
+  // inicial — recolhidos por padrão, cada um só expande ao clicar — e liga o
+  // dashboard ao vivo (relógio, calendário, anel de meta, animação dos KPIs).
   renderizarGruposPrincipaisHome();
+  homeIniciarDashboard();
 </script>
 
 </body>
