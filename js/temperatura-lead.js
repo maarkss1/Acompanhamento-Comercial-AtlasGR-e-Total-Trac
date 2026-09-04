@@ -14,7 +14,8 @@
 
 const TL_CATEGORIA_COMERCIAL = "0";
 const TL_STAGE_PROPOSTA = "NEW"; // "Proposta Enviada" no funil Comercial (config.js)
-const TL_FIELD_NAME = "UF_CRM_TEMPERATURA_LEAD";
+const TL_FIELD_NAME = "UF_CRM_TEMPERATURA_LEAD"; // usado só se precisar CRIAR um campo novo
+const TL_FIELD_LABEL_BUSCA = "temperatura do lead"; // rótulo procurado num campo já existente
 const TL_FIELD_XML_ID = "TEMPERATURA_LEAD_ATLAS";
 const TL_OPCOES = [
   { chave: "quente", emoji: "🔥", label: "Quente", valorBitrix: "🔥 Quente" },
@@ -37,16 +38,27 @@ const tlState = {
 // Campo personalizado no Bitrix (detectar / criar)
 // ---------------------------------------------------------------------------
 
+// v34 — busca por crm.deal.fields (não crm.userfield.list): é o único método
+// que devolve o RÓTULO (formLabel) de cada campo junto com os itens da lista,
+// então dá pra achar um campo "Temperatura do Lead" já existente mesmo que
+// tenha sido criado por outra pessoa/ferramenta com um código diferente
+// (ex.: UF_CRM_1784922718473) — sem isso, cada sessão criaria um campo novo
+// e duplicado toda vez que não reconhecesse o próprio TL_FIELD_NAME.
 async function tlBuscarCampoExistente(webhook) {
-  const body = await bitrixPostJsonComRetentativa(webhook, "crm.userfield.list", {
-    filter: { "=ENTITY_ID": "CRM_DEAL", "=FIELD_NAME": TL_FIELD_NAME },
-  });
-  const campos = body?.result || [];
-  return campos.find((f) => String(f.FIELD_NAME) === TL_FIELD_NAME) || null;
+  const body = await bitrixPostJsonComRetentativa(webhook, "crm.deal.fields", {});
+  const campos = body?.result || {};
+  // 1) Prioridade: o código que esta própria ferramenta usa pra criar campos novos.
+  if (campos[TL_FIELD_NAME]) return { fieldName: TL_FIELD_NAME, def: campos[TL_FIELD_NAME] };
+  // 2) Ou qualquer campo UF_CRM_* cujo rótulo já seja "Temperatura do Lead".
+  const alvo = normalizarTextoChave(TL_FIELD_LABEL_BUSCA);
+  const achado = Object.entries(campos).find(
+    ([codigo, def]) => codigo.startsWith("UF_CRM_") && normalizarTextoChave(def?.formLabel || def?.listLabel || "") === alvo
+  );
+  return achado ? { fieldName: achado[0], def: achado[1] } : null;
 }
 
 function tlMapearOpcoesDoCampo(campoBitrix) {
-  const lista = campoBitrix?.LIST || [];
+  const lista = campoBitrix?.def?.items || [];
   return TL_OPCOES.map((opt) => {
     const encontrado = lista.find((item) => normalizarTextoChave(item.VALUE || "").includes(normalizarTextoChave(opt.label)));
     return { ...opt, id: encontrado ? String(encontrado.ID) : null };
@@ -85,13 +97,13 @@ async function tlGarantirCampo(webhook, { criar }) {
     if (!criar) return null;
     await tlCriarCampoNoBitrix(webhook);
     campoBitrix = await tlBuscarCampoExistente(webhook);
-    if (!campoBitrix) throw new Error('Campo criado, mas não foi possível confirmá-lo logo em seguida (crm.userfield.list). Clique em "↻ Atualizar do Bitrix" novamente em alguns segundos.');
+    if (!campoBitrix) throw new Error('Campo criado, mas não foi possível confirmá-lo logo em seguida (crm.deal.fields). Clique em "↻ Atualizar do Bitrix" novamente em alguns segundos.');
   }
   const opcoes = tlMapearOpcoesDoCampo(campoBitrix);
   if (opcoes.some((o) => !o.id)) {
-    throw new Error(`O campo "Temperatura do Lead" já existe no Bitrix (${TL_FIELD_NAME}), mas não tem as 3 opções esperadas (🔥 Quente / 🌤️ Morno / 🧊 Frio) — confira em Configurações do CRM → Negócio → Campos personalizados, ou apague o campo pra esta ferramenta recriar do zero.`);
+    throw new Error(`O campo "${campoBitrix.def?.formLabel || "Temperatura do Lead"}" já existe no Bitrix (${campoBitrix.fieldName}), mas não tem as 3 opções esperadas (algo como Quente/Morno/Frio) — confira em Configurações do CRM → Negócio → Campos personalizados.`);
   }
-  return { fieldName: TL_FIELD_NAME, id: campoBitrix.ID, opcoes };
+  return { fieldName: campoBitrix.fieldName, opcoes };
 }
 
 // ---------------------------------------------------------------------------
