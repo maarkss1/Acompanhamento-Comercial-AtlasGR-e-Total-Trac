@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-empresa="atlasgr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>AtlasGR — Temperatura do Lead (Proposta Enviada)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script>
+  (function () {
+    try {
+      // v29 — chave por empresa (data-empresa), pra tema de uma marca
+      // nao vazar/sobrescrever o da outra no mesmo navegador.
+      var sufixoEmpresaTema = document.documentElement.getAttribute("data-empresa") === "totaltrac" ? "__totaltrac" : "";
+      var salvo = localStorage.getItem("atlas-extrator-tema" + sufixoEmpresaTema);
+      var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
+      document.documentElement.setAttribute("data-tema", tema);
+    } catch (e) {
+      document.documentElement.setAttribute("data-tema", "claro");
+    }
+  })();
+</script>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  .tl-kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-top:12px; }
+  .tl-link-negocio { margin-left:8px; font-size:12.5px; }
+
+  .tl-bulk-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border:1px dashed var(--line); border-radius:10px; background:var(--surface); }
+  .tl-bulk-bar strong { font-size:12.5px; color:var(--ink-2); }
+  .tl-bulk-botoes { display:flex; gap:8px; flex-wrap:wrap; }
+  .tl-bulk-botoes button { display:flex; align-items:center; gap:6px; }
+
+  .tl-filtros { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:12px; }
+  .tl-filtros input[type="text"] { max-width:260px; }
+  .tl-filtros .checkbox-linha { margin:0; }
+
+  .tl-item-card { border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--soft); margin-bottom:10px; }
+  .tl-linha-topo { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .tl-linha-empresa { display:flex; align-items:center; gap:10px; }
+  .tl-empresa-avatar {
+    width:36px; height:36px; border-radius:50%; flex-shrink:0; background:var(--surface); color:var(--brand);
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12.5px;
+    border:1px solid var(--line); object-fit:cover;
+  }
+  .tl-temp-grupo { display:flex; gap:8px; }
+  .tl-temp-btn {
+    width:42px; height:42px; border-radius:50%; border:2px solid var(--line); background:var(--surface);
+    font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    opacity:.45; transition:transform .12s, opacity .12s, box-shadow .12s;
+  }
+  .tl-temp-btn:hover { opacity:.85; transform:scale(1.07); }
+  .tl-temp-btn.tl-temp-ativo { opacity:1; }
+  .tl-temp-btn.tl-temp-quente.tl-temp-ativo { border-color:#ff5618; background:color-mix(in srgb, #ff5618 16%, var(--surface)); }
+  .tl-temp-btn.tl-temp-morno.tl-temp-ativo { border-color:#f5c453; background:color-mix(in srgb, #f5c453 22%, var(--surface)); }
+  .tl-temp-btn.tl-temp-frio.tl-temp-ativo { border-color:#2FC6F6; background:color-mix(in srgb, #2FC6F6 16%, var(--surface)); }
+  .tl-temp-btn.tl-temp-pendente { outline:2px dashed var(--brand); outline-offset:3px; }
+
+  .tl-item-stats { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .tl-mini-stat { flex:1; min-width:110px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--surface); }
+  .tl-mini-label { display:block; font-size:10.5px; font-weight:700; color:var(--ink-2); text-transform:uppercase; letter-spacing:.03em; }
+  .tl-mini-valor { display:block; font-size:14px; font-weight:800; margin-top:2px; color:var(--ink); }
+
+  .tl-salvar-bar {
+    position:sticky; bottom:0; z-index:5; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:12px;
+    background:var(--surface); box-shadow:0 -4px 14px rgba(0,0,0,.06); flex-wrap:wrap;
+  }
+</style>
+</head>
+<body class="aguardando-login">
+
+<div class="login-gate" id="loginGate">
+  <div class="login-gate-card">
+    <div class="login-gate-icone">🔒</div>
+    <h1>Portal Comercial AtlasGR</h1>
+    <p>Acesso restrito. Digite a senha para continuar.</p>
+    <form id="loginGateForm" autocomplete="off">
+      <input type="password" id="loginGateSenha" placeholder="Senha" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+    <p class="login-gate-erro oculto" id="loginGateErro" role="alert"></p>
+  </div>
+</div>
+
+<div class="letterhead">
+  <div class="letterhead-inner">
+    <div class="letterhead-brand">
+      <svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
+        <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>
+        <rect x="529.49" y="21.5" width="29.84" height="150.2"/>
+        <path d="M670.83,61.12h22.36V171.49H669.73l-2.59-9.88q-15.07,13.17-35.73,13.17a58.64,58.64,0,0,1-29.64-7.58,54.09,54.09,0,0,1-20.76-21,60.29,60.29,0,0,1-7.48-29.89A59.58,59.58,0,0,1,581,86.61a53.89,53.89,0,0,1,20.76-20.85,58.92,58.92,0,0,1,29.64-7.54q21.06,0,36.23,13.47ZM612.3,137.91q8.54,8.63,21.51,8.63t21.5-8.58q8.54-8.58,8.54-21.66t-8.54-21.65q-8.52-8.58-21.5-8.59T612.3,94.7q-8.53,8.63-8.53,21.6t8.53,21.61"/>
+        <path d="M753.69,174.78q-20.75,0-33.48-10.82t-12.82-28.6h29q.11,7.09,5.14,10.88T754.89,150A20.3,20.3,0,0,0,766,147.14a9.17,9.17,0,0,0,4.54-8.18,7.43,7.43,0,0,0-1.55-4.69,11.43,11.43,0,0,0-4.84-3.35,43.86,43.86,0,0,0-6.48-2.09q-3.2-.75-8.39-1.65-4.68-.8-7.88-1.45t-7.73-1.94a44.3,44.3,0,0,1-7.64-2.85,43.08,43.08,0,0,1-6.54-4.14,23,23,0,0,1-5.49-5.74,29.62,29.62,0,0,1-3.39-7.63,34.21,34.21,0,0,1-1.35-9.88,31.18,31.18,0,0,1,12.28-25.5q12.27-9.82,32.13-9.83t32,10.13q12.07,10.13,12.17,26.7H769.56q-.09-6.49-4.44-9.78T752.9,82q-6.9,0-10.83,2.9a9.07,9.07,0,0,0-3.94,7.68,7.92,7.92,0,0,0,.64,3.25,5.9,5.9,0,0,0,2.3,2.49q1.65,1,3.09,1.8a22.06,22.06,0,0,0,4.39,1.49c2,.5,3.56.87,4.79,1.1l5.64,1q16.07,2.89,23.16,6,17.86,8,17.86,27.94,0,16.86-12.67,27t-33.64,10.12"/>
+        <polygon points="153.4 87.56 167.65 62.87 167.68 62.85 178.13 44.72 178.11 44.68 178.15 44.68 203.95 0 182.97 0 152.31 0 110.4 0 99.17 0 73.37 44.68 73.35 44.72 62.87 62.87 48.62 87.56 48.41 87.94 0 171.76 83.81 171.76 104.78 171.76 125.74 135.49 125.76 135.44 153.19 87.94 153.4 87.56"/>
+        <polygon points="203.07 87.94 175.75 87.94 153.9 125.79 153.9 125.83 137.02 155.01 146.7 171.76 209.57 171.76 251.48 171.76 203.07 87.94"/></svg>
+      <div class="letterhead-divider"></div>
+      <div class="letterhead-tagline">Central de Inteligência Comercial · Extração e Relatórios Bitrix24</div>
+    </div>
+    <div class="live-datetime">
+      <strong id="dataAtualTopo">Carregando data...</strong>
+      <span id="horaAtualTopo">--:--:-- · horário local</span>
+    </div>
+  </div>
+</div>
+
+<header class="hero-extrator">
+  <div class="header-conteudo">
+    <div class="hero-copy">
+      <div class="hero-eyebrow">AtlasGR · Bitrix24 · Pipeline Comercial</div>
+      <h1>Temperatura do Lead — Proposta Enviada.</h1>
+      <p>Classifica em massa os negócios do funil Comercial parados em "Proposta Enviada" como 🔥 Quente, 🌤️ Morno ou 🧊 Frio, e salva tudo de uma vez no Bitrix — cria um campo personalizado (lista) no negócio caso ele ainda não exista.</p>
+    </div>
+    <div class="hero-actions">
+      <span class="connection-pill" id="statusConexaoTopo"><span class="connection-dot"></span><span id="statusConexaoTexto">Conexão não testada</span></span>
+      <button type="button" class="hero-btn" onclick="testarConexaoBitrix()">Testar conexão</button>
+      <button type="button" class="btn-tema hero-btn" id="btnTema" onclick="alternarTema()" aria-label="Alternar tema" title="Alternar tema">🌙</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <div class="card" id="conexao">
+    <h2>🔑 Conexão com o Bitrix</h2>
+    <div class="label-line"><label for="webhook">URL do webhook de entrada</label><button type="button" class="info-btn" onclick="abrirAjuda('webhook')">?</button></div>
+    <input type="password" id="webhook" value="" autocomplete="off" placeholder="https://atlasgr.bitrix24.com.br/rest/.../" oninput="marcarConexaoPendente(); atualizarStatusWebhookSalvo();">
+    <div class="row" style="margin-top:9px;align-items:center;">
+      <div class="webhook-actions">
+        <button type="button" class="toggle-eye" onclick="alternarVisibilidadeWebhook()">mostrar/ocultar</button>
+        <button type="button" class="secundario" onclick="testarConexaoBitrix()">Testar conexão agora</button>
+        <button type="button" class="secundario" onclick="salvarWebhookNoNavegador()">💾 Salvar webhook</button>
+        <button type="button" class="secundario" onclick="esquecerWebhookSalvo()">🗑️ Restaurar padrão</button>
+        <span class="webhook-save-status" id="statusWebhookSalvo"><span class="dot"></span><span id="statusWebhookSalvoTexto">Webhook fixo ativo</span></span>
+      </div>
+    </div>
+    <p class="rodape-nota">Nenhum webhook padrão pré-configurado (removido por segurança, ver AUDITORIA_ESTADO_ATUAL.md). Cole o webhook do Bitrix24 no campo acima e clique em "Salvar webhook" para ele ficar disponível neste navegador nas próximas visitas. Este webhook precisa de leitura e escrita em CRM (negócios e campos personalizados).</p>
+  </div>
+
+  <div class="card">
+    <h2>✅ Habilitar escrita no Bitrix</h2>
+    <div class="checkbox-linha"><input type="checkbox" id="tlHabilitarEscrita"><label for="tlHabilitarEscrita" style="margin:0;">Habilitar escrita no Bitrix (criar o campo "Temperatura do Lead" e atualizar os negócios)</label></div>
+    <p class="rodape-nota">Enquanto desmarcado, esta página só lê dados do Bitrix — nem cria o campo, nem salva nenhuma temperatura.</p>
+  </div>
+
+  <div class="card">
+    <h2>🌡️ Campo "Temperatura do Lead" no Bitrix</h2>
+    <p class="rodape-nota" style="margin-top:-6px;">Campo de lista (enumeração) no negócio, com 3 opções: 🔥 Quente, 🌤️ Morno, 🧊 Frio. Clique em "↻ Atualizar do Bitrix" abaixo para verificar se ele já existe.</p>
+    <div id="tlStatusCampo"><p class="rodape-nota">Ainda não verificado nesta sessão.</p></div>
+    <button type="button" class="secundario oculto" id="tlBtnCriarCampo" onclick="tlCriarCampoEAtualizar()">🌡️ Criar campo no Bitrix</button>
+  </div>
+
+  <div class="card">
+    <h2>📊 Negócios em "Proposta Enviada"</h2>
+    <p class="rodape-nota" style="margin-top:-6px;" id="tlUltimaAtualizacao">Ainda não atualizado nesta sessão.</p>
+    <button type="button" class="primario" id="tlBtnAtualizar" onclick="tlAtualizarDoBitrix()">↻ Atualizar do Bitrix</button>
+    <div class="tl-kpi-row" id="tlCards"></div>
+
+    <div class="tl-filtros">
+      <input type="text" id="tlBusca" placeholder="Buscar por cliente..." oninput="tlAoDigitarBusca(this.value)">
+      <div class="checkbox-linha"><input type="checkbox" id="tlFiltroSemTemp" onchange="tlAlternarFiltroSemTemp()"><label for="tlFiltroSemTemp" style="margin:0;">Mostrar só quem ainda não tem temperatura</label></div>
+    </div>
+
+    <div class="tl-bulk-bar">
+      <strong>Marcar todos os negócios visíveis abaixo como:</strong>
+      <div class="tl-bulk-botoes">
+        <button type="button" class="secundario" onclick="tlMarcarVisiveisComo('quente')">🔥 Quente</button>
+        <button type="button" class="secundario" onclick="tlMarcarVisiveisComo('morno')">🌤️ Morno</button>
+        <button type="button" class="secundario" onclick="tlMarcarVisiveisComo('frio')">🧊 Frio</button>
+        <button type="button" class="secundario" onclick="tlLimparSelecao()">↺ Limpar seleção</button>
+      </div>
+    </div>
+
+    <div id="tlLista" style="margin-top:14px;"></div>
+
+    <div class="tl-salvar-bar" id="tlBarraSalvar">
+      <span id="tlContagemPendente">Nenhuma alteração pendente</span>
+      <button type="button" class="primario" id="tlBtnSalvar" onclick="tlSalvarAlteracoes()" disabled>💾 Salvar alterações no Bitrix</button>
+    </div>
+  </div>
+
+  <div class="card run-zone" id="execucao">
+    <div class="status-linha">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusTexto"></span>
+    </div>
+    <div class="erro oculto" id="areaErro"></div>
+  </div>
+
+</main>
+
+<div class="help-modal" id="helpModal" onclick="fecharAjudaPorFundo(event)">
+  <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitulo">
+    <div class="help-head"><div><div class="hero-eyebrow" style="color:var(--brand);margin-bottom:4px;">Ajuda contextual</div><h3 id="helpTitulo">Como funciona</h3></div><button type="button" class="help-close" onclick="fecharAjuda()">×</button></div>
+    <div class="help-body" id="helpConteudo"></div>
+  </div>
+</div>
+
+<script src="js/auth.js"></script>
+<script src="js/config.js"></script>
+<script src="js/bitrix-api.js"></script>
+<script src="js/extrator.js"></script>
+<script src="js/forecast.js"></script>
+<script src="js/sdr.js"></script>
+<script src="js/jornada.js"></script>
+<script src="js/catalogo-relatorios.js"></script>
+<script src="js/exportacoes.js"></script>
+<script src="js/cockpit.js"></script>
+<script src="js/temperatura-lead.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/ia-engine.js"></script>
+<script src="js/app.js"></script>
+
+<script>
+  // Init específico desta página: carrega o webhook salvo e mostra o estado
+  // vazio assim que a página abre (sem depender de nova extração).
+  tlIniciarPagina();
+</script>
+
+</body>
+</html>

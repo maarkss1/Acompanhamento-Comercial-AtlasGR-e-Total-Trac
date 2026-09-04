@@ -408,7 +408,7 @@ function renderizarAtalhosRelatoriosGrupo(nomeGrupo, containerId){
 // ---------------------------------------------------------------------------
 const GRUPOS_PRINCIPAIS_HOME = [
   { chave:"jornada", icone:"🧭", titulo:"Jornada & Cliente", descricao:"Histórico de estágios, duplicidade, handoffs, clientes parados.", relatoriosGrupo:"Jornada & Cliente" },
-  { chave:"comercial", icone:"📈", titulo:"Comercial & Receita", descricao:"Forecast, pipeline, conversão, performance por vendedor.", relatoriosGrupo:"Comercial & Receita" },
+  { chave:"comercial", icone:"📈", titulo:"Comercial & Receita", descricao:"Forecast, pipeline, conversão, performance por vendedor.", relatoriosGrupo:"Comercial & Receita", extraLink:{href:"temperatura-lead.html", icone:"🌡️", titulo:"Temperatura do Lead — Proposta Enviada", descricao:"Classifique em massa (🔥 Quente / 🌤️ Morno / 🧊 Frio) e salve tudo de uma vez no Bitrix."} },
   { chave:"cockpit", icone:"⚡", titulo:"Cockpit Comercial", descricao:"Visão executiva ao vivo: resultado do mês, forecast, saúde do pipeline.", link:"cockpit.html", linkLabel:"Abrir Cockpit completo" },
   { chave:"sdr", icone:"🎯", titulo:"SDR & Leads", descricao:"Reuniões, atendimento de leads, conversão Lead → Oportunidade.", relatoriosGrupo:"SDR & Leads" },
   { chave:"closer", icone:"🤝", titulo:"Closer e Account", descricao:"Em mapeamento pelo time — os relatórios deste pipeline entram aqui assim que definidos.", vazio:true },
