@@ -18,8 +18,9 @@
 // ---------------------------------------------------------------------------
 
 const FM_CATEGORIA_COMERCIAL = "0";
-const FM_FIELD_NAME = "UF_CRM_FATURAMENTO_MEDIO_3M";
-const FM_FIELD_XML_ID = "FATURAMENTO_MEDIO_3M_ATLAS";
+const FM_FIELD_NAME = "UF_CRM_FATURAMENTO_MEDIO"; // usado só se precisar CRIAR um campo novo
+const FM_FIELD_LABEL_BUSCA = "faturamento medio"; // rótulo procurado num campo já existente
+const FM_FIELD_XML_ID = "FATURAMENTO_MEDIO_ATLAS";
 
 const fmState = {
   arquivos: [],       // [{ vendedor, clientes: [...] }] — um item por arquivo carregado
@@ -34,8 +35,10 @@ const fmState = {
 // Parser dos arquivos HTML (planilha exportada) — encontra a coluna
 // FATURAMENTO pelo texto do cabeçalho (não por índice fixo), porque o layout
 // varia um pouco entre vendedores (alguns têm colunas extras de detalhe por
-// produto a partir do mês 9). Só precisamos dos meses 1-4, que ficam sempre
-// logo em seguida de FATURAMENTO em todos os arquivos conferidos.
+// produto intercaladas a partir do mês 9). Por isso a coluna de cada mês
+// também é achada pelo texto do cabeçalho ("1".."12" depois de FATURAMENTO),
+// não por deslocamento fixo — funciona tanto nos arquivos com os 12 meses
+// contíguos quanto nos que intercalam colunas de produto depois do mês 8.
 // ---------------------------------------------------------------------------
 
 function fmParseValorBR(txt) {
@@ -48,20 +51,25 @@ function fmParseValorBR(txt) {
 function fmParseArquivoFaturamento(nomeArquivo, htmlTexto) {
   const doc = new DOMParser().parseFromString(htmlTexto, "text/html");
   const linhas = [...doc.querySelectorAll("table tr")];
-  let indiceCabecalho = -1, colVendas = -1, colFaturamento = -1;
+  let indiceCabecalho = -1, colVendas = -1, colunasMes = null; // colunasMes = { 1: indiceColuna, 2: ..., ... }
   const colNome = 1;
   linhas.forEach((tr, i) => {
     const celulas = [...tr.querySelectorAll("td")].map((td) => td.textContent.trim());
     const iFaturamento = celulas.indexOf("FATURAMENTO");
-    if (iFaturamento !== -1) {
-      indiceCabecalho = i;
-      colFaturamento = iFaturamento;
-      colVendas = celulas.indexOf("VENDAS");
+    if (iFaturamento === -1) return;
+    indiceCabecalho = i;
+    colVendas = celulas.indexOf("VENDAS");
+    const mapa = {};
+    for (let c = iFaturamento + 1; c < celulas.length; c++) {
+      const n = Number(celulas[c]);
+      if (celulas[c] !== "" && Number.isInteger(n) && n >= 1 && n <= 12) mapa[n] = c;
     }
+    colunasMes = mapa;
   });
-  if (indiceCabecalho === -1) {
-    throw new Error(`"${nomeArquivo}": não encontrei a coluna "FATURAMENTO" — confira se é um export de Vendido x Faturado por vendedor (planilha do Google Sheets, "Baixar > Página da Web").`);
+  if (indiceCabecalho === -1 || !colunasMes || !Object.keys(colunasMes).length) {
+    throw new Error(`"${nomeArquivo}": não encontrei a coluna "FATURAMENTO" (com os meses 1-12 em seguida) — confira se é um export de Vendido x Faturado por vendedor (planilha do Google Sheets, "Baixar > Página da Web").`);
   }
+  const mesesDisponiveis = Object.keys(colunasMes).map(Number).sort((a, b) => a - b);
   const vendedor = nomeArquivo.replace(/\.html?$/i, "").trim();
   const clientes = [];
   for (let i = indiceCabecalho + 1; i < linhas.length; i++) {
@@ -69,8 +77,9 @@ function fmParseArquivoFaturamento(nomeArquivo, htmlTexto) {
     const nome = celulas[colNome];
     if (!nome) continue; // linha vazia/separadora
     const vendas = colVendas !== -1 ? fmParseValorBR(celulas[colVendas]) : null;
-    const meses = [1, 2, 3, 4].map((n) => fmParseValorBR(celulas[colFaturamento + n]));
-    if (vendas == null && meses.every((m) => m == null)) continue; // linha em branco
+    const meses = {};
+    mesesDisponiveis.forEach((n) => { meses[n] = fmParseValorBR(celulas[colunasMes[n]]); });
+    if (vendas == null && Object.values(meses).every((m) => m == null)) continue; // linha em branco
     clientes.push({ vendedor, cliente: nome, vendas, meses });
   }
   return clientes;
@@ -95,28 +104,42 @@ async function fmLerArquivos(fileList) {
 // Regra da média
 // ---------------------------------------------------------------------------
 
+// v35 — usa TODOS os meses com dado disponível (não só uma janela de 3): se o
+// mês 1 veio perto do valor fechado (>= limiar), entra na média junto com
+// todos os outros meses; senão é tratado como pro rata (parcial) e é
+// descartado, entrando na média todo o resto (mês 2 em diante).
 function fmCalcularMedia(cliente, limiarPct) {
-  const { vendas, meses } = cliente; // meses = [mes1, mes2, mes3, mes4] (relativos ao início da cobrança)
-  const mes1 = meses[0];
+  const { vendas, meses } = cliente; // meses = { 1: valor, 2: valor, ... } (relativos ao início da cobrança)
+  const mesesDisponiveis = Object.keys(meses).map(Number).sort((a, b) => a - b);
+  const mes1 = meses[1] ?? null;
   const pertoDoContrato = vendas > 0 && mes1 != null && (mes1 / vendas) * 100 >= limiarPct;
-  const janela = pertoDoContrato ? meses.slice(0, 3) : meses.slice(1, 4);
-  const rotuloJanela = pertoDoContrato ? "Meses 1-2-3" : "Meses 2-3-4 (mês 1 pro rata, ignorado)";
-  const valores = janela.filter((v) => v != null);
+  const mesesUsados = pertoDoContrato ? mesesDisponiveis : mesesDisponiveis.filter((n) => n !== 1);
+  const valores = mesesUsados.map((n) => meses[n]).filter((v) => v != null);
   const media = valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : null;
+  const rotuloJanela = pertoDoContrato
+    ? `Todos os meses (${valores.length})`
+    : `A partir do mês 2 — mês 1 pro rata, ignorado (${valores.length} mês(es))`;
   return { media, pertoDoContrato, rotuloJanela, amostraMeses: valores.length };
 }
 
 // ---------------------------------------------------------------------------
-// Campo personalizado no Bitrix (detectar / criar) — numérico (currency),
-// sem opções de lista (diferente do campo de Temperatura do Lead).
+// Campo personalizado no Bitrix (detectar / criar) — numérico, sem opções de
+// lista (diferente do campo de Temperatura do Lead). Busca por crm.deal.fields
+// (não crm.userfield.list): é o único método que devolve o RÓTULO de cada
+// campo, então dá pra achar um campo "Faturamento Médio" já existente mesmo
+// que tenha sido criado por outra pessoa/ferramenta com um código diferente
+// — mesmo motivo/correção aplicada em js/temperatura-lead.js.
 // ---------------------------------------------------------------------------
 
 async function fmBuscarCampoExistente(webhook) {
-  const body = await bitrixPostJsonComRetentativa(webhook, "crm.userfield.list", {
-    filter: { "=ENTITY_ID": "CRM_DEAL", "=FIELD_NAME": FM_FIELD_NAME },
-  });
-  const campos = body?.result || [];
-  return campos.find((f) => String(f.FIELD_NAME) === FM_FIELD_NAME) || null;
+  const body = await bitrixPostJsonComRetentativa(webhook, "crm.deal.fields", {});
+  const campos = body?.result || {};
+  if (campos[FM_FIELD_NAME]) return { fieldName: FM_FIELD_NAME, def: campos[FM_FIELD_NAME] };
+  const alvo = normalizarTextoChave(FM_FIELD_LABEL_BUSCA);
+  const achado = Object.entries(campos).find(
+    ([codigo, def]) => codigo.startsWith("UF_CRM_") && normalizarTextoChave(def?.formLabel || def?.listLabel || "") === alvo
+  );
+  return achado ? { fieldName: achado[0], def: achado[1] } : null;
 }
 
 async function fmCriarCampoNoBitrix(webhook) {
@@ -131,9 +154,9 @@ async function fmCriarCampoNoBitrix(webhook) {
     SHOW_IN_LIST: "Y",
     EDIT_IN_LIST: "Y",
     IS_SEARCHABLE: "N",
-    EDIT_FORM_LABEL: { en: "Avg. Monthly Revenue (3m)", br: "Faturamento Médio (3 meses)", pt: "Faturamento Médio (3 meses)" },
-    LIST_COLUMN_LABEL: { en: "Avg. Revenue (3m)", br: "Faturamento Médio (3m)", pt: "Faturamento Médio (3m)" },
-    LIST_FILTER_LABEL: { en: "Avg. Revenue (3m)", br: "Faturamento Médio (3m)", pt: "Faturamento Médio (3m)" },
+    EDIT_FORM_LABEL: { en: "Avg. Monthly Revenue", br: "Faturamento Médio", pt: "Faturamento Médio" },
+    LIST_COLUMN_LABEL: { en: "Avg. Revenue", br: "Faturamento Médio", pt: "Faturamento Médio" },
+    LIST_FILTER_LABEL: { en: "Avg. Revenue", br: "Faturamento Médio", pt: "Faturamento Médio" },
     SETTINGS: { PRECISION: 2 },
   };
   const body = await bitrixPostJsonComRetentativa(webhook, "crm.userfield.add", { fields });
@@ -147,9 +170,9 @@ async function fmGarantirCampo(webhook, { criar }) {
     if (!criar) return null;
     await fmCriarCampoNoBitrix(webhook);
     campoBitrix = await fmBuscarCampoExistente(webhook);
-    if (!campoBitrix) throw new Error('Campo criado, mas não foi possível confirmá-lo logo em seguida (crm.userfield.list). Clique em "↻ Cruzar com o Bitrix" novamente em alguns segundos.');
+    if (!campoBitrix) throw new Error('Campo criado, mas não foi possível confirmá-lo logo em seguida (crm.deal.fields). Clique em "↻ Cruzar com o Bitrix" novamente em alguns segundos.');
   }
-  return { fieldName: FM_FIELD_NAME, id: campoBitrix.ID };
+  return { fieldName: campoBitrix.fieldName };
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +397,7 @@ function fmLinhaClienteHTML(cliente) {
     </div>
     <div class="fm-item-stats">
       <div class="tl-mini-stat"><span class="tl-mini-label">Valor fechado</span><span class="tl-mini-valor">${cliente.vendas != null ? moedaRelatorio(cliente.vendas) : "—"}</span></div>
-      <div class="tl-mini-stat"><span class="tl-mini-label">Mês 1 faturado</span><span class="tl-mini-valor">${cliente.meses[0] != null ? moedaRelatorio(cliente.meses[0]) : "—"}</span></div>
+      <div class="tl-mini-stat"><span class="tl-mini-label">Mês 1 faturado</span><span class="tl-mini-valor">${cliente.meses[1] != null ? moedaRelatorio(cliente.meses[1]) : "—"}</span></div>
       <div class="tl-mini-stat"><span class="tl-mini-label">Janela usada</span><span class="tl-mini-valor" style="font-size:11.5px;">${escapeHtmlRelatorio(rotuloJanela)} (${amostraMeses}/3)</span></div>
       <div class="tl-mini-stat"><span class="tl-mini-label">Média calculada</span><span class="tl-mini-valor">${media != null ? moedaRelatorio(media) : "—"}</span></div>
     </div>

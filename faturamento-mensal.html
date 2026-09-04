@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>AtlasGR — Faturamento Médio (3 meses)</title>
+<title>AtlasGR — Faturamento Médio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -79,8 +79,8 @@
   <div class="header-conteudo">
     <div class="hero-copy">
       <div class="hero-eyebrow">AtlasGR · Bitrix24 · Pipeline Comercial</div>
-      <h1>Faturamento Médio (3 meses) por cliente.</h1>
-      <p>Carrega os arquivos "Vendido x Faturado" (um export HTML por vendedor), cruza cada cliente com o negócio correspondente no Bitrix e calcula a média de faturamento dos primeiros meses — pra usar como referência ao ajustar o valor do negócio no orçamento.</p>
+      <h1>Faturamento Médio por cliente.</h1>
+      <p>Carrega os arquivos "Vendido x Faturado" (um export HTML por vendedor), cruza cada cliente com o negócio correspondente no Bitrix e calcula a média de faturamento de todos os meses disponíveis — pra usar como referência ao ajustar o valor do negócio no orçamento.</p>
     </div>
     <div class="hero-actions">
       <span class="connection-pill" id="statusConexaoTopo"><span class="connection-dot"></span><span id="statusConexaoTexto">Conexão não testada</span></span>
@@ -116,7 +116,7 @@
   </div>
 
   <div class="card">
-    <h2>💰 Campo "Faturamento Médio (3 meses)" no Bitrix</h2>
+    <h2>💰 Campo "Faturamento Médio" no Bitrix</h2>
     <p class="rodape-nota" style="margin-top:-6px;">Campo numérico no negócio. Clique em "↻ Cruzar com o Bitrix" abaixo para verificar se ele já existe.</p>
     <div id="fmStatusCampo"><p class="rodape-nota">Ainda não verificado nesta sessão.</p></div>
     <button type="button" class="secundario oculto" id="fmBtnCriarCampo" onclick="fmCriarCampoEAtualizar()">💰 Criar campo no Bitrix</button>
@@ -137,7 +137,7 @@
     <div class="fm-limiar-linha">
       <label for="fmLimiar" style="margin:0;">Considerar mês 1 válido quando faturado ≥</label>
       <input type="number" id="fmLimiar" min="0" max="100" value="85" onchange="fmAoMudarLimiar(this.value)">
-      <span>% do valor fechado (senão usa meses 2-3-4)</span>
+      <span>% do valor fechado (senão descarta o mês 1 e usa a média do mês 2 em diante)</span>
       <button type="button" class="secundario" onclick="fmMarcarTodosSugeridos()" style="margin-left:auto;">✓ Marcar todos com match exato para salvar</button>
     </div>
     <div id="fmLista" style="margin-top:14px;"></div>
