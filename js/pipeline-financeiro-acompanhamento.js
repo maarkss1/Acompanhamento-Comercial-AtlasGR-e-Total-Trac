@@ -131,14 +131,27 @@ async function pfaBuscarTarefaVinculada(webhook, negocioId) {
   return tarefas[0] || null;
 }
 
+// tasks.task.list devolve os campos em minúsculo/camelCase (id, title,
+// status, responsibleId, createdDate) — diferente da maioria dos métodos
+// crm.* usados no resto do app, que são em MAIÚSCULO. Lê os dois formatos
+// pra não depender de qual convenção esta conta/versão do Bitrix devolve
+// (foi exatamente essa mistura que causava "0 — wrong task id" ao tentar
+// finalizar: o ID lido ficava undefined -> virava a string "undefined").
+function pfaCampoTarefa(t, ...chaves) {
+  for (const c of chaves) { if (t?.[c] != null && t[c] !== "") return t[c]; }
+  return null;
+}
+
 function pfaTarefaBitrixParaEstado(t, dominio) {
+  const id = pfaCampoTarefa(t, "id", "ID");
+  const responsavelId = idBitrixString(pfaCampoTarefa(t, "responsibleId", "RESPONSIBLE_ID"));
   return {
-    id: String(t.ID),
-    titulo: t.TITLE || "",
-    status: String(t.STATUS || "2"),
-    vendedorId: idBitrixString(t.RESPONSIBLE_ID),
-    url: dominio ? `https://${dominio}/company/personal/user/${idBitrixString(t.RESPONSIBLE_ID)}/tasks/task/view/${t.ID}/` : "",
-    criadaEm: t.CREATED_DATE || new Date().toISOString(),
+    id: String(id),
+    titulo: pfaCampoTarefa(t, "title", "TITLE") || "",
+    status: String(pfaCampoTarefa(t, "status", "STATUS") || "2"),
+    vendedorId: responsavelId,
+    url: dominio && responsavelId ? `https://${dominio}/company/personal/user/${responsavelId}/tasks/task/view/${id}/` : "",
+    criadaEm: pfaCampoTarefa(t, "createdDate", "CREATED_DATE") || new Date().toISOString(),
   };
 }
 
@@ -647,6 +660,10 @@ async function pfaEnviarComentarioTarefa(idInterno) {
   const it = pfaState.itens.find((x) => x.idInterno === idInterno);
   if (!it?.tarefa) return;
   const statusEl = document.getElementById(`pfaComentarioTarefaStatus_${idInterno}`);
+  if (!it.tarefa.id || it.tarefa.id === "undefined" || it.tarefa.id === "null") {
+    if (statusEl) statusEl.textContent = 'Não consegui identificar o ID real da tarefa. Clique em "↻ Atualizar do Bitrix" pra recarregar e tente de novo.';
+    return;
+  }
   if (!document.getElementById("pfaHabilitarEscrita")?.checked) {
     if (statusEl) statusEl.textContent = 'Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de comentar.';
     return;
@@ -673,6 +690,10 @@ async function pfaEnviarComentarioTarefa(idInterno) {
 async function pfaFinalizarTarefa(idInterno) {
   const it = pfaState.itens.find((x) => x.idInterno === idInterno);
   if (!it?.tarefa) return;
+  if (!it.tarefa.id || it.tarefa.id === "undefined" || it.tarefa.id === "null") {
+    alert('Não consegui identificar o ID real da tarefa. Clique em "↻ Atualizar do Bitrix" pra recarregar e tente de novo.');
+    return;
+  }
   if (!document.getElementById("pfaHabilitarEscrita")?.checked) {
     alert('Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de finalizar tarefas.');
     return;
