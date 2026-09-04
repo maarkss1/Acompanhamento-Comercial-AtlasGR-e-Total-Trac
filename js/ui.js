@@ -190,6 +190,13 @@ function aoTrocarRelatorio() {
   }
 
   const rel = RELATORIOS[chave];
+  // Alguns relatórios do catálogo têm uma entidade primária clara (ex:
+  // Vibra RJ é sobre Leads, mesmo enriquecendo com Negócios/atividades) —
+  // reflete isso no dropdown "Tipo de dado" pra não ficar preso no default
+  // "Negócios (Deals)" de iniciar(). Só mexe quando o relatório declara
+  // `entidade`; os demais relatórios não têm esse campo e continuam iguais.
+  const selEntidadeRelatorio = document.getElementById("entidade");
+  if (selEntidadeRelatorio && rel.entidade) selEntidadeRelatorio.value = rel.entidade;
   esconderNotasRelatorios();
   document.getElementById("nota-tudo").classList.add("oculto");
   document.getElementById("card-campos").classList.add("oculto");

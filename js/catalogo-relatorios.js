@@ -314,14 +314,58 @@ function pontosDeAtencaoGenerico(kpis){
   const itens=achados.map((x)=>`<li><strong>${escapeHtmlRelatorio(x.valor)}</strong> — ${escapeHtmlRelatorio(x.rotulo)}</li>`).join("");
   return `<div class="alert-banner warn" style="align-items:flex-start;"><span class="icon">⚠️</span><div><strong>Pontos de atenção encontrados neste relatório:</strong><ul style="margin:6px 0 0;padding-left:18px;">${itens}</ul></div></div>`;
 }
+// v33 — gráfico de barras automático pro Relatório Visual GENÉRICO (todo
+// relatório do catálogo, não só o Forecast): mesmos estilos .mini-chart/
+// .barrow já usados por renderBarModelo (forecast.js), só sem travar a
+// formatação em moeda — funciona pra contagens (Atividades, Leads, Negócios,
+// Dias...) e cai pra moeda só quando o nome do campo indica valor monetário.
+function formatarNumeroGenerico(v,chave){
+  const n=Number(v)||0;
+  if(/VALOR|RECEITA|TICKET|PONDERAD|FATURA/i.test(chave))return moedaRelatorio(n);
+  return n.toLocaleString("pt-BR",{maximumFractionDigits:2});
+}
+function renderBarGenerico(rows,titulo,chaveValor){
+  if(!rows?.length)return "";
+  const max=Math.max(1,...rows.map((x)=>x.VALOR||0)),cores=["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#7254c7"];
+  return `<div class="mini-chart"><div class="mini-chart-title">${escapeHtmlRelatorio(titulo)}</div>`+rows.map((x,i)=>`<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(x.ROTULO)}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(x.VALOR/max)*100).toFixed(1)}%;background:${cores[i%cores.length]}"></div></div><div class="barvalue valor-pisca">${formatarNumeroGenerico(x.VALOR,chaveValor)}</div></div>`).join("")+`</div>`;
+}
+// Escolhe automaticamente 1 coluna numérica (métrica) e 1 coluna de texto
+// (rótulo) de QUALQUER tabela do catálogo pra virar gráfico de barras — só
+// olha os dados brutos da tabela (`t.dados`), não a definição de colunas, já
+// que praticamente toda tabela do catálogo já tem esse formato "rótulo +
+// contagem/valor". Sem par óbvio (ou com um único rótulo distinto), não
+// desenha gráfico pra essa tabela — evita gráfico sem sentido.
+const CATALOGO_CHAVES_ROTULO_PRIORITARIAS=["CLIENTE","RESPONSAVEL","STATUS","ESTAGIO","FUNIL","CANAL","PIPELINE","NOME","ORIGEM","PRODUTO","SDR","MES","ETAPA","SITUACAO","TIPO","RESULTADO","CATEGORIA","EMPRESA","VENDEDOR","MOTIVO"];
+const CATALOGO_CHAVES_METRICA_PRIORITARIAS=["VALOR","RECEITA","ATIVIDADES","NEGOCIOS","LEADS","QUANTIDADE","TICKET","GANHOS","PERDIDOS","TOTAL","MEDIA_DIA","VISITARAM","PONDERADO","DIAS","PENDENTES","ATRASADAS"];
+function rotuloBonitoRelatorio(chave){
+  return String(chave||"").replace(/_/g," ").toLowerCase().replace(/^./,(c)=>c.toUpperCase());
+}
+function graficoAutomaticoTabela(t){
+  const dados=t?.dados;
+  if(!dados?.length||dados.length<2)return "";
+  const chaves=Object.keys(dados[0]||{});
+  const numericas=chaves.filter((k)=>!/(^|_)ID$/i.test(k)&&dados.every((r)=>typeof r[k]==="number"));
+  if(!numericas.length)return "";
+  const metrica=CATALOGO_CHAVES_METRICA_PRIORITARIAS.find((k)=>numericas.includes(k))||numericas[0];
+  const textuais=chaves.filter((k)=>k!==metrica&&!/(^|_)ID$/i.test(k)&&dados.every((r)=>typeof r[k]==="string"));
+  if(!textuais.length)return "";
+  const rotuloChave=CATALOGO_CHAVES_ROTULO_PRIORITARIAS.find((k)=>textuais.includes(k))||textuais[0];
+  const distintos=new Set(dados.map((r)=>r[rotuloChave]));
+  if(distintos.size<2)return "";
+  const total=dados.reduce((s,r)=>s+(Number(r[metrica])||0),0);
+  if(total<=0)return "";
+  const linhas=[...dados].sort((a,b)=>(Number(b[metrica])||0)-(Number(a[metrica])||0)).slice(0,8).map((r)=>({ROTULO:r[rotuloChave]||"—",VALOR:Number(r[metrica])||0}));
+  return renderBarGenerico(linhas,`${t.titulo||"Tabela"} — por ${rotuloBonitoRelatorio(rotuloChave)}`,metrica);
+}
 function gerarHTMLRelatorioVisualGenerico(r){
   if(!r?.titulo)return "";
   const marca=marcaAtiva();
   const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value valor-pisca">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
   const atencaoHtml=pontosDeAtencaoGenerico(r.kpis);
   const tabelasHtml=(r.tabelas||[]).map((t,i)=>{
+    const grafico=graficoAutomaticoTabela(t);
     const tabela=tabelaModelo((t.colunas||[]).map((c)=>({label:c.label,valor:typeof c.valor==="function"?c.valor:(row)=>row[c.valor],html:!!c.html})),(t.dados||[]).slice(0,t.limite||300));
-    return `<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
+    return `${grafico}<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
   }).join("");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
