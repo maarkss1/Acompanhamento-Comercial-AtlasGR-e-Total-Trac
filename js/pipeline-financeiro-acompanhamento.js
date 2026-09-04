@@ -28,6 +28,7 @@ const pfaState = {
   webhookDominio: "",
   filtroEstagio: null, // null = todos | "documentos" | "assinatura"
   filtroStatus: "aberto", // "aberto" | "resolvido" | "todos"
+  filtroVendedor: "", // "" = todos, senão o nome do vendedor
   resumoFechados: { assinados: { qtd: 0, valor: 0 }, cancelados: { qtd: 0, valor: 0 } },
 };
 
@@ -310,7 +311,24 @@ function pfaItensFiltrados() {
   if (pfaState.filtroEstagio) itens = itens.filter((it) => it.estagioChave === pfaState.filtroEstagio);
   if (pfaState.filtroStatus === "aberto") itens = itens.filter((it) => it.status === "aberto");
   else if (pfaState.filtroStatus === "resolvido") itens = itens.filter((it) => it.status === "resolvido");
+  if (pfaState.filtroVendedor) itens = itens.filter((it) => it.vendedorNome === pfaState.filtroVendedor);
   return itens;
+}
+
+// Lista de vendedores pra popular o <select> — direto dos itens já carregados
+// (sem chamada nova ao Bitrix), ordenada alfabeticamente.
+function pfaRenderFiltroVendedor() {
+  const sel = document.getElementById("pfaFiltroVendedor");
+  if (!sel) return;
+  const nomes = [...new Set(pfaState.itens.map((it) => it.vendedorNome || "Sem responsável"))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">Todos os vendedores</option>` + nomes.map((n) => `<option value="${escapeHtmlRelatorio(n)}">${escapeHtmlRelatorio(n)}</option>`).join("");
+  if (nomes.includes(atual)) sel.value = atual;
+}
+
+function pfaAoTrocarFiltroVendedor() {
+  pfaState.filtroVendedor = document.getElementById("pfaFiltroVendedor")?.value || "";
+  pfaRenderTabela();
 }
 
 function pfaSituacaoBadgeHTML(it) {
@@ -465,6 +483,7 @@ function pfaRenderStatus() {
 
 function pfaRender() {
   pfaRenderCards();
+  pfaRenderFiltroVendedor();
   pfaRenderTabela();
   pfaRenderStatus();
 }
@@ -701,15 +720,19 @@ async function pfaFinalizarTarefa(idInterno) {
   const webhook = document.getElementById("webhook")?.value?.trim() || "";
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
-  if (!confirm(`Finalizar a tarefa "#${it.tarefa.id} ${it.tarefa.titulo}" no Bitrix?`)) return;
+  if (!confirm(`Finalizar a tarefa "#${it.tarefa.id} ${it.tarefa.titulo}" no Bitrix?\n\nO negócio "${it.cliente}" também sai da lista "Em aberto" aqui (fica marcado como Resolvido).`)) return;
 
   try {
     await bitrixPostJsonComRetentativa(webhook, "tasks.task.complete", { taskId: it.tarefa.id });
     it.tarefa.status = "5";
+    // v32 — finalizar a tarefa também sai do pipeline "Em aberto" desta
+    // ferramenta (mesmo efeito de clicar "✔️ Marcar resolvido" manualmente) —
+    // não some de verdade, só deixa de aparecer no filtro padrão.
+    it.status = "resolvido";
     it.dataAlteracao = new Date().toISOString();
     pfaSalvarTudo(pfaState.itens);
     pfaRender();
-    atualizarStatus(`Tarefa #${it.tarefa.id} finalizada no Bitrix.`);
+    atualizarStatus(`Tarefa #${it.tarefa.id} finalizada no Bitrix — "${it.cliente}" marcado como Resolvido.`);
   } catch (e) {
     mostrarErro('Não foi possível finalizar a tarefa.\n\nDetalhe técnico: ' + e.message + '\n\nConfira se o webhook de entrada tem permissão de escrita no módulo "Tarefas" (Task) no Bitrix24.');
   }
