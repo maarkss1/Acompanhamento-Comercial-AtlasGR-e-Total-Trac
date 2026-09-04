@@ -413,7 +413,10 @@ const GRUPOS_PRINCIPAIS_HOME = [
   { chave:"sdr", icone:"🎯", titulo:"SDR & Leads", descricao:"Reuniões, atendimento de leads, conversão Lead → Oportunidade.", relatoriosGrupo:"SDR & Leads" },
   { chave:"closer", icone:"🤝", titulo:"Closer e Account", descricao:"Em mapeamento pelo time — os relatórios deste pipeline entram aqui assim que definidos.", vazio:true },
   { chave:"operacao", icone:"🔍", titulo:"Operação & Qualidade", descricao:"Auditoria de pipeline, negócios sem próxima atividade, qualidade dos dados.", relatoriosGrupo:"Operação & Qualidade" },
-  { chave:"financeiro", icone:"💰", titulo:"Financeiro × Comercial", descricao:"Vendido × faturado, backlog financeiro, documentos e assinatura de contrato.", relatoriosGrupo:"Financeiro × Comercial", extraLink:{href:"acompanhamento-financeiro.html", icone:"📄", titulo:"Acompanhamento — Documentos & Assinatura de Contrato", descricao:"Negócios parados, por vendedor, com comentário e criação de tarefa no Bitrix."} },
+  { chave:"financeiro", icone:"💰", titulo:"Financeiro × Comercial", descricao:"Vendido × faturado, backlog financeiro, documentos e assinatura de contrato.", relatoriosGrupo:"Financeiro × Comercial", extraLinks:[
+    {href:"acompanhamento-financeiro.html", icone:"📄", titulo:"Acompanhamento — Documentos & Assinatura de Contrato", descricao:"Negócios parados, por vendedor, com comentário e criação de tarefa no Bitrix."},
+    {href:"faturamento-mensal.html", icone:"💰", titulo:"Faturamento Médio (3 meses) por cliente", descricao:"Cruza os arquivos de Vendido x Faturado com os negócios do Bitrix e calcula a média pra ajudar a ajustar o valor no orçamento."},
+  ] },
   { chave:"implantacao", icone:"🚀", titulo:"Implantação", descricao:"Backlog e aging da Implantação/Onboarding pós-venda.", relatorios:["implantacao_posvenda"] },
   { chave:"sucesso_cliente", icone:"🌟", titulo:"Sucesso do Cliente", descricao:"Chamados/reclamações do time de Sucesso do Cliente. O funil \"Sucesso do Cliente\" propriamente dito (baixo volume, 46 negócios) ainda não tem relatório dedicado — avise se quiser um.", relatorios:["chamados_sucesso_cliente"] },
 ];
@@ -427,7 +430,8 @@ function cardGrupoPrincipalHomeHTML(g){
   } else {
     const chaves = g.relatorios || Object.entries(RELATORIOS).filter(([,rel])=>rel.grupo===g.relatoriosGrupo).map(([chave])=>chave);
     const cards = chaves.map((chave)=>cardRelatorioRapidoHTML(chave, RELATORIOS[chave])).join("");
-    const extra = g.extraLink ? `<a href="${g.extraLink.href}" class="quick-report-card home-grupo-extra-link"><span class="report-icon">${g.extraLink.icone}</span><strong>${escapeHtmlRelatorio(g.extraLink.titulo)}</strong><span>${escapeHtmlRelatorio(g.extraLink.descricao)}</span></a>` : "";
+    const listaExtras = g.extraLinks || (g.extraLink ? [g.extraLink] : []);
+    const extra = listaExtras.map((el)=>`<a href="${el.href}" class="quick-report-card home-grupo-extra-link"><span class="report-icon">${el.icone}</span><strong>${escapeHtmlRelatorio(el.titulo)}</strong><span>${escapeHtmlRelatorio(el.descricao)}</span></a>`).join("");
     corpo = `<div class="quick-report-grid">${extra}${cards}</div>`;
   }
   return `<details class="card home-grupo-card" id="homeGrupo_${g.chave}">
