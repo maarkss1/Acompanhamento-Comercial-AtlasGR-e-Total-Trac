@@ -228,6 +228,25 @@
         <input type="date" id="cockpitDataFim" onchange="renderizarCockpit()">
       </div>
       <div>
+        <label style="margin-top:0;">🗓️ Simular mês/ano</label>
+        <div class="row" style="gap:6px;flex-wrap:nowrap;align-items:center;">
+          <select id="cockpitSimMes" style="flex:1;">
+            <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+            <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+            <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+            <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+          </select>
+          <input type="number" id="cockpitSimAno" min="2000" max="2100" style="width:80px;">
+          <button type="button" class="secundario" onclick="cockpitSimularMesAno()" title="Faz o Cockpit inteiro tratar esse período como o mês/ano atual">▶ Simular</button>
+          <button type="button" class="secundario oculto" id="cockpitBtnLimparSimulacao" onclick="cockpitLimparSimulacao()" title="Volta pro mês/ano real de hoje">🗑️ Limpar</button>
+        </div>
+        <div class="checkbox-linha" style="margin-top:6px;">
+          <input type="checkbox" id="cockpitSimAnoInteiro" onchange="document.getElementById('cockpitSimMes').disabled = this.checked;">
+          <label for="cockpitSimAnoInteiro" style="margin:0;">Ano inteiro (ignora o mês)</label>
+        </div>
+        <p class="rodape-nota" id="cockpitSimulacaoStatus" style="margin-bottom:0;"></p>
+      </div>
+      <div>
         <label for="cockpitVendedor">Vendedor</label>
         <div class="row" style="gap:6px;flex-wrap:nowrap;">
           <select id="cockpitVendedor" style="flex:1;" onchange="cockpitReaplicarFiltros()"><option value="">Todos</option></select>

@@ -38,6 +38,9 @@ let cockpitState = {
   // agora"), ver cockpitCarregarReunioes. null até o primeiro clique em
   // "↻ Carregar reuniões".
   reunioes: null,
+  // v33 — { ano, mes } (mes null = ano inteiro) quando "Simular mês/ano" está
+  // ativo; null = mês/ano real (comportamento padrão). Ver cockpitMesAtual().
+  simulacao: null,
 };
 
 // Guarda, por card clicável, a lista de negócios que compõe aquele número —
@@ -84,6 +87,14 @@ function iniciarCockpitExecutivo() {
       if (padrao) input.value = padrao;
     }
   }
+  // Um <select> sem "selected" explícito já nasce com .value = primeira opção
+  // ("1"/Janeiro) — não dá pra usar "!value" pra saber se ainda não foi
+  // preenchido, por isso o mês é sempre setado aqui (roda uma vez só, no
+  // carregamento da página).
+  const simMes = cockpitEl("cockpitSimMes"), simAno = cockpitEl("cockpitSimAno");
+  const hoje = new Date();
+  if (simMes) simMes.value = String(hoje.getMonth() + 1);
+  if (simAno && !simAno.value) simAno.value = String(hoje.getFullYear());
   atualizarRelogioCockpit();
   cockpitRenderEstadoVazio();
   cockpitRenderReunioes(); // placeholder inicial — busca é sob demanda, não depende de "Atualizar agora"
@@ -193,6 +204,60 @@ function cockpitPeriodoFiltro() {
 function aoTrocarPeriodoCockpit() {
   const preset = cockpitEl("cockpitPeriodoPreset")?.value;
   document.querySelectorAll(".cockpit-periodo-custom").forEach((el) => el.classList.toggle("oculto", preset !== "personalizado"));
+}
+
+// ---------------------------------------------------------------------------
+// Simular mês/ano — v33: agora muda o que cockpitMesAtual() considera
+// "mês/ano atual" (ver essa função), não só o filtro de período de Saúde do
+// Pipeline/Eficiência — então Resultado do Mês, Forecast, Win Rate Mensal/
+// Anual, Proteção de Receita (M/M+1/M+2/M+3) e os comparativos YoY também
+// passam a refletir o mês/ano simulado. "Ano inteiro" faz o mesmo mas
+// cobrindo o ano todo em vez de um mês. Nada é recalculado com regra
+// diferente — só muda QUAL período cockpitCalcular() enxerga como "atual".
+// ---------------------------------------------------------------------------
+const COCKPIT_NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function cockpitSimularMesAno() {
+  const anoInteiro = !!cockpitEl("cockpitSimAnoInteiro")?.checked;
+  const mes = anoInteiro ? null : Number(cockpitEl("cockpitSimMes")?.value);
+  const ano = Number(cockpitEl("cockpitSimAno")?.value);
+  if (!ano || (!anoInteiro && !mes)) { alert("Escolha mês e ano pra simular (ou marque \"Ano inteiro\")."); return; }
+  cockpitState.simulacao = { ano, mes };
+
+  // Também preenche o filtro Personalizado (Saúde do Pipeline/Eficiência) com
+  // o mesmo período, pra ficar coerente visualmente com o resto da tela.
+  const { inicio, fim } = cockpitMesAtual();
+  const presetSel = cockpitEl("cockpitPeriodoPreset");
+  if (presetSel) presetSel.value = "personalizado";
+  aoTrocarPeriodoCockpit();
+  const campoInicio = cockpitEl("cockpitDataInicio"), campoFim = cockpitEl("cockpitDataFim");
+  if (campoInicio) campoInicio.value = inicio;
+  if (campoFim) campoFim.value = fim;
+
+  renderizarCockpit();
+  const statusEl = cockpitEl("cockpitSimulacaoStatus");
+  const rotuloPeriodo = anoInteiro ? `o ano de ${ano}` : `${COCKPIT_NOMES_MESES[mes - 1]}/${ano}`;
+  if (statusEl) statusEl.textContent = `🔎 Simulando ${rotuloPeriodo} — todo o Cockpit (Resultado, Forecast, Win Rate, Proteção de Receita) passa a tratar esse período como "atual", até você clicar em "🗑️ Limpar".`;
+  cockpitEl("cockpitBtnLimparSimulacao")?.classList.remove("oculto");
+}
+
+function cockpitLimparSimulacao() {
+  cockpitState.simulacao = null;
+  const presetSel = cockpitEl("cockpitPeriodoPreset");
+  if (presetSel) presetSel.value = "mensal";
+  aoTrocarPeriodoCockpit();
+  const campoInicio = cockpitEl("cockpitDataInicio"), campoFim = cockpitEl("cockpitDataFim");
+  if (campoInicio) campoInicio.value = "";
+  if (campoFim) campoFim.value = "";
+  renderizarCockpit();
+  const statusEl = cockpitEl("cockpitSimulacaoStatus");
+  if (statusEl) statusEl.textContent = "";
+  cockpitEl("cockpitBtnLimparSimulacao")?.classList.add("oculto");
+  const hoje = new Date();
+  if (cockpitEl("cockpitSimMes")) cockpitEl("cockpitSimMes").value = String(hoje.getMonth() + 1);
+  if (cockpitEl("cockpitSimAno")) cockpitEl("cockpitSimAno").value = String(hoje.getFullYear());
+  const chkAnoInteiro = cockpitEl("cockpitSimAnoInteiro");
+  if (chkAnoInteiro) chkAnoInteiro.checked = false;
 }
 
 async function carregarVendedoresCockpit() {
@@ -490,7 +555,27 @@ async function cockpitBuscarDealsFinanceiro(webhook, base) {
 // Cálculos (reaproveitando fórmulas já existentes — não redefine forecast)
 // ---------------------------------------------------------------------------
 
+// v33 — quando há uma simulação de mês/ano ativa (cockpitSimularMesAno /
+// cockpitState.simulacao), "mês atual" e "ano atual" passam a significar o
+// mês/ano simulado em vez do dia real — isso cascateia sozinho pra tudo que
+// já usava cockpitMesAtual() (Resultado do Mês, Forecast, Win Rate Mensal/
+// Anual, Proteção de Receita M/M+1/M+2/M+3, comparativos YoY), sem precisar
+// reescrever cada bloco. "hojeISO"/"referencia" viram o último dia do
+// período simulado — ponto de referência coerente pra tudo que compara
+// "quantos dias faltam"/"passou do prazo" relativo a essa data.
 function cockpitMesAtual() {
+  const sim = cockpitState.simulacao;
+  if (sim) {
+    if (sim.mes == null) {
+      // "Ano inteiro": ano/mes atual passam a cobrir o ano inteiro simulado.
+      const inicio = `${sim.ano}-01-01`;
+      const fim = `${sim.ano}-12-31`;
+      return { inicio, fim, referencia: fim, hojeISO: fim };
+    }
+    const inicio = `${sim.ano}-${String(sim.mes).padStart(2, "0")}-01`;
+    const fim = formatarDataISO(new Date(sim.ano, sim.mes, 0));
+    return { inicio, fim, referencia: fim, hojeISO: fim };
+  }
   const hojeISO = formatarDataISO(new Date());
   const [ano, mes] = hojeISO.split("-").map(Number);
   const inicio = `${ano}-${String(mes).padStart(2, "0")}-01`;
