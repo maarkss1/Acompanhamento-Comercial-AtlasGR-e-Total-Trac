@@ -709,6 +709,51 @@ async function extrairRelatorioCatalogo(webhook,chave){
         [{titulo:"Receita por cliente",dados:rows,colunas:[{label:"Cliente",valor:"CLIENTE"},{label:"Negócios",valor:"NEGOCIOS"},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Participação",valor:(x)=>x.PARTICIPACAO+"%"},{label:"Acumulado",valor:(x)=>x.ACUMULADO_PCT+"%"},{label:"Curva ABC",valor:"CURVA_ABC"},{label:"Primeiro",valor:"PRIMEIRO"},{label:"Último",valor:"ULTIMO"}]}]);
     }
 
+    else if(chave==="leads_vibra_rj"){
+      // Relatório dedicado a UM cliente (Vibra RJ) — não existe ID fixo de
+      // empresa pra filtrar direto no Bitrix (REST aqui só filtra por
+      // ID/categoria/estágio, nunca por texto — ver baseDealsCatalogo), então
+      // busca tudo (sem período, como os relatórios "todas") e casa pelo
+      // nome da empresa/lead client-side, igual ao critério de identidade já
+      // usado em "clientes_receita"/"duplicidades". Exige "vibra" + "rj" no
+      // texto normalizado; se isso não achar nada (ex: time cadastrou só
+      // "Vibra" no Bitrix, sem "RJ"), cai pra só "vibra" e avisa na nota.
+      const normTexto=(t)=>normalizarTextoChave(t||"");
+      const bateVibraRJ=(t)=>{const n=normTexto(t);return n.includes("vibra")&&n.includes("rj");};
+      const bateVibra=(t)=>normTexto(t).includes("vibra");
+      const lb=await baseLeadsCatalogo(webhook);
+      const nomeLead=(l)=>l.COMPANY_TITLE||l.TITLE||`${l.NAME||""} ${l.LAST_NAME||""}`.trim();
+      let leadsVibra=lb.leads.filter((l)=>bateVibraRJ(nomeLead(l))||bateVibraRJ(l.COMPANY_TITLE));
+      let filtroUsado="\"vibra\" + \"rj\" no nome da empresa/Lead";
+      if(!leadsVibra.length){leadsVibra=lb.leads.filter((l)=>bateVibra(nomeLead(l))||bateVibra(l.COMPANY_TITLE));filtroUsado="apenas \"vibra\" (nenhum resultado exigindo também \"rj\")";}
+      const bateAtivo=filtroUsado.startsWith("apenas")?bateVibra:bateVibraRJ;
+      const leadIds=new Set(leadsVibra.map((l)=>idBitrixString(l.ID)));
+
+      const b=await baseDealsCatalogo(webhook,false);
+      const dealsVibra=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>leadIds.has(idBitrixString(d.LEAD_ID))||bateAtivo(d._CLIENTE));
+      const dealIds=new Set(dealsVibra.map((d)=>idBitrixString(d.ID)));
+
+      const a=await atividadesCatalogo(webhook,null,"","");
+      const atividadesVibra=a.dados.filter((x)=>bindingsDaAtividade(x).some((bnd)=>(bnd.OWNER_TYPE_ID==="1"&&leadIds.has(idBitrixString(bnd.OWNER_ID)))||(bnd.OWNER_TYPE_ID==="2"&&dealIds.has(idBitrixString(bnd.OWNER_ID)))));
+      const concluidas=atividadesVibra.filter((x)=>x.COMPLETED==="Y");
+      const atividadesDoLead=(id)=>atividadesVibra.filter((x)=>bindingsDaAtividade(x).some((bnd)=>bnd.OWNER_TYPE_ID==="1"&&idBitrixString(bnd.OWNER_ID)===idBitrixString(id))).length;
+      const atividadesDoDeal=(id)=>atividadesVibra.filter((x)=>bindingsDaAtividade(x).some((bnd)=>bnd.OWNER_TYPE_ID==="2"&&idBitrixString(bnd.OWNER_ID)===idBitrixString(id))).length;
+
+      const leadsComOpp=leadsVibra.filter((l)=>dealsVibra.some((d)=>idBitrixString(d.LEAD_ID)===idBitrixString(l.ID)));
+      const ganhos=dealsVibra.filter((d)=>d._SEMANTICA==="success"),perdas=dealsVibra.filter((d)=>d._SEMANTICA==="failure"),abertos=dealsVibra.filter((d)=>d._SEMANTICA==="process");
+      const fechados=ganhos.length+perdas.length;
+
+      const linhasLeads=leadsVibra.map((l)=>({LEAD_ID:l.ID,NOME:nomeLead(l)||`Lead ${l.ID}`,STATUS:labelStatusLead(lb.statusMap,l.STATUS_ID),RESPONSAVEL:nomeUsuario(l.ASSIGNED_BY_ID)||"—",CRIADO:l.DATE_CREATE||"",ATIVIDADES:atividadesDoLead(l.ID),COM_OPORTUNIDADE:dealsVibra.some((d)=>idBitrixString(d.LEAD_ID)===idBitrixString(l.ID))?"Sim":"Não"}));
+      const linhasDeals=dealsVibra.map((d)=>({DEAL_ID:d.ID,CLIENTE:d._CLIENTE,FUNIL:d._FUNIL,ETAPA:d._ESTAGIO,STATUS:d._SEMANTICA==="success"?"Ganho":d._SEMANTICA==="failure"?"Perdido":"Aberto",RESPONSAVEL:d._RESPONSAVEL,VALOR:d._VALOR,ATIVIDADES:atividadesDoDeal(d.ID)}));
+
+      criarResultadoCatalogo(chave,"Vibra RJ — Leads, atividades e conversão",
+        `Filtro aplicado: <strong>${escapeHtmlRelatorio(filtroUsado)}</strong>. Sem recorte de período — histórico completo do cliente.`,
+        [kpi("Leads",leadsVibra.length),kpi("Negócios",dealsVibra.length),kpi("Lead → Oportunidade",`${taxaPct(leadsComOpp.length,leadsVibra.length)}%`),kpi("Ganhos",ganhos.length),kpi("Perdidos",perdas.length),kpi("Em aberto",abertos.length),kpi("Win Rate",`${taxaPct(ganhos.length,fechados)}%`),kpi("Receita ganha",moedaRelatorio(ganhos.reduce((s,d)=>s+d._VALOR,0))),kpi("Atividades",atividadesVibra.length),kpi("Atividades concluídas",concluidas.length)],
+        [{titulo:"Leads da Vibra RJ",dados:linhasLeads,colunas:[{label:"Lead",valor:"LEAD_ID"},{label:"Nome",valor:"NOME"},{label:"Status",valor:"STATUS"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Criado",valor:"CRIADO"},{label:"Atividades",valor:"ATIVIDADES"},{label:"Com oportunidade",valor:"COM_OPORTUNIDADE"}]},
+         {titulo:"Negócios da Vibra RJ",dados:linhasDeals,colunas:[{label:"Negócio",valor:"DEAL_ID"},{label:"Cliente",valor:"CLIENTE"},{label:"Funil",valor:"FUNIL"},{label:"Etapa",valor:"ETAPA"},{label:"Status",valor:"STATUS"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Valor",valor:(x)=>moedaRelatorio(x.VALOR),html:true},{label:"Atividades",valor:"ATIVIDADES"}]}],
+        "Cliente identificado por nome da empresa/Lead contendo os termos de busca — não há ID fixo de empresa no Bitrix pra isso, então está sujeito a variações de cadastro (ex: \"Vibra Energia RJ\" também entra). Atividades contam ligações, reuniões, tarefas, e-mails e WhatsApp vinculados aos leads/negócios encontrados, concluídas ou não.");
+    }
+
     else if(chave==="funil_leads"){
       const [lb,db]=await Promise.all([baseLeadsCatalogo(webhook),baseDealsCatalogo(webhook,false)]),ls=lb.leads.filter((l)=>dentroPeriodoCatalogo(l.DATE_CREATE,p)),by={};db.deals.forEach((d)=>{if(idBitrixValido(d.LEAD_ID))(by[String(d.LEAD_ID)]||=[]).push(d)});
       const m={};let conv=0,junk=0,opp=0,wins=0;ls.forEach((l)=>{const lab=labelStatusLead(lb.statusMap,l.STATUS_ID);if(!m[lab])m[lab]={STATUS:lab,LEADS:0,COM_OPP:0,GANHOS:0};m[lab].LEADS++;const ds=by[String(l.ID)]||[];if(ds.length){opp++;m[lab].COM_OPP++}const w=ds.filter((d)=>["s","success"].includes(String(d.STAGE_SEMANTIC_ID||"").toLowerCase()));if(w.length){wins++;m[lab].GANHOS+=w.length}const s=semanticaLead(l);if(s==="success")conv++;if(s==="failure")junk++});
@@ -2620,6 +2665,73 @@ async function extrairRelatorioCatalogo(webhook,chave){
         "Identificação baseada exclusivamente no histórico crm.stagehistory.list de transição por estágios com semântica de perda seguida de reativação.");
     }
 
+    else if(chave==="carteira_sdr"){
+      // Time inteiro (não filtra por SDR — a busca da tabela já deixa achar
+      // por responsável). Reaproveita atividadesCatalogo/baseLeadsCatalogo já
+      // usados em outros relatórios do catálogo em vez de reimplementar busca.
+      const ref=p.referencia;
+      const [pendentes,concluidas,base]=await Promise.all([
+        atividadesCatalogo(webhook,false,"",""),
+        atividadesCatalogo(webhook,true,"",""),
+        baseLeadsCatalogo(webhook)
+      ]);
+
+      const tarefas=pendentes.dados.map((x)=>{
+        const respId=idBitrixString(x.RESPONSIBLE_ID),resp=nomeUsuario(respId)||(respId?`ID ${respId}`:"Sem responsável"),prazo=parteDataISO(x.DEADLINE);
+        let sit="Sem prazo";if(prazo)sit=prazo<ref?"Atrasada":prazo===ref?"Vence hoje":"Futura";
+        const bindLead=bindingsDaAtividade(x).find((b)=>b.OWNER_TYPE_ID==="1");
+        return{ATIVIDADE_ID:x.ID,RESPONSAVEL:resp,LEAD_ID:bindLead?bindLead.OWNER_ID:"",ASSUNTO:x.SUBJECT||"",DEADLINE:x.DEADLINE||"",SITUACAO:sit,ASSIGNED_BY_ID:x.RESPONSIBLE_ID};
+      }).filter((x)=>x.SITUACAO==="Atrasada"||x.SITUACAO==="Vence hoje");
+      tarefas.sort((a,b)=>(a.DEADLINE||"").localeCompare(b.DEADLINE||""));
+      const idsLeadTarefas=[...new Set(tarefas.map((x)=>x.LEAD_ID).filter(idBitrixValido).map(idBitrixString))];
+      const nomesLeadTarefas=await buscarEntidadesPorIds(webhook,"crm.lead.list",idsLeadTarefas,["ID","TITLE","NAME","LAST_NAME","COMPANY_TITLE"]);
+      const nomeLead=(l)=>l?(l.COMPANY_TITLE||l.TITLE||[l.NAME,l.LAST_NAME].filter(Boolean).join(" ")||`Lead ${l.ID}`):"";
+      tarefas.forEach((t)=>{t.CLIENTE=t.LEAD_ID?(nomeLead(nomesLeadTarefas[idBitrixString(t.LEAD_ID)])||`Lead ${t.LEAD_ID}`):"—";});
+
+      const idsComContato=new Set();
+      concluidas.dados.forEach((x)=>{bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")idsComContato.add(idBitrixString(b.OWNER_ID));});});
+      const leadsProcesso=base.leads.filter((l)=>semanticaLead(l)==="process");
+      const semTrabalho=leadsProcesso.filter((l)=>!idsComContato.has(idBitrixString(l.ID))).map((l)=>({
+        LEAD_ID:l.ID,
+        NOME:nomeLead(l),
+        STATUS:base.statusMap[String(l.STATUS_ID)]?.NAME||l.STATUS_ID||"—",
+        RESPONSAVEL:nomeUsuario(idBitrixString(l.ASSIGNED_BY_ID))||"—",
+        ASSIGNED_BY_ID:l.ASSIGNED_BY_ID,
+        CRIADO:parteDataISO(l.DATE_CREATE)||""
+      }));
+      semTrabalho.sort((a,b)=>(a.CRIADO||"").localeCompare(b.CRIADO||""));
+      const pctSemTrabalho=leadsProcesso.length?Math.round(semTrabalho.length/leadsProcesso.length*1000)/10:0;
+
+      const botaoTratar=(leadId,nome,assignedById)=>leadId?`<button class="btn btn-secundario btn-sm" onclick="abrirModalTratarLead('${leadId}','${String(nome||"").replace(/'/g,"&#39;").replace(/"/g,"&quot;")}','${assignedById||""}')">Tratar</button>`:"—";
+
+      criarResultadoCatalogo(chave,"Carteira do SDR — tarefas e leads sem trabalho",
+        `Referência: <strong>${escapeHtmlRelatorio(ref)}</strong>. Time inteiro — use a busca de cada tabela pra filtrar por responsável.`,
+        [
+          kpi("Tarefas atrasadas",tarefas.filter((x)=>x.SITUACAO==="Atrasada").length),
+          kpi("Tarefas hoje",tarefas.filter((x)=>x.SITUACAO==="Vence hoje").length),
+          kpi("Leads sem contato",semTrabalho.length),
+          kpi("% sem contato",pctSemTrabalho+"%")
+        ],
+        [
+          {titulo:"Tarefas atrasadas e de hoje",dados:tarefas.slice(0,200),colunas:[
+            {label:"Responsável",valor:"RESPONSAVEL"},
+            {label:"Cliente",valor:"CLIENTE"},
+            {label:"Assunto",valor:"ASSUNTO"},
+            {label:"Prazo",valor:"DEADLINE"},
+            {label:"Situação",valor:"SITUACAO"},
+            {label:"Ação",valor:(x)=>botaoTratar(x.LEAD_ID,x.CLIENTE,x.ASSIGNED_BY_ID),html:true}
+          ]},
+          {titulo:"Leads sem nenhum contato",dados:semTrabalho,colunas:[
+            {label:"Cliente/Lead",valor:"NOME"},
+            {label:"Status",valor:"STATUS"},
+            {label:"Responsável",valor:"RESPONSAVEL"},
+            {label:"Criado em",valor:"CRIADO"},
+            {label:"Ação",valor:(x)=>botaoTratar(x.LEAD_ID,x.NOME,x.ASSIGNED_BY_ID),html:true}
+          ]}
+        ],
+        "Os botões \"Tratar\" registram contato ou trocam o status direto no Bitrix — funcionam só aqui, ao vivo (o HTML exportado é somente leitura).");
+    }
+
     else throw new Error(`Relatório "${chave}" ainda não possui implementação.`);
 
     const labelRel = (typeof RELATORIOS !== "undefined" && RELATORIOS?.[chave]?.label) || chave;
@@ -3252,5 +3364,131 @@ window.salvarFaturamento = function(ev) {
     else alert("Faturamento salvo com sucesso! Por favor, extraia o relatório novamente para atualizar.");
   } else {
     alert("Faturamento salvo com sucesso!");
+  }
+};
+
+// ---------------------------------------------------------------------------
+// v30 — Modal "Tratar Lead" (relatório Carteira do SDR). Diferente do modal de
+// Faturamento acima (que só salva local), este ESCREVE de verdade no Bitrix —
+// crm.activity.add pra registrar contato e crm.lead.update pra trocar status —
+// via bitrixPostJsonComRetentativa (js/ui.js), a mesma convenção de escrita já
+// usada pelo Sync manual e pela criação de tarefa no Financeiro. Nenhum outro
+// relatório do catálogo escreve no Bitrix; este é o único.
+// ---------------------------------------------------------------------------
+let tratarLeadAtual = null;
+
+window.abrirModalTratarLead = function (leadId, nome, assignedById) {
+  tratarLeadAtual = { leadId, assignedById };
+
+  let modal = document.getElementById("modalTratarLead");
+  if (!modal) {
+    document.body.insertAdjacentHTML("beforeend", `
+      <div id="modalTratarLead" class="modal-backdrop oculto">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Tratar cliente</h3>
+            <button class="modal-close" onclick="fecharModalTratarLead()">×</button>
+          </div>
+          <div class="modal-body">
+            <p><strong>Cliente:</strong> <span id="tratarLeadNome"></span></p>
+
+            <div class="form-group" style="margin-top:15px;">
+              <label for="tratarCanal">Canal do contato:</label>
+              <select id="tratarCanal" class="input-form">
+                <option>Ligação</option><option>WhatsApp</option><option>E-mail</option><option>LinkedIn</option><option>Outro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="tratarNota">O que foi feito / combinado (opcional):</label>
+              <textarea id="tratarNota" rows="2" class="input-form"></textarea>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+              <button type="button" class="btn btn-primario" onclick="registrarContatoTratarLead()">Registrar contato</button>
+            </div>
+            <p id="tratarMsgContato" class="rodape-nota"></p>
+
+            <div class="form-group" style="margin-top:20px; border-top:1px solid var(--linha,#e2e2e2); padding-top:15px;">
+              <label for="tratarNovoStatus">Trocar status do Lead:</label>
+              <select id="tratarNovoStatus" class="input-form"><option value="">Carregando status...</option></select>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+              <button type="button" class="btn btn-secundario" onclick="fecharModalTratarLead()">Fechar</button>
+              <button type="button" class="btn btn-primario" onclick="salvarStatusTratarLead()">Salvar status</button>
+            </div>
+            <p id="tratarMsgStatus" class="rodape-nota"></p>
+          </div>
+        </div>
+      </div>
+    `);
+    modal = document.getElementById("modalTratarLead");
+  }
+
+  document.getElementById("tratarLeadNome").textContent = nome || `Lead ${leadId}`;
+  document.getElementById("tratarNota").value = "";
+  document.getElementById("tratarMsgContato").textContent = "";
+  document.getElementById("tratarMsgStatus").textContent = "";
+  modal.classList.remove("oculto");
+
+  const webhook = document.getElementById("webhook")?.value?.trim();
+  const selStatus = document.getElementById("tratarNovoStatus");
+  selStatus.innerHTML = `<option value="">Carregando status...</option>`;
+  if (webhook) {
+    carregarListaPaginada(webhook, "crm.status.list", { "filter[ENTITY_ID]": "STATUS", "order[SORT]": "ASC" })
+      .then((lista) => {
+        selStatus.innerHTML = `<option value="">— escolher —</option>` +
+          lista.map((s) => `<option value="${s.STATUS_ID}">${escapeHtmlRelatorio(s.NAME || s.STATUS_ID)}</option>`).join("");
+      })
+      .catch(() => { selStatus.innerHTML = `<option value="">Falha ao carregar status</option>`; });
+  }
+};
+
+window.fecharModalTratarLead = function () {
+  const modal = document.getElementById("modalTratarLead");
+  if (modal) modal.classList.add("oculto");
+  tratarLeadAtual = null;
+};
+
+window.registrarContatoTratarLead = async function () {
+  const webhook = document.getElementById("webhook")?.value?.trim();
+  const msg = document.getElementById("tratarMsgContato");
+  if (!webhook) { msg.textContent = "Cole o webhook do Bitrix24 no topo da página primeiro."; return; }
+  if (!tratarLeadAtual?.leadId) return;
+  const canal = document.getElementById("tratarCanal").value;
+  const nota = document.getElementById("tratarNota").value.trim();
+  msg.textContent = "Registrando no Bitrix...";
+  try {
+    await bitrixPostJsonComRetentativa(webhook, "crm.activity.add", {
+      fields: {
+        OWNER_TYPE_ID: 1,
+        OWNER_ID: tratarLeadAtual.leadId,
+        TYPE_ID: 4,
+        SUBJECT: canal + (nota ? " — " + nota : ""),
+        RESPONSIBLE_ID: tratarLeadAtual.assignedById || undefined,
+        COMPLETED: "Y",
+        DIRECTION: 2,
+        START_TIME: new Date().toISOString(),
+        END_TIME: new Date().toISOString()
+      }
+    });
+    msg.textContent = "✓ Contato registrado no Bitrix.";
+    document.getElementById("tratarNota").value = "";
+  } catch (e) {
+    msg.textContent = "Falha: " + e.message;
+  }
+};
+
+window.salvarStatusTratarLead = async function () {
+  const webhook = document.getElementById("webhook")?.value?.trim();
+  const msg = document.getElementById("tratarMsgStatus");
+  if (!webhook) { msg.textContent = "Cole o webhook do Bitrix24 no topo da página primeiro."; return; }
+  if (!tratarLeadAtual?.leadId) return;
+  const novoStatus = document.getElementById("tratarNovoStatus").value;
+  if (!novoStatus) { msg.textContent = "Escolha um status novo primeiro."; return; }
+  msg.textContent = "Atualizando status no Bitrix...";
+  try {
+    await bitrixPostJsonComRetentativa(webhook, "crm.lead.update", { id: tratarLeadAtual.leadId, fields: { STATUS_ID: novoStatus } });
+    msg.textContent = "✓ Status atualizado no Bitrix.";
+  } catch (e) {
+    msg.textContent = "Falha: " + e.message;
   }
 };

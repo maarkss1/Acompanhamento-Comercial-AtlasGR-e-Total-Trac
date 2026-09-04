@@ -27,26 +27,51 @@
 </script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
-  .home-grupos-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; margin-top:14px; align-items:start; }
-  .home-grupo-card { padding:0!important; margin:0; transition:transform .15s, box-shadow .15s; }
-  .home-grupo-card:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(0,0,0,.08); }
-  .home-grupo-card[open] { grid-column:1 / -1; }
-  .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:18px; padding:24px 26px; }
+  .home-grupos-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:20px; margin-top:14px; align-items:start; }
+  .home-grupo-card { padding:0!important; margin:0; border:2px solid var(--line); transition:transform .18s, box-shadow .18s, border-color .18s; }
+  .home-grupo-card:hover { transform:translateY(-4px); box-shadow:0 14px 30px rgba(0,0,0,.1); border-color:var(--brand); }
+  .home-grupo-card:active { transform:translateY(-1px) scale(.99); }
+  .home-grupo-card[open] { grid-column:1 / -1; border-color:var(--brand); }
+  .home-grupo-card > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:22px; padding:30px 32px; }
   .home-grupo-card > summary::-webkit-details-marker { display:none; }
-  .home-grupo-card > summary:hover { background:var(--soft); }
-  .home-grupo-icone {
-    font-size:30px; line-height:1; flex-shrink:0; width:60px; height:60px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center; background:var(--soft);
-    border:1px solid var(--line);
+  .home-grupo-card:not([open]) > summary:hover { background:var(--soft); }
+  /* Modo foco: quando um card está aberto, some com os outros 8 — só o
+     aberto (+ botão Voltar) fica na tela, como pedido explicitamente. */
+  #homeGruposPrincipais.tem-aberto .home-grupo-card:not([open]) { display:none; }
+  .home-grupo-voltar {
+    display:inline-flex; align-items:center; gap:7px; background:transparent; border:1.5px solid var(--line);
+    color:var(--ink); font-weight:700; font-size:13.5px; border-radius:var(--radius-control); padding:9px 16px;
+    margin:14px 0 6px; cursor:pointer; transition:background .15s, border-color .15s, color .15s;
   }
-  .home-grupo-texto { flex:1; display:flex; flex-direction:column; gap:4px; }
-  .home-grupo-titulo { font-size:18px; font-weight:800; }
-  .home-grupo-desc { font-size:13px; color:var(--ink-2); font-weight:500; line-height:1.4; }
-  .home-grupo-chevron { font-size:16px; color:var(--brand); transition:transform .15s; }
+  .home-grupo-voltar:hover { background:var(--soft); border-color:var(--brand); color:var(--brand); }
+  .home-grupo-icone {
+    font-size:38px; line-height:1; flex-shrink:0; width:76px; height:76px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; background:var(--soft);
+    border:1px solid var(--line); transition:transform .25s, background .25s, border-color .25s;
+  }
+  .home-grupo-card:hover .home-grupo-icone { transform:scale(1.1) rotate(-6deg); background:rgba(255,86,24,.14); border-color:var(--brand); }
+  .home-grupo-texto { flex:1; display:flex; flex-direction:column; gap:6px; }
+  .home-grupo-titulo { font-size:24px; font-weight:800; color:var(--brand); transition:letter-spacing .18s; }
+  .home-grupo-card:hover .home-grupo-titulo { letter-spacing:.01em; }
+  .home-grupo-desc { font-size:16px; color:var(--ink-2); font-weight:500; line-height:1.45; }
+  .home-grupo-chevron { font-size:20px; color:var(--brand); transition:transform .2s; }
   .home-grupo-card[open] > summary .home-grupo-chevron { transform:rotate(180deg); }
-  .home-grupo-body { padding:6px 26px 24px; border-top:1px solid var(--line); }
+  .home-grupo-card > summary:hover .home-grupo-chevron { transform:translateY(3px); }
+  .home-grupo-card[open] > summary:hover .home-grupo-chevron { transform:rotate(180deg) translateY(-3px); }
+  .home-grupo-body { padding:6px 32px 30px; border-top:1px solid var(--line); }
   .home-grupo-link-btn { text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:var(--brand); color:#fff; font-weight:700; border-radius:var(--radius-control); padding:9px 16px; margin-top:8px; }
   .home-grupo-extra-link { border-color:var(--brand)!important; }
+
+  /* Cards de relatório dentro de cada pipeline: precisam ficar bem
+     separados uns dos outros (gap maior, largura mínima maior pra não
+     espremer o texto) e com a mesma interatividade/laranja dos cards de
+     pipeline — pedido explícito de que TODOS os cards seguem o padrão. */
+  .home-grupo-body .quick-report-grid { grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:18px; margin-top:12px; }
+  .home-grupo-body .quick-report-card { transition:transform .18s, box-shadow .18s, border-color .18s; }
+  .home-grupo-body .quick-report-card:hover { border-color:var(--brand)!important; transform:translateY(-3px) scale(1.02); }
+  .home-grupo-body .quick-report-card strong { color:var(--brand); font-size:14.5px; }
+  .home-grupo-body .quick-report-card .report-icon { transition:transform .2s; }
+  .home-grupo-body .quick-report-card:hover .report-icon { transform:scale(1.15); }
 
   /* -------------------- Dashboard ao vivo -------------------- */
   .home-dashboard { margin-top:22px; }

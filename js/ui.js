@@ -436,13 +436,43 @@ function cardGrupoPrincipalHomeHTML(g){
   }
   return `<details class="card home-grupo-card" id="homeGrupo_${g.chave}">
     <summary><span class="home-grupo-icone">${g.icone}</span><span class="home-grupo-texto"><span class="home-grupo-titulo">${escapeHtmlRelatorio(g.titulo)}</span><span class="home-grupo-desc">${escapeHtmlRelatorio(g.descricao)}</span></span><span class="home-grupo-chevron">▾</span></summary>
-    <div class="home-grupo-body">${corpo}</div>
+    <div class="home-grupo-body">
+      <button type="button" class="home-grupo-voltar" onclick="fecharGrupoHome('${g.chave}')">← Voltar para todos os pipelines</button>
+      ${corpo}
+    </div>
   </details>`;
 }
 
 function renderizarGruposPrincipaisHome(){
   const cont=document.getElementById("homeGruposPrincipais");if(!cont)return;
   cont.innerHTML=GRUPOS_PRINCIPAIS_HOME.map(cardGrupoPrincipalHomeHTML).join("");
+  // Modo foco: ao clicar num card ele abre e os outros 8 somem da tela (só
+  // fica o aberto + botão Voltar), até fechar de novo. Fica só no clique do
+  // summary — a busca (filtrarGruposPrincipaisHome) pode abrir vários cards
+  // ao mesmo tempo e não deve disparar esse fechamento automático.
+  cont.querySelectorAll(".home-grupo-card > summary").forEach((sum)=>{
+    sum.addEventListener("click", ()=>{
+      const det=sum.parentElement;
+      setTimeout(()=>{
+        if(det.open){
+          cont.querySelectorAll(".home-grupo-card").forEach((outro)=>{ if(outro!==det) outro.open=false; });
+        }
+        atualizarFocoGruposHome();
+      }, 0);
+    });
+  });
+  atualizarFocoGruposHome();
+}
+
+function atualizarFocoGruposHome(){
+  const cont=document.getElementById("homeGruposPrincipais");if(!cont)return;
+  cont.classList.toggle("tem-aberto", !!cont.querySelector(".home-grupo-card[open]"));
+}
+
+function fecharGrupoHome(chave){
+  const det=document.getElementById(`homeGrupo_${chave}`);
+  if(det) det.open=false;
+  atualizarFocoGruposHome();
 }
 
 function filtrarGruposPrincipaisHome(){
@@ -458,6 +488,7 @@ function filtrarGruposPrincipaisHome(){
     const tituloOk=det.querySelector(".home-grupo-titulo")?.textContent.toLowerCase().includes(termo);
     det.open = visiveis>0 || !!tituloOk;
   });
+  atualizarFocoGruposHome();
 }
 
 function filtrarAtalhosRelatorios(){
