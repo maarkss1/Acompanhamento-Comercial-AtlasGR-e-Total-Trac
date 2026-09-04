@@ -2188,6 +2188,10 @@ function cockpitTelaoMostrarSlide(indice) {
   });
   const indicador = cockpitEl("cockpitTelaoIndicador");
   if (indicador) indicador.textContent = `${indice + 1} / ${COCKPIT_TELAO_BLOCOS.length}`;
+  // Sem isso, se o slide anterior era mais alto que o novo (ex: muitos
+  // alertas) e a pessoa tinha rolado a tela pra ler, o slide novo nasce
+  // "escondido" acima da área visível — parece que o Modo Telão travou.
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function cockpitTelaoProximoSlide() {
