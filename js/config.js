@@ -128,12 +128,19 @@ var ENTIDADES = {
     method: "crm.lead.list",
     fieldsMethod: "crm.lead.fields",
     hasCategoria: false,
+    // v34 — confirmado ao vivo em 2026-09-04 (crm.status.list, ENTITY_ID=STATUS):
+    // funil de Leads foi reestruturado — saiu "Qualificação (SDR)"
+    // (UC_0NU8BD, não existe mais) e entraram "Lead Outbound", "No-Show" e
+    // "Reunião Realizada". "Lead Recebido" também virou "Lead inbound" no
+    // Bitrix (mantém o code NEW).
     estagios: [
       { code: "", label: "Todos os estágios" },
-      { code: "NEW", label: "Lead Recebido" },
-      { code: "UC_IX9SZ8", label: "Cadência Iniciada" },
-      { code: "UC_0NU8BD", label: "Qualificação (SDR)" },
+      { code: "NEW", label: "Lead inbound" },
+      { code: "UC_FOSJVJ", label: "Lead Outbound" },
+      { code: "UC_IX9SZ8", label: "Em Cadência / Tentativa de Contato" },
       { code: "UC_B5Q2RS", label: "Reunião Agendada" },
+      { code: "UC_YJSF5N", label: "No-Show" },
+      { code: "UC_68OHNT", label: "Reunião Realizada" },
       { code: "CONVERTED", label: "Convertido em Oportunidade" },
       { code: "JUNK", label: "Lead Desqualificado" },
     ],
