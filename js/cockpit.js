@@ -663,9 +663,19 @@ function cockpitWinRateComercialFinanceiro(deals, dealsFinanceiro, janela) {
   const classificados = cockpitClassificarComercialFinanceiro(deals, dealsFinanceiro, (d) => dentroPeriodoCatalogo(d._FECHAMENTO, janela));
   const ganhosDeals = classificados.filter((d) => d._RESULTADO === "ganho");
   const perdidosDeals = classificados.filter((d) => d._RESULTADO === "perda");
+  const pendentesDeals = classificados.filter((d) => d._RESULTADO === "pendente");
   const totalFechados = ganhosDeals.length + perdidosDeals.length;
   const winRate = totalFechados > 0 ? Math.round((ganhosDeals.length / totalFechados) * 1000) / 10 : null;
-  return { winRate, ganhos: ganhosDeals.length, perdidos: perdidosDeals.length, ganhosDeals, perdidosDeals };
+  // v30 — "amostra imatura": negócio Ganho no Comercial mas ainda sem
+  // resolução no Financeiro (nem assinado, nem cancelado) fica de fora do
+  // Win Rate — correto pra não contar receita ainda incerta, mas em janelas
+  // recentes isso pode deixar o total fechado pequeno/enviesado sem nenhum
+  // aviso na tela. Mesmo critério (>=30% pendente) já usado no diagnóstico de
+  // IA do relatório Conversão Comercial (js/ia-engine.js).
+  const totalAmostra = totalFechados + pendentesDeals.length;
+  const pctPendente = totalAmostra > 0 ? Math.round((pendentesDeals.length / totalAmostra) * 100) : 0;
+  const amostraImatura = totalAmostra > 0 && pctPendente >= 30;
+  return { winRate, ganhos: ganhosDeals.length, perdidos: perdidosDeals.length, pendentes: pendentesDeals.length, ganhosDeals, perdidosDeals, pendentesDeals, amostraImatura, pctPendente };
 }
 // v28 — Taxa de Confirmação Financeiro: de todo negócio já marcado "Ganho" no
 // Comercial (qualquer data, sem recorte de janela — amostra histórica
@@ -1000,7 +1010,9 @@ function cockpitCalcular() {
     eficiencia: {
       winRate, ganhos: ganhosPeriodo.length, perdidos: perdidosPeriodo.length,
       winRateMensal: wrMensal.winRate, ganhosMensal: wrMensal.ganhos, perdidosMensal: wrMensal.perdidos,
+      pendentesMensal: wrMensal.pendentes, amostraImaturaMensal: wrMensal.amostraImatura, pctPendenteMensal: wrMensal.pctPendente,
       winRateAnual: wrAnual.winRate, ganhosAnual: wrAnual.ganhos, perdidosAnual: wrAnual.perdidos,
+      pendentesAnual: wrAnual.pendentes, amostraImaturaAnual: wrAnual.amostraImatura, pctPendenteAnual: wrAnual.pctPendente,
       winRateAnteriores: wrAnteriores.winRate, ganhosAnteriores: wrAnteriores.ganhos, perdidosAnteriores: wrAnteriores.perdidos,
       winRateTotal: wrTotal.winRate, ganhosTotal: wrTotal.ganhos, perdidosTotal: wrTotal.perdidos,
       winRateMesAnoAnterior: wrMesAnoAnterior.winRate, ganhosMesAnoAnterior: wrMesAnoAnterior.ganhos, perdidosMesAnoAnterior: wrMesAnoAnterior.perdidos,
@@ -1595,12 +1607,12 @@ function renderizarCockpit() {
   const winRateHtml = [
     // 1. Mensal
     cockpitKpiCard("Lead → Oportunidade (Mês atual)", cockpitND(c.eficiencia.leadsConversaoMensal, (v) => `${v}%`), "leadsGanhosMensal", "", `${c.eficiencia.leadsConvertidosMensal} opps criadas`),
-    cockpitKpiCard("Win Rate Negócios (Mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}`),
+    cockpitKpiCard("Win Rate Negócios (Mês atual)", cockpitND(c.eficiencia.winRateMensal, (v) => `${v}%`), "winRateGanhosMensal", c.eficiencia.amostraImaturaMensal ? "cockpit-status-atencao" : (c.eficiencia.diffMesYoY != null ? (c.eficiencia.diffMesYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : ""), `${c.eficiencia.ganhosMensal} ganho(s) · ${c.eficiencia.perdidosMensal} perdido(s)${subMesYoY}${c.eficiencia.amostraImaturaMensal ? ` · ⚠️ ${c.eficiencia.pendentesMensal} ainda pendente(s) no Financeiro (${c.eficiencia.pctPendenteMensal}% da amostra) — número pode mudar` : ""}`),
     cockpitKpiCard("Lead → Cliente (Mês atual)", cockpitND(l2cMensal, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Negócios)"),
 
     // 2. Anual
     cockpitKpiCard("Lead → Oportunidade (Ano atual)", cockpitND(c.eficiencia.leadsConversaoAnual, (v) => `${v}%`), "leadsGanhosAnual", "", `${c.eficiencia.leadsConvertidosAnual} opps criadas`),
-    cockpitKpiCard("Win Rate Negócios (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : "", `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}`),
+    cockpitKpiCard("Win Rate Negócios (Ano atual)", cockpitND(c.eficiencia.winRateAnual, (v) => `${v}%`), "winRateGanhosAnual", c.eficiencia.amostraImaturaAnual ? "cockpit-status-atencao" : (c.eficiencia.diffAnoYoY != null ? (c.eficiencia.diffAnoYoY >= 0 ? "cockpit-status-ok" : "cockpit-status-atencao") : ""), `${c.eficiencia.ganhosAnual} ganho(s) · ${c.eficiencia.perdidosAnual} perdido(s)${subAnoYoY}${c.eficiencia.amostraImaturaAnual ? ` · ⚠️ ${c.eficiencia.pendentesAnual} ainda pendente(s) no Financeiro (${c.eficiencia.pctPendenteAnual}% da amostra) — número pode mudar` : ""}`),
     cockpitKpiCard("Lead → Cliente (Ano atual)", cockpitND(l2cAnual, (v) => `${v}%`), "", "", "Conversão de ponta a ponta (SDR × Negócios)"),
 
     // 3. Confirmação Financeiro (histórico completo, sem recorte de janela)
@@ -2146,3 +2158,79 @@ function restaurarOrdemLayout() {
     });
   } catch(e){}
 }
+
+// ---------------------------------------------------------------------------
+// Modo Telão — visão fullscreen, alto contraste, rotativa entre os blocos,
+// pensada pra ficar num monitor/TV de parede da sala comercial. Não recalcula
+// nem duplica nada: só reaproveita os mesmos blocos (#cockpit-bloco-*) que já
+// são preenchidos por renderizarCockpit() — continua vivo sozinho pelo mesmo
+// ciclo de auto-atualização de 5min (cockpitIniciarAutoAtualizacao, já ligado
+// em iniciarCockpitExecutivo). Ver estilos em cockpit.html (.cockpit-modo-telao).
+// ---------------------------------------------------------------------------
+const COCKPIT_TELAO_BLOCOS = [
+  "cockpit-bloco-alertas",
+  "cockpit-bloco-resultado",
+  "cockpit-bloco-forecast",
+  "cockpit-bloco-saude",
+  "cockpit-bloco-winrate",
+  "cockpit-bloco-eficiencia",
+  "cockpit-bloco-geracao",
+];
+const COCKPIT_TELAO_INTERVALO_MS = 15 * 1000;
+let cockpitTelaoIndice = 0;
+let cockpitTelaoTimerSlide = null;
+let cockpitTelaoTimerRelogio = null;
+
+function cockpitTelaoMostrarSlide(indice) {
+  COCKPIT_TELAO_BLOCOS.forEach((id, i) => {
+    const el = cockpitEl(id);
+    if (el) el.classList.toggle("cockpit-telao-slide-ativo", i === indice);
+  });
+  const indicador = cockpitEl("cockpitTelaoIndicador");
+  if (indicador) indicador.textContent = `${indice + 1} / ${COCKPIT_TELAO_BLOCOS.length}`;
+}
+
+function cockpitTelaoProximoSlide() {
+  cockpitTelaoIndice = (cockpitTelaoIndice + 1) % COCKPIT_TELAO_BLOCOS.length;
+  cockpitTelaoMostrarSlide(cockpitTelaoIndice);
+}
+
+function cockpitTelaoAtualizarRelogio() {
+  const el = cockpitEl("cockpitTelaoRelogio");
+  if (el) el.textContent = new Date().toLocaleTimeString("pt-BR");
+}
+
+function cockpitAtivarModoTelao() {
+  if (document.body.classList.contains("cockpit-modo-telao")) return;
+  document.body.classList.add("cockpit-modo-telao");
+  cockpitTelaoIndice = 0;
+  cockpitTelaoMostrarSlide(0);
+  cockpitTelaoAtualizarRelogio();
+  cockpitTelaoTimerRelogio = setInterval(cockpitTelaoAtualizarRelogio, 1000);
+  cockpitTelaoTimerSlide = setInterval(cockpitTelaoProximoSlide, COCKPIT_TELAO_INTERVALO_MS);
+  // Garante a atualização automática mesmo se o Modo Telão for ativado antes
+  // de qualquer "Atualizar agora" nesta sessão (idempotente: não faz nada se
+  // já estava rodando).
+  cockpitIniciarAutoAtualizacao();
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {}); // navegador pode bloquear sem gesto do usuário; segue sem tela cheia
+  }
+}
+
+function cockpitDesativarModoTelao() {
+  if (!document.body.classList.contains("cockpit-modo-telao")) return;
+  document.body.classList.remove("cockpit-modo-telao");
+  if (cockpitTelaoTimerSlide) { clearInterval(cockpitTelaoTimerSlide); cockpitTelaoTimerSlide = null; }
+  if (cockpitTelaoTimerRelogio) { clearInterval(cockpitTelaoTimerRelogio); cockpitTelaoTimerRelogio = null; }
+  COCKPIT_TELAO_BLOCOS.forEach((id) => { const el = cockpitEl(id); if (el) el.classList.remove("cockpit-telao-slide-ativo"); });
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+
+document.addEventListener("fullscreenchange", () => {
+  // Cobre o caso do usuário sair da tela cheia pelo próprio navegador (Esc
+  // nativo, ou botão do SO) sem passar pelo botão "Sair do Modo Telão".
+  if (!document.fullscreenElement) cockpitDesativarModoTelao();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") cockpitDesativarModoTelao();
+});

@@ -29,9 +29,80 @@
   .draggable-card { cursor: grab; transition: transform 0.2s, box-shadow 0.2s; }
   .draggable-card:active { cursor: grabbing; opacity: 0.8; transform: scale(0.98); }
   .drag-over { border: 2px dashed var(--brand) !important; background: var(--soft) !important; }
+
+  /* ---------------------------------------------------------------------
+     Modo Telão — visão fullscreen, alto contraste, rotativa, pra TV/monitor
+     de parede. Não duplica dados: reaproveita os mesmos blocos já
+     renderizados por renderizarCockpit() (mesmos IDs), continua vivo pelo
+     ciclo de auto-atualização de 5min já existente. Ver js/cockpit.js.
+     ------------------------------------------------------------------- */
+  .cockpit-telao-barra {
+    display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 32px; background: #05070d; color: #fff;
+    border-bottom: 1px solid #232d47; font-family: 'Montserrat', sans-serif;
+  }
+  .cockpit-telao-marca { font-size: 15px; letter-spacing: 1.5px; font-weight: 700; color: #ff5618; text-transform: uppercase; }
+  .cockpit-telao-centro { display:flex; align-items:center; gap:14px; }
+  .cockpit-telao-relogio { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cockpit-telao-indicador { font-size: 13px; color: #9aa4c2; }
+  .cockpit-telao-sair {
+    background: transparent; color: #c4cbe0; border: 1px solid #384265;
+    border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer;
+  }
+  .cockpit-telao-sair:hover { background: #1a2138; }
+
+  body.cockpit-modo-telao { background: #05070d; }
+  body.cockpit-modo-telao .cockpit-telao-barra { display: flex; }
+  body.cockpit-modo-telao .letterhead,
+  body.cockpit-modo-telao header.hero-extrator,
+  body.cockpit-modo-telao #conexao,
+  body.cockpit-modo-telao .cockpit-header,
+  body.cockpit-modo-telao .cockpit-filtros,
+  body.cockpit-modo-telao .cockpit-filtros + p.rodape-nota,
+  body.cockpit-modo-telao #cockpit-executivo > .aviso,
+  body.cockpit-modo-telao #cockpit-executivo > p.rodape-nota,
+  body.cockpit-modo-telao main > .card:not(#cockpit-executivo) { display: none !important; }
+
+  body.cockpit-modo-telao #cockpit-executivo {
+    border: none; box-shadow: none; background: #05070d; border-radius: 0;
+    padding: 90px 0 0; margin: 0; max-width: none;
+  }
+  body.cockpit-modo-telao .cockpit-bloco { display: none; }
+  body.cockpit-modo-telao .cockpit-bloco.cockpit-telao-slide-ativo {
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: calc(100vh - 90px); padding: 30px 70px; box-sizing: border-box;
+    background: transparent; border: none; margin-bottom: 0;
+    animation: cockpitTelaoFade .6s ease;
+  }
+  @keyframes cockpitTelaoFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  body.cockpit-modo-telao .cockpit-bloco h3 { font-size: 40px; color: #fff; margin-bottom: 34px; }
+  body.cockpit-modo-telao .cockpit-bloco-subtitulo { font-size: 16px; color: #9aa4c2; }
+  body.cockpit-modo-telao .relatorio-especial-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 26px; }
+  body.cockpit-modo-telao .cockpit-kpi { background: #11182b; border: 1px solid #232d47; padding: 30px; border-radius: 18px; }
+  body.cockpit-modo-telao .cockpit-kpi .valor { font-size: 52px; line-height: 1.1; color: #ff5618; }
+  body.cockpit-modo-telao .cockpit-kpi .rotulo { font-size: 18px; color: #c4cbe0; }
+  body.cockpit-modo-telao .cockpit-kpi > div { font-size: 14px !important; color: #7c86a8 !important; }
+  body.cockpit-modo-telao .cockpit-alertas-lista { font-size: 20px; color: #c4cbe0; }
+  body.cockpit-modo-telao #cockpitAvisoPipelineForecast { font-size: 16px; }
+  /* .rodape-nota (inclui o placeholder "Sem dados carregados...") usa um
+     cinza pensado pra fundo claro — sem isso fica ilegível no telão escuro. */
+  body.cockpit-modo-telao .cockpit-bloco.cockpit-telao-slide-ativo .rodape-nota,
+  body.cockpit-modo-telao .cockpit-bloco.cockpit-telao-slide-ativo .cockpit-placeholder-vazio {
+    color: #9aa4c2; font-size: 18px;
+  }
 </style>
 </head>
 <body class="aguardando-login">
+
+<div class="cockpit-telao-barra" id="cockpitTelaoBarra">
+  <div class="cockpit-telao-marca">ATLAS GR · COCKPIT AO VIVO</div>
+  <div class="cockpit-telao-centro">
+    <span class="cockpit-telao-indicador" id="cockpitTelaoIndicador">1 / 1</span>
+    <span class="cockpit-telao-relogio" id="cockpitTelaoRelogio">--:--:--</span>
+  </div>
+  <button type="button" class="cockpit-telao-sair" onclick="cockpitDesativarModoTelao()">✕ Sair do Modo Telão (Esc)</button>
+</div>
 
 <div class="login-gate" id="loginGate">
   <div class="login-gate-card">
@@ -108,6 +179,7 @@
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;">
         <button type="button" id="cockpitBtnAtualizar" onclick="atualizarCockpit()">↻ Atualizar agora</button>
+        <button type="button" class="secundario" style="background:#05070d; color:#fff; border-color:#05070d;" onclick="cockpitAtivarModoTelao()" title="Tela cheia, alto contraste, rotativa entre os blocos — pra TV/monitor de parede">🖥️ Modo Telão</button>
         <button type="button" class="secundario" onclick="cockpitGerarSituacaoAgora()">⚡ Gerar Situação Agora</button>
         <button type="button" class="secundario" style="background:var(--brand); color:white; border-color:var(--brand);" onclick="cockpitGerarResumoIA()">🤖 Resumo com IA</button>
         <button type="button" class="secundario" onclick="cockpitAbrirHTMLExport()" title="Abre o snapshot do Cockpit em uma aba nova (HTML autônomo, sem webhook)">🌐 Abrir HTML</button>

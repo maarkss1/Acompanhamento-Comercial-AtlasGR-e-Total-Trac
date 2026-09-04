@@ -215,6 +215,14 @@ function iaDiagnosticarCockpit(c) {
 
   if (winRate !== null) {
     highlights.push(`📈 **Conversão Comercial:** Win Rate registrado em ${winRate}%.`);
+    // v30 — mesmo aviso de amostra imatura do relatório Conversão Comercial
+    // (js/ia-engine.js, iaDiagnosticarRelatorioCatalogo): negócio Ganho no
+    // Comercial mas ainda sem confirmação do Financeiro fica fora do cálculo,
+    // então em meses recentes esse Win Rate pode estar baseado numa amostra
+    // pequena e ainda vai mudar.
+    if (c.eficiencia.amostraImaturaMensal) {
+      highlights.push(`⚠️ **Win Rate mensal ainda imaturo:** ${c.eficiencia.pctPendenteMensal}% dos negócios do mês seguem pendentes de confirmação no Financeiro — o ${winRate}% acima ainda deve mudar.`);
+    }
   }
 
   const recomendacoes = [];
