@@ -29,7 +29,10 @@
   .pfa-kpi-ativo { outline:2px solid var(--brand); }
   .pfa-link-negocio { margin-left:8px; font-size:12.5px; }
   .pfa-linha-acoes { display:flex; align-items:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap; }
-  .pfa-tarefa-ok { font-size:12.5px; color:var(--sucesso); padding:8px 0; }
+  .pfa-tarefa-ok { font-size:12.5px; color:var(--ok); padding:8px 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pfa-tarefa-bloco { margin-top:10px; }
+  .pfa-tarefa-acoes { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .pfa-comentario-tarefa-box { margin-top:8px; }
 
   /* Cards de vendedor lado a lado, recolhidos por padrão (mesmo padrão dos
      cards de grupo da Home — ver GRUPOS_PRINCIPAIS_HOME em js/ui.js): cada
@@ -171,8 +174,8 @@
 
   <div class="card">
     <h2>✅ Habilitar escrita no Bitrix</h2>
-    <div class="checkbox-linha"><input type="checkbox" id="pfaHabilitarEscrita"><label for="pfaHabilitarEscrita" style="margin:0;">Habilitar criação de tarefas no Bitrix (tasks.task.add) para o vendedor responsável</label></div>
-    <p class="rodape-nota">Enquanto desmarcado, o botão "Criar tarefa no Bitrix" em cada negócio não envia nada — só monta o rascunho. A tarefa criada fica vinculada ao negócio no Bitrix (aba Tarefas do CRM) e atribuída ao responsável atual.</p>
+    <div class="checkbox-linha"><input type="checkbox" id="pfaHabilitarEscrita"><label for="pfaHabilitarEscrita" style="margin:0;">Habilitar escrita em Tarefas no Bitrix (criar, comentar e finalizar) para o negócio</label></div>
+    <p class="rodape-nota">Enquanto desmarcado, os botões "Criar tarefa no Bitrix", "Comentar na tarefa" e "Finalizar tarefa" em cada negócio não enviam nada. A tarefa criada fica vinculada ao negócio no Bitrix (aba Tarefas do CRM) e atribuída ao responsável atual; a cada "↻ Atualizar do Bitrix" esta página confere no próprio Bitrix se o negócio já tem uma tarefa vinculada (criada por aqui ou não) e mostra o status real dela.</p>
   </div>
 
   <div class="card" id="pfa-bloco-lista">

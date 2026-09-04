@@ -104,6 +104,44 @@ function pfaDiasParado(d) {
   return typeof dias === "number" ? Math.max(0, dias) : null;
 }
 
+// ---------------------------------------------------------------------------
+// Tarefa vinculada ao negócio — v31. Antes só sabíamos de uma tarefa se ela
+// tivesse sido criada por ESTA ferramenta (guardado só no localStorage); agora
+// consultamos o Bitrix (tasks.task.list filtrado por UF_CRM_TASK, o mesmo
+// campo usado em pfaCriarTarefa) pra saber se já existe tarefa vinculada de
+// verdade — criada por aqui, direto no Bitrix, ou por outra pessoa do time.
+// ---------------------------------------------------------------------------
+
+const PFA_STATUS_TAREFA = {
+  "2": { label: "Pendente", cls: "alerta" },
+  "3": { label: "Em andamento", cls: "alerta" },
+  "4": { label: "Aguardando controle", cls: "alerta" },
+  "5": { label: "Concluída", cls: "ok" },
+  "6": { label: "Adiada", cls: "alerta" },
+  "7": { label: "Recusada", cls: "alerta" },
+};
+
+async function pfaBuscarTarefaVinculada(webhook, negocioId) {
+  const body = await bitrixPostJsonComRetentativa(webhook, "tasks.task.list", {
+    filter: { UF_CRM_TASK: `D_${negocioId}` },
+    select: ["ID", "TITLE", "STATUS", "RESPONSIBLE_ID", "CREATED_DATE"],
+    order: { ID: "DESC" },
+  });
+  const tarefas = body?.result?.tasks || (Array.isArray(body?.result) ? body.result : []);
+  return tarefas[0] || null;
+}
+
+function pfaTarefaBitrixParaEstado(t, dominio) {
+  return {
+    id: String(t.ID),
+    titulo: t.TITLE || "",
+    status: String(t.STATUS || "2"),
+    vendedorId: idBitrixString(t.RESPONSIBLE_ID),
+    url: dominio ? `https://${dominio}/company/personal/user/${idBitrixString(t.RESPONSIBLE_ID)}/tasks/task/view/${t.ID}/` : "",
+    criadaEm: t.CREATED_DATE || new Date().toISOString(),
+  };
+}
+
 async function pfaAtualizarDoBitrix() {
   const campoWebhook = document.getElementById("webhook");
   const webhook = (campoWebhook?.value || "").trim();
@@ -170,6 +208,25 @@ async function pfaAtualizarDoBitrix() {
     salvos.forEach((it) => {
       if (!encontradosIds.has(String(it.negocioId))) it.aindaNoEstagio = false;
     });
+
+    // v31 — confere no Bitrix (não só no que esta ferramenta lembra localmente)
+    // se cada negócio em aberto já tem uma tarefa vinculada (criada por aqui,
+    // direto no Bitrix, ou por outra pessoa do time) — sequencial e devagar de
+    // propósito (ATRASO_ENTRE_PAGINAS_MS) pra não estourar limite de taxa.
+    const dominioAtual = extrairDominioWebhook(webhook);
+    atualizarStatus("Acompanhamento Financeiro: verificando tarefas vinculadas no Bitrix...");
+    for (const id of encontradosIds) {
+      const item = porId.get(id);
+      if (!item) continue;
+      try {
+        const tarefaBitrix = await pfaBuscarTarefaVinculada(webhook, id);
+        item.tarefa = tarefaBitrix ? pfaTarefaBitrixParaEstado(tarefaBitrix, dominioAtual) : null;
+      } catch (e) {
+        // Falha ao checar UMA tarefa não deve travar a atualização inteira —
+        // mantém o que já estava salvo localmente para este item.
+      }
+      await aguardar(ATRASO_ENTRE_PAGINAS_MS);
+    }
 
     const listaFinal = [...porId.values()];
     pfaSalvarTudo(listaFinal);
@@ -287,8 +344,27 @@ function pfaIniciais(nome) {
 function pfaLinhaHTML(it) {
   const linkNegocio = pfaLinkNegocio(it);
   const tarefaHTML = it.tarefa
-    ? `<div class="pfa-tarefa-ok">✅ Tarefa ${it.tarefa.url ? `<a href="${it.tarefa.url}" target="_blank" rel="noopener noreferrer">#${escapeHtmlRelatorio(it.tarefa.id)}</a>` : `#${escapeHtmlRelatorio(it.tarefa.id)}`} criada em ${formatarDataHoraBR(it.tarefa.criadaEm)} para ${escapeHtmlRelatorio(it.vendedorNome || "")}.</div>`
-    : `<button type="button" class="secundario" onclick="pfaAbrirFormTarefa('${it.idInterno}')"${it.vendedorId ? "" : ' disabled title="Este negócio não tem responsável válido no Bitrix"'}>📌 Criar tarefa no Bitrix</button>
+    ? (() => {
+        const statusInfo = PFA_STATUS_TAREFA[it.tarefa.status] || { label: `status ${it.tarefa.status}`, cls: "alerta" };
+        const linkTarefa = it.tarefa.url ? `<a href="${it.tarefa.url}" target="_blank" rel="noopener noreferrer">#${escapeHtmlRelatorio(it.tarefa.id)} ${escapeHtmlRelatorio(it.tarefa.titulo)}</a>` : `#${escapeHtmlRelatorio(it.tarefa.id)} ${escapeHtmlRelatorio(it.tarefa.titulo)}`;
+        const concluida = it.tarefa.status === "5";
+        return `<div class="pfa-tarefa-bloco">
+          <div class="pfa-tarefa-ok"><span class="badge-relatorio ${statusInfo.cls}">${escapeHtmlRelatorio(statusInfo.label)}</span> Tarefa ${linkTarefa} · criada em ${formatarDataHoraBR(it.tarefa.criadaEm)}.</div>
+          <div class="pfa-tarefa-acoes">
+            <button type="button" class="secundario" onclick="pfaAbrirComentarioTarefa('${it.idInterno}')">💬 Comentar na tarefa</button>
+            ${concluida ? "" : `<button type="button" class="secundario" onclick="pfaFinalizarTarefa('${it.idInterno}')">✔️ Finalizar tarefa</button>`}
+          </div>
+          <div class="oculto pfa-comentario-tarefa-box" id="pfaComentarioTarefaBox_${it.idInterno}">
+            <textarea id="pfaComentarioTarefaTexto_${it.idInterno}" rows="2" placeholder="Escreva o comentário que vai entrar na tarefa do Bitrix..."></textarea>
+            <div class="row" style="margin-top:6px;gap:8px;">
+              <button type="button" class="secundario" onclick="pfaEnviarComentarioTarefa('${it.idInterno}')">Enviar comentário</button>
+              <span class="rodape-nota" id="pfaComentarioTarefaStatus_${it.idInterno}" style="margin:0;"></span>
+            </div>
+          </div>
+        </div>`;
+      })()
+    : `<div>Nenhuma tarefa vinculada a este negócio no Bitrix ainda.</div>
+       <button type="button" class="secundario" onclick="pfaAbrirFormTarefa('${it.idInterno}')"${it.vendedorId ? "" : ' disabled title="Este negócio não tem responsável válido no Bitrix"'}>📌 Criar tarefa no Bitrix</button>
        <div class="oculto pfa-form-tarefa" id="pfaFormTarefa_${it.idInterno}"></div>`;
 
   const motivos = PFA_MOTIVOS_COMUNS[it.estagioChave] || [];
@@ -538,6 +614,7 @@ async function pfaCriarTarefa(idInterno) {
     const dominio = pfaState.webhookDominio || extrairDominioWebhook(webhook);
     it.tarefa = {
       id: String(taskId),
+      status: "2", // "Pendente" — status inicial padrão de uma tarefa recém-criada no Bitrix
       criadaEm: new Date().toISOString(),
       url: dominio ? `https://${dominio}/company/personal/user/${it.vendedorId}/tasks/task/view/${taskId}/` : "",
       titulo,
@@ -550,6 +627,70 @@ async function pfaCriarTarefa(idInterno) {
   } catch (e) {
     if (statusEl) statusEl.textContent = "Falha ao criar a tarefa: " + e.message;
     mostrarErro('Não foi possível criar a tarefa no Bitrix.\n\nDetalhe técnico: ' + e.message + '\n\nConfira se o webhook de entrada tem permissão de escrita no módulo "Tarefas" (Task) no Bitrix24.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Comentar / finalizar uma tarefa já vinculada (v31) — mesmo gate de opt-in
+// "Habilitar criação de tarefas no Bitrix" já usado por pfaCriarTarefa acima
+// (o checkbox cobre qualquer escrita em Tarefas nesta página, não só criar).
+// ---------------------------------------------------------------------------
+
+function pfaAbrirComentarioTarefa(idInterno) {
+  const box = document.getElementById(`pfaComentarioTarefaBox_${idInterno}`);
+  if (!box) return;
+  box.classList.toggle("oculto");
+  if (!box.classList.contains("oculto")) document.getElementById(`pfaComentarioTarefaTexto_${idInterno}`)?.focus();
+}
+
+async function pfaEnviarComentarioTarefa(idInterno) {
+  const it = pfaState.itens.find((x) => x.idInterno === idInterno);
+  if (!it?.tarefa) return;
+  const statusEl = document.getElementById(`pfaComentarioTarefaStatus_${idInterno}`);
+  if (!document.getElementById("pfaHabilitarEscrita")?.checked) {
+    if (statusEl) statusEl.textContent = 'Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de comentar.';
+    return;
+  }
+  const webhook = document.getElementById("webhook")?.value?.trim() || "";
+  const erro = validarWebhook(webhook);
+  if (erro) { mostrarErro(erro); return; }
+  const campoTexto = document.getElementById(`pfaComentarioTarefaTexto_${idInterno}`);
+  const texto = campoTexto?.value.trim();
+  if (!texto) { if (statusEl) statusEl.textContent = "Escreva o comentário antes de enviar."; return; }
+
+  if (statusEl) statusEl.textContent = "Enviando comentário...";
+  try {
+    await bitrixPostJsonComRetentativa(webhook, "task.commentitem.add", { TASKID: it.tarefa.id, FIELDS: { POST_MESSAGE: texto } });
+    if (campoTexto) campoTexto.value = "";
+    if (statusEl) statusEl.textContent = "Comentário enviado na tarefa #" + it.tarefa.id + ".";
+    atualizarStatus(`Comentário adicionado à tarefa #${it.tarefa.id} no Bitrix.`);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = "Falha ao enviar: " + e.message;
+    mostrarErro('Não foi possível comentar na tarefa.\n\nDetalhe técnico: ' + e.message + '\n\nConfira se o webhook de entrada tem permissão de escrita no módulo "Tarefas" (Task) no Bitrix24.');
+  }
+}
+
+async function pfaFinalizarTarefa(idInterno) {
+  const it = pfaState.itens.find((x) => x.idInterno === idInterno);
+  if (!it?.tarefa) return;
+  if (!document.getElementById("pfaHabilitarEscrita")?.checked) {
+    alert('Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de finalizar tarefas.');
+    return;
+  }
+  const webhook = document.getElementById("webhook")?.value?.trim() || "";
+  const erro = validarWebhook(webhook);
+  if (erro) { mostrarErro(erro); return; }
+  if (!confirm(`Finalizar a tarefa "#${it.tarefa.id} ${it.tarefa.titulo}" no Bitrix?`)) return;
+
+  try {
+    await bitrixPostJsonComRetentativa(webhook, "tasks.task.complete", { taskId: it.tarefa.id });
+    it.tarefa.status = "5";
+    it.dataAlteracao = new Date().toISOString();
+    pfaSalvarTudo(pfaState.itens);
+    pfaRender();
+    atualizarStatus(`Tarefa #${it.tarefa.id} finalizada no Bitrix.`);
+  } catch (e) {
+    mostrarErro('Não foi possível finalizar a tarefa.\n\nDetalhe técnico: ' + e.message + '\n\nConfira se o webhook de entrada tem permissão de escrita no módulo "Tarefas" (Task) no Bitrix24.');
   }
 }
 
