@@ -893,7 +893,21 @@
     border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--surface);
     box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .12); cursor: default;
     transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    position: relative; overflow: hidden;
   }
+  /* Números "correndo" (contagem) + barra que oscila de cor até assentar no
+     valor certo — ver cockpitAnimarValor/cockpitIniciarAnimacaoValores em
+     js/cockpit.js. Reaproveitado no Cockpit, no Modo Telão e na Home. */
+  .cockpit-kpi::after {
+    content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+    background: var(--brand); opacity: .25; transition: opacity .3s;
+  }
+  .cockpit-kpi-oscilando::after {
+    opacity: 1; background: linear-gradient(90deg, var(--brand), var(--gold), var(--brand));
+    background-size: 200% 100%; animation: cockpit-bar-oscilar .7s linear;
+  }
+  @keyframes cockpit-bar-oscilar { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+  .cockpit-valor-animando { color: var(--brand); }
   .cockpit-kpi .valor { display: block; font-size: 26px; font-weight: 800; color: var(--brand); letter-spacing: -0.03em; }
   .cockpit-kpi .rotulo { display: block; margin-top: 5px; font-size: 12px; font-weight: 600; color: var(--ink); line-height: 1.35; }
   .cockpit-kpi-clicavel { cursor: pointer; }

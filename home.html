@@ -86,18 +86,9 @@
   .home-dashboard-grid .cockpit-bloco { border:1px solid var(--line); border-radius:14px; padding:16px 18px; background:var(--surface-2); margin:0; }
   .home-dashboard-grid .cockpit-bloco h3 { margin:0 0 10px; font-size:13.5px; font-weight:800; }
 
-  /* Números que "correm" (contagem) + barra que oscila de cor até assentar */
-  .cockpit-kpi { position:relative; overflow:hidden; }
-  .cockpit-kpi::after {
-    content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
-    background:var(--brand); opacity:.25; transition:opacity .3s;
-  }
-  .home-kpi-oscilando::after {
-    opacity:1; background:linear-gradient(90deg, var(--brand), var(--gold), var(--brand));
-    background-size:200% 100%; animation:home-bar-oscilar .7s linear;
-  }
-  @keyframes home-bar-oscilar { from { background-position:0% 0; } to { background-position:200% 0; } }
-  .home-valor-animando { color:var(--brand); }
+  /* Números que "correm" (contagem) + barra que oscila de cor até assentar —
+     estilos em css/styles.css (.cockpit-kpi-oscilando/.cockpit-valor-animando),
+     compartilhados com o Cockpit e o Modo Telão. */
 
   /* -------------------- Chatbot buscador de relatórios -------------------- */
   .home-chat-botao {

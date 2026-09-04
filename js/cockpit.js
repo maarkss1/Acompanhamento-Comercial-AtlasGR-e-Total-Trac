@@ -89,6 +89,7 @@ function iniciarCockpitExecutivo() {
   cockpitRenderReunioes(); // placeholder inicial — busca é sob demanda, não depende de "Atualizar agora"
   cockpitAtualizarTicker();
   cockpitIniciarAutoAtualizacao();
+  cockpitIniciarAnimacaoValores();
   initDragAndDrop();
 }
 
@@ -1487,13 +1488,83 @@ function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = 
 // deixar "buracos" em branco embaixo de cada título de bloco.
 const COCKPIT_CONTAINERS_KPI = [
   "cockpitResultadoMes", "cockpitForecast", "cockpitSaudePipeline",
-  "cockpitEficiencia", "cockpitGeracaoPipeline", "cockpitSdrResumo", "cockpitQualidadeDados",
+  "cockpitWinRate", "cockpitEficiencia", "cockpitGeracaoPipeline", "cockpitSdrResumo", "cockpitQualidadeDados",
   "homeResultadoMes", "homeForecast", "homeSaudePipeline", "homeWinRate", "homeEficiencia",
 ];
 const COCKPIT_CONTAINERS_LISTA = ["cockpitAlertas", "cockpitEstagios"];
 
 function cockpitPlaceholderVazio(msg) {
   return `<p class="rodape-nota cockpit-placeholder-vazio">${escapeHtmlRelatorio(msg)}</p>`;
+}
+
+// ---------------------------------------------------------------------------
+// Números "correndo" (contagem) + barra que oscila de cor até assentar no
+// valor certo — aplicado a QUALQUER card .cockpit-kpi dentro dos containers
+// de KPI acima (Cockpit, Modo Telão e Home, que reaproveita os mesmos IDs).
+// Observa via MutationObserver: funciona pra qualquer KPI que
+// renderizarCockpit() escrever neles, sem precisar listar cada um.
+// ---------------------------------------------------------------------------
+
+function cockpitExtrairPartesNumero(texto) {
+  const m = String(texto || "").trim().match(/^([^\d]*)([\d.,]+)(.*)$/);
+  if (!m) return null;
+  const [, prefixo, numTexto, sufixo] = m;
+  const temVirgula = numTexto.includes(",");
+  const decimais = temVirgula ? (numTexto.split(",")[1] || "").length : 0;
+  const normalizado = temVirgula ? numTexto.replace(/\./g, "").replace(",", ".") : numTexto.replace(/\./g, "");
+  const valor = parseFloat(normalizado);
+  if (!Number.isFinite(valor)) return null;
+  return { prefixo, sufixo, decimais, valor };
+}
+
+function cockpitAnimarValor(el) {
+  const textoFinal = el.textContent;
+  const partes = cockpitExtrairPartesNumero(textoFinal);
+  if (!partes) return; // "não disponível", "—" etc. — deixa como está
+  if (el.dataset.cockpitAnimando === "1") return;
+  const anteriorTexto = el.dataset.cockpitUltimoTexto;
+  if (anteriorTexto === textoFinal) return; // já é o valor mostrado, nada a animar
+  const anterior = cockpitExtrairPartesNumero(anteriorTexto || "");
+  const inicio = anterior ? anterior.valor : 0;
+  const alvo = partes.valor;
+  el.dataset.cockpitAnimando = "1";
+  el.classList.add("cockpit-valor-animando");
+  const card = el.closest(".cockpit-kpi");
+  if (card) card.classList.add("cockpit-kpi-oscilando");
+  const t0 = performance.now();
+  const duracao = 700;
+  function passo(agora) {
+    const p = Math.min(1, (agora - t0) / duracao);
+    const facilitado = 1 - Math.pow(1 - p, 3);
+    const atual = inicio + (alvo - inicio) * facilitado;
+    el.textContent = partes.prefixo + atual.toLocaleString("pt-BR", { minimumFractionDigits: partes.decimais, maximumFractionDigits: partes.decimais }) + partes.sufixo;
+    if (p < 1) {
+      requestAnimationFrame(passo);
+    } else {
+      el.textContent = textoFinal;
+      el.dataset.cockpitUltimoTexto = textoFinal;
+      el.dataset.cockpitAnimando = "0";
+      el.classList.remove("cockpit-valor-animando");
+      if (card) card.classList.remove("cockpit-kpi-oscilando");
+    }
+  }
+  requestAnimationFrame(passo);
+}
+
+function cockpitAplicarAnimacoesEm(container) {
+  container.querySelectorAll(".cockpit-kpi .valor").forEach(cockpitAnimarValor);
+}
+
+let cockpitObservadorValoresIniciado = false;
+function cockpitIniciarAnimacaoValores() {
+  if (cockpitObservadorValoresIniciado) return;
+  cockpitObservadorValoresIniciado = true;
+  COCKPIT_CONTAINERS_KPI.forEach((id) => {
+    const el = cockpitEl(id);
+    if (!el) return;
+    const observer = new MutationObserver(() => cockpitAplicarAnimacoesEm(el));
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+  });
 }
 
 // Estado inicial da tela: nenhum negócio foi carregado ainda nesta sessão.
@@ -2168,7 +2239,6 @@ function restaurarOrdemLayout() {
 // em iniciarCockpitExecutivo). Ver estilos em cockpit.html (.cockpit-modo-telao).
 // ---------------------------------------------------------------------------
 const COCKPIT_TELAO_BLOCOS = [
-  "cockpit-bloco-alertas",
   "cockpit-bloco-resultado",
   "cockpit-bloco-forecast",
   "cockpit-bloco-saude",

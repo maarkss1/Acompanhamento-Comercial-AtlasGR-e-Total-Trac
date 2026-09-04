@@ -69,74 +69,10 @@ function homeCalHoje() {
   homeCalRenderizar();
 }
 
-// ---------------------------------------------------------------------------
-// Animação dos números do dashboard: quando um valor de KPI muda (inclusive
-// na primeira vez que aparece), conta do valor anterior até o novo em vez de
-// trocar de texto seco — e a barrinha embaixo do card "oscila" de cor
-// enquanto conta, assentando na cor final quando o número certo é atingido.
-// Observa os containers via MutationObserver — funciona pra qualquer KPI que
-// renderizarCockpit() escrever neles, sem precisar listar cada um.
-// ---------------------------------------------------------------------------
-const HOME_DASHBOARD_CONTAINERS = ["homeResultadoMes", "homeForecast", "homeSaudePipeline", "homeWinRate", "homeEficiencia"];
-
-function homeExtrairPartesNumero(texto) {
-  const m = String(texto || "").trim().match(/^([^\d]*)([\d.,]+)(.*)$/);
-  if (!m) return null;
-  const [, prefixo, numTexto, sufixo] = m;
-  const temVirgula = numTexto.includes(",");
-  const decimais = temVirgula ? (numTexto.split(",")[1] || "").length : 0;
-  const normalizado = temVirgula ? numTexto.replace(/\./g, "").replace(",", ".") : numTexto.replace(/\./g, "");
-  const valor = parseFloat(normalizado);
-  if (!Number.isFinite(valor)) return null;
-  return { prefixo, sufixo, decimais, valor };
-}
-
-function homeAnimarValor(el) {
-  const textoFinal = el.textContent;
-  const partes = homeExtrairPartesNumero(textoFinal);
-  if (!partes) return; // "não disponível", "—" etc. — deixa como está
-  if (el.dataset.homeAnimando === "1") return;
-  const anteriorTexto = el.dataset.homeUltimoTexto;
-  if (anteriorTexto === textoFinal) return; // já é o valor mostrado, nada a animar
-  const anterior = homeExtrairPartesNumero(anteriorTexto || "");
-  const inicio = anterior ? anterior.valor : 0;
-  const alvo = partes.valor;
-  el.dataset.homeAnimando = "1";
-  el.classList.add("home-valor-animando");
-  const card = el.closest(".cockpit-kpi");
-  if (card) card.classList.add("home-kpi-oscilando");
-  const t0 = performance.now();
-  const duracao = 700;
-  function passo(agora) {
-    const p = Math.min(1, (agora - t0) / duracao);
-    const facilitado = 1 - Math.pow(1 - p, 3);
-    const atual = inicio + (alvo - inicio) * facilitado;
-    el.textContent = partes.prefixo + atual.toLocaleString("pt-BR", { minimumFractionDigits: partes.decimais, maximumFractionDigits: partes.decimais }) + partes.sufixo;
-    if (p < 1) {
-      requestAnimationFrame(passo);
-    } else {
-      el.textContent = textoFinal;
-      el.dataset.homeUltimoTexto = textoFinal;
-      el.dataset.homeAnimando = "0";
-      el.classList.remove("home-valor-animando");
-      if (card) card.classList.remove("home-kpi-oscilando");
-    }
-  }
-  requestAnimationFrame(passo);
-}
-
-function homeAplicarAnimacoesEm(container) {
-  container.querySelectorAll(".cockpit-kpi .valor").forEach(homeAnimarValor);
-}
-
-function homeIniciarObservadorDashboard() {
-  HOME_DASHBOARD_CONTAINERS.forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const observer = new MutationObserver(() => homeAplicarAnimacoesEm(el));
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
-  });
-}
+// A contagem animada dos números de KPI (e a barrinha que oscila de cor até
+// assentar) mora em js/cockpit.js (cockpitAnimarValor/cockpitIniciarAnimacaoValores)
+// — cockpit.js já observa os containers "home*" (COCKPIT_CONTAINERS_KPI), então
+// a Home ganha o mesmo efeito de graça, sem duplicar a lógica aqui.
 
 // Anel circular de "% da Meta" (Resultado do Mês) — lido diretamente de
 // cockpitState.ultimoCalculo (o mesmo cache usado pelo ticker/Situação Agora),
@@ -155,7 +91,7 @@ function homeAtualizarAnelMeta() {
   circulo.style.strokeDashoffset = `${offsetAlvo}`;
   circulo.classList.toggle("home-anel-acima-meta", pctClamp >= 100);
   texto.textContent = Number.isFinite(pct) ? `${pct}%` : "—";
-  homeAnimarValor(texto);
+  if (typeof cockpitAnimarValor === "function") cockpitAnimarValor(texto);
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +180,6 @@ function homeIniciarDashboard() {
   if (!document.getElementById("home-bloco-dashboard")) return; // só roda na Home
   homeIniciarRelogioAnalogico();
   homeCalRenderizar();
-  homeIniciarObservadorDashboard();
   setInterval(homeAtualizarAnelMeta, 1000);
   // Primeira carga automática do dashboard: se já existe webhook salvo, busca
   // uma vez ao abrir a Home (sem isso, o dashboard ficaria vazio até o ciclo
