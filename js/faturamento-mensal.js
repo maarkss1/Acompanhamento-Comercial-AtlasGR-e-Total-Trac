@@ -270,6 +270,12 @@ async function fmCriarCampoEAtualizar() {
     alert('Marque "Habilitar escrita no Bitrix" (card acima) antes de criar o campo.');
     return;
   }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioFm = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioFm.podeEscrever) {
+    alert(`Seu usuário ("${usuarioFm.nome}") não tem permissão de escrita no Bitrix.`);
+    return;
+  }
   const webhook = fmWebhookAtual();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
@@ -321,6 +327,12 @@ function fmMarcarTodosSugeridos() {
 async function fmSalvarAlteracoes() {
   if (!document.getElementById("fmHabilitarEscrita")?.checked) {
     alert('Marque "Habilitar escrita no Bitrix" (card acima) antes de salvar.');
+    return;
+  }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioFm = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioFm.podeEscrever) {
+    alert(`Seu usuário ("${usuarioFm.nome}") não tem permissão de escrita no Bitrix.`);
     return;
   }
   const idsAlterados = Object.keys(fmState.pendentes);
