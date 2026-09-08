@@ -122,6 +122,14 @@ const documentoFake = {
   createElement: () => mockElement,
 };
 
+// Códigos reais dos dois campos de "Motivo da Negociação Perdida" no
+// Bitrix (ver comentário de CAMPO_MOTIVO_PERDA/CAMPO_MOTIVO_PERDA_ANTIGO em
+// js/catalogo-relatorios.js) — hardcoded aqui porque o mock precisa existir
+// ANTES de `catalogo` ser carregado (não dá pra referenciar
+// catalogo.CAMPO_MOTIVO_PERDA ainda).
+const CAMPO_MOTIVO_PERDA_MOCK = "UF_CRM_1582845737741";
+const CAMPO_MOTIVO_PERDA_ANTIGO_MOCK = "UF_CRM_6908AECC40696";
+
 const catalogo = carregarScriptClassico(CAMINHO_CATALOGO, {
   contextoExtra: {
     ...config,
@@ -135,7 +143,37 @@ const catalogo = carregarScriptClassico(CAMINHO_CATALOGO, {
     buscarMetadadosFunisEEstagios: async () => mockMeta,
     buscarUsuariosJornada: async () => ({}),
     listarCompletoRelatorio: async () => ({ dados: mockDeals }),
-    buscarEntidadesPorIds: async () => mockEmpresas,
+    // Card 28 (motivos_ganho_perda) chama buscarEntidadesPorIds duas vezes
+    // com propósitos diferentes: "crm.company.list" para enriquecer nome de
+    // empresa (mockEmpresas) e "crm.deal.list" para buscar o motivo de
+    // perda por negócio (js/catalogo-relatorios.js:1204) — sem distinguir
+    // pelo `method`, o segundo uso recebia mockEmpresas por engano.
+    buscarEntidadesPorIds: async (webhook, method) => {
+      if (method === "crm.deal.list") {
+        // Deal 104 (Empresa Delta, perdido) tem o motivo "Orçamento
+        // estourado" registrado no campo novo — ID "1" na enumeração
+        // devolvida por bitrixFetchComRetentativa abaixo.
+        return { "104": { ID: "104", [CAMPO_MOTIVO_PERDA_MOCK]: "1" } };
+      }
+      return mockEmpresas;
+    },
+    // motivos_ganho_perda também chama mapaOpcoesEnumeracaoDeal, que faz
+    // bitrixFetchComRetentativa direto em crm.deal.fields.json — sem
+    // mockar isso, a chamada caía no `fetch` stub do sandbox de teste
+    // (sempre rejeita), o card nunca terminava de calcular, e o teste
+    // falhava com "fetch indisponível no ambiente de teste" (ver PR de
+    // diagnóstico). Mocka só o suficiente pro de-para ID→VALUE do motivo.
+    bitrixFetchComRetentativa: async (url) => {
+      if (String(url).includes("crm.deal.fields")) {
+        return {
+          result: {
+            [CAMPO_MOTIVO_PERDA_MOCK]: { items: [{ ID: "1", VALUE: "Orçamento estourado" }] },
+            [CAMPO_MOTIVO_PERDA_ANTIGO_MOCK]: { items: [] },
+          },
+        };
+      }
+      throw new Error(`bitrixFetchComRetentativa não mockado neste teste: ${url}`);
+    },
   },
 });
 
