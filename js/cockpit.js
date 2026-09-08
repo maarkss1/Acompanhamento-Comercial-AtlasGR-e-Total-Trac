@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // PRIMEIRO PASSO da migração incremental pra TypeScript (ver auditoria de
 // segurança/arquitetura desta sessão): este arquivo foi só RENOMEADO de
@@ -36,28 +35,29 @@ let cockpitState = {
     carregando: false,
     ultimaAtualizacao: null,
     ultimaAtualizacaoDeCache: false,
-    deals: [], // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
-    dealsFiltrados: [], // após filtro de vendedor/origem
-    leads: [], // leads já enriquecidos (_SEMANTICA, _FECHAMENTO)
-    leadsFiltrados: [], // leads após filtro de vendedor/origem
-    // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
-    // fonte usada pelo Forecast para "Fechado no mês" (ver
-    // cockpitBuscarDealsFinanceiro/cockpitGanhosFinanceiroPeriodo abaixo).
+    deals: [],
+    dealsFiltrados: [],
+    leads: [],
+    leadsFiltrados: [],
     dealsFinanceiro: [],
     dealsFinanceiroFiltrados: [],
-    meta: null, // metadados de funil/estágio (buscarMetadadosFunisEEstagios)
+    meta: null,
     periodo: { inicio: "", fim: "" },
-    // Reuniões (TYPE_ID=1) — busca sob demanda (não faz parte de "Atualizar
-    // agora"), ver cockpitCarregarReunioes. null até o primeiro clique em
-    // "↻ Carregar reuniões".
     reunioes: null,
-    // v33 — { ano, mes } (mes null = ano inteiro) quando "Simular mês/ano" está
-    // ativo; null = mês/ano real (comportamento padrão). Ver cockpitMesAtual().
     simulacao: null,
 };
 // Guarda, por card clicável, a lista de negócios que compõe aquele número —
-// é a base do drill-down (requisito 9 do Cockpit).
+// é a base do drill-down (requisito 9 do Cockpit). Todo valor é sempre uma
+// lista de Deal (o conjunto de negócios/leads por trás daquele número) —
+// nunca um outro formato, por isso Record<string, Deal[]> em vez de nomear
+// cada uma das ~40 chaves usadas hoje.
 let cockpitDrill = {};
+// Tipado `any` de propósito (não é preguiça): o código chama `.value`,
+// `.checked`, `.options`, `.disabled` etc conforme o elemento esperado em
+// cada `id`, e não há como o TypeScript inferir qual subtipo de
+// HTMLElement é sem anotar cada uma das dezenas de chamadas — isso é
+// trabalho pra quando cada trecho for tocado de novo (ver CLAUDE.md,
+// "migração incremental"), não pra fazer de uma vez só aqui.
 function cockpitEl(id) { return document.getElementById(id); }
 // O painel completo do Cockpit (todos os blocos, filtros, exportações) começa
 // recolhido -- a primeira tela deve mostrar só o ticker e os cards de
@@ -384,7 +384,7 @@ function cockpitPopularPipelineReunioes(meta) {
         return;
     const anterior = sel.value;
     sel.innerHTML = '<option value="">Todos os pipelines</option>';
-    Object.entries(meta.categorias || {}).forEach(([id, label]) => {
+    Object.entries((meta.categorias || {})).forEach(([id, label]) => {
         const opt = document.createElement("option");
         opt.value = id;
         opt.textContent = label;
@@ -753,7 +753,7 @@ function cockpitAgingAtualDias(d, refISO) {
     const mt = parteDataISO(d.MOVED_TIME);
     if (!mt)
         return null;
-    return Math.max(0, Math.floor((new Date(`${refISO}T12:00:00`) - new Date(`${mt}T12:00:00`)) / 86400000));
+    return Math.max(0, Math.floor((new Date(`${refISO}T12:00:00`).getTime() - new Date(`${mt}T12:00:00`).getTime()) / 86400000));
 }
 // Verifica os 5 critérios de elegibilidade aplicáveis (ver nota da
 // limitação acima) e devolve os motivos de reprovação — usado no
@@ -1138,7 +1138,7 @@ function cockpitCalcular() {
             g.deals.push(d);
             const mt = parteDataISO(d.MOVED_TIME);
             if (mt) {
-                g.agingSoma += Math.max(0, Math.floor((refAging - new Date(`${mt}T12:00:00`)) / 86400000));
+                g.agingSoma += Math.max(0, Math.floor((refAging.getTime() - new Date(`${mt}T12:00:00`).getTime()) / 86400000));
                 g.agingN++;
             }
         });
@@ -1170,7 +1170,7 @@ function cockpitCalcular() {
         const dataRef = parteDataISO(d.MOVED_TIME) || parteDataISO(d.DATE_CREATE);
         if (!dataRef)
             return false;
-        const dias = Math.floor((refAging - new Date(`${dataRef}T12:00:00`)) / 86400000);
+        const dias = Math.floor((refAging.getTime() - new Date(`${dataRef}T12:00:00`).getTime()) / 86400000);
         return dias >= 0 && dias <= 60;
     });
     const estagiosForecastLista = agruparPorEstagio(abertosPipelineEstagio);
@@ -1444,7 +1444,7 @@ function cockpitCalcularAlertas(c, g) {
             const act = d.LAST_ACTIVITY_TIME || d.DATE_MODIFY;
             if (!act)
                 return true;
-            const dias = Math.floor((refHoje - new Date(act.split("T")[0] + "T12:00:00")) / 86400000);
+            const dias = Math.floor((refHoje.getTime() - new Date(act.split("T")[0] + "T12:00:00").getTime()) / 86400000);
             return dias > diasInativoMax;
         });
         if (grandesInativos.length) {
@@ -1652,12 +1652,6 @@ function cockpitGerarResumoIA() {
     else {
         alert("Módulo de IA não carregado nesta página.");
     }
-}
-function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = "") {
-    const clique = chaveDrill ? ` onclick="cockpitAbrirDrill('${chaveDrill}','${escapeHtmlRelatorio(rotulo).replace(/'/g, "\\'")}')"` : "";
-    const cls = chaveDrill ? "cockpit-kpi cockpit-kpi-clicavel" : "cockpit-kpi";
-    const sub = subTexto ? `<div style="font-size:10px; margin-top:4px; color:var(--ink-2); line-height:1.2;">${subTexto}</div>` : "";
-    return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span>${sub}</div>`;
 }
 // Ids de todos os containers de KPI/lista do Cockpit que ficam vazios até o
 // primeiro carregamento — usados tanto para o estado vazio quanto para não
@@ -2348,7 +2342,7 @@ function initDragAndDrop() {
             salvarOrdemLayout();
         });
     });
-    container.addEventListener('dragover', e => {
+    container.addEventListener('dragover', (e) => {
         e.preventDefault();
         const afterElement = getDragAfterElement(container, e.clientY);
         const draggable = document.querySelector('.dragging');
