@@ -1,17 +1,20 @@
 // ---------------------------------------------------------------------------
-// v27 — Portal multi-empresa (AtlasGR + Total Trac): cada página se
-// autodeclara com `<html data-empresa="atlasgr">` ou `data-empresa="totaltrac"`
-// (sem depender de localStorage — abrir um link direto/favorito já sabe de
-// quem é a página). `MARCAS` é o único registro de identidade visual/
-// storage por empresa (senha/usuários vivem em USUARIOS_POR_EMPRESA,
-// js/auth.js — que roda antes deste arquivo em toda página, ver comentário
-// lá); todo o resto do código (bitrix-api.js, catalogo-relatorios.js,
-// cockpit.js, forecast.js, sdr.js, exportacoes.js, ui.js) lê daqui via
-// `marcaAtiva()` em vez de repetir cor/nome/logo.
-// `logoSvg`/`webhookPadrao` são getters (avaliados só quando lidos) porque
-// `MODELO_EXECUTIVO_LOGO*` (catalogo-relatorios.js) e `WEBHOOK_FIXO_PADRAO`
-// (bitrix-api.js) carregam DEPOIS deste arquivo na ordem de <script> das
-// páginas — um valor direto quebraria com ReferenceError neste ponto.
+// v35 — Portal exclusivo AtlasGR. Até a v34 este portal também servia a
+// Total Trac (segunda marca/tenant) — removida a pedido do usuário em
+// 2026-09-08. O portal completo como era antes (todas as páginas
+// totaltrac-*.html, config e usuários da Total Trac) fica preservado para
+// sempre na branch "archive/totaltrac-portal-completo" do repositório.
+// `MARCAS`/`marcaAtiva()` continuam existindo (em vez de inlinar os valores
+// direto no resto do código) porque dezenas de arquivos já leem cor/nome/
+// logo/sufixo de storage daqui — trocar isso por valores fixos espalhados
+// por cockpit.js, forecast.js, sdr.js etc. seria um risco de regressão sem
+// ganho real, já que o objeto com uma marca só já produz o comportamento
+// "portal de uma empresa só" (ver CLAUDE.md, convenção de não refatorar a
+// frio). `logoSvg`/`webhookPadrao` são getters (avaliados só quando lidos)
+// porque `MODELO_EXECUTIVO_LOGO` (catalogo-relatorios.js) e
+// `WEBHOOK_FIXO_PADRAO` (bitrix-api.js) carregam DEPOIS deste arquivo na
+// ordem de <script> das páginas — um valor direto quebraria com
+// ReferenceError neste ponto.
 // ---------------------------------------------------------------------------
 const MARCAS = {
   atlasgr: {
@@ -22,17 +25,6 @@ const MARCAS = {
     prefixoArquivo: "",
     get logoSvg() { return typeof MODELO_EXECUTIVO_LOGO !== "undefined" ? MODELO_EXECUTIVO_LOGO : ""; },
     get webhookPadrao() { return typeof WEBHOOK_FIXO_PADRAO !== "undefined" ? WEBHOOK_FIXO_PADRAO : ""; }
-  },
-  totaltrac: {
-    nome: "Total Trac",
-    tagline: "Conectar para cuidar",
-    corPrimaria: "#008FCE", corSecundaria1: "#374898", corSecundaria2: "#93DBF2",
-    sufixoStorage: "__totaltrac",
-    prefixoArquivo: "totaltrac-",
-    get logoSvg() { return typeof MODELO_EXECUTIVO_LOGO_TOTALTRAC !== "undefined" ? MODELO_EXECUTIVO_LOGO_TOTALTRAC : ""; },
-    // Sem webhook fixo padrão: conexão manual (cola e salva no navegador),
-    // igual à opção que já existe hoje pra AtlasGR.
-    get webhookPadrao() { return ""; }
   }
 };
 function empresaAtiva() {

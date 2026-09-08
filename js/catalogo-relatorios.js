@@ -3267,23 +3267,6 @@ const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="ht
         <polygon points="153.4 87.56 167.65 62.87 167.68 62.85 178.13 44.72 178.11 44.68 178.15 44.68 203.95 0 182.97 0 152.31 0 110.4 0 99.17 0 73.37 44.68 73.35 44.72 62.87 62.87 48.62 87.56 48.41 87.94 0 171.76 83.81 171.76 104.78 171.76 125.74 135.49 125.76 135.44 153.19 87.94 153.4 87.56"/>
         <polygon points="203.07 87.94 175.75 87.94 153.9 125.79 153.9 125.83 137.02 155.01 146.7 171.76 209.57 171.76 251.48 171.76 203.07 87.94"/></svg>`;
 
-// v27 — logo da Total Trac para os relatórios exportáveis (segundo tenant do
-// portal), reproduzindo o símbolo (pin de localização + ondas de wi-fi) e o
-// wordmark de duas cores do manual de identidade visual deles (TOTAL em
-// navy #374898, TRAC em azul #008FCE) — mesmo padrão String.raw do logo
-// acima, usado por gerarHTMLRelatorioVisualGenerico/cockpitGerarHTMLExport/
-// gerarHTMLForecastModelo/gerarHTMLRelatorioAnaliseSdr via marcaAtiva().logoSvg.
-const MODELO_EXECUTIVO_LOGO_TOTALTRAC = String.raw`<svg viewBox="0 0 620 120" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(2,4)">
-    <path d="M52 0C27 0 7 19 7 43c0 30 45 71 45 71s45-41 45-71C97 19 77 0 52 0z" fill="#93DBF2"/>
-    <circle cx="52" cy="43" r="15" fill="#ffffff"/>
-    <circle cx="52" cy="43" r="6.5" fill="#374898"/>
-    <path d="M52 20a24 24 0 0 1 24 20" stroke="#ffffff" stroke-width="6.5" fill="none" stroke-linecap="round"/>
-    <path d="M52 31a13 13 0 0 1 13 11" stroke="#ffffff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
-  </g>
-  <text x="122" y="76" font-family="Poppins, Arial, sans-serif" font-weight="800" font-size="54"><tspan fill="#374898">TOTAL</tspan><tspan fill="#008FCE">TRAC</tspan></text>
-</svg>`;
-
 // Constrói o CSS do modelo executivo (letterhead/kpis/etc.) trocando a cor de
 // marca (--orange/--orange-2/--orange-3) pelas cores da empresa ativa — os
 // três hexes abaixo aparecem uma única vez cada, na definição de :root do

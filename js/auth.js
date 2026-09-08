@@ -7,12 +7,13 @@
 // dados sensíveis de verdade (não há dados sensíveis persistidos aqui além
 // do que já é público no Bitrix da própria empresa).
 //
-// v27 — portal multi-empresa (AtlasGR + Total Trac), cada uma com sua própria
-// senha e seu próprio flag de desbloqueio (senão, destravar com a senha da
-// AtlasGR também destravaria as páginas da Total Trac, já que antes era um
-// único flag global). A empresa vem do `data-empresa` do próprio `<html>` da
-// página (não de `marcaAtiva()`/`config.js`, que ainda não carregou neste
-// ponto — auth.js é sempre o primeiro <script> de cada página).
+// v27 — a empresa vem do `data-empresa` do próprio `<html>` da página (não
+// de `marcaAtiva()`/`config.js`, que ainda não carregou neste ponto — auth.js
+// é sempre o primeiro <script> de cada página). v35 — o portal serviu duas
+// empresas (AtlasGR + Total Trac) até 2026-09-08; a chave por empresa em
+// CHAVE_DESBLOQUEIO/CHAVE_USUARIO ficou porque não custa nada mantê-la e
+// evita reintroduzir o bug que ela resolvia se um segundo tenant voltar um
+// dia (ver archive/totaltrac-portal-completo pro portal como era antes).
 //
 // v34 — usuários nomeados com permissão de escrita individual. Antes, a
 // mesma senha da empresa liberava tanto ler quanto ESCREVER de volta no
@@ -46,17 +47,13 @@
 // no console do navegador, `await crypto.subtle.digest("SHA-256", new
 // TextEncoder().encode("a-senha-dele"))` e converta pra hex, ou qualquer
 // gerador de SHA-256 online) e adicione `{ nome: "...", senhaHash: "...",
-// podeEscrever: true|false }` na lista da empresa certa abaixo. Senhas
-// padrão preservadas da v26/v27 (mesmas de antes, agora como o primeiro
-// usuário de cada empresa, com podeEscrever:true pra não quebrar quem já
-// sincronizava): "AtlasGR@2026" (AtlasGR) e "TotalTrac@2026" (Total Trac).
+// podeEscrever: true|false }` na lista abaixo. Senha padrão preservada da
+// v26/v27 (mesma de antes, agora como o primeiro usuário, com
+// podeEscrever:true pra não quebrar quem já sincronizava): "AtlasGR@2026".
 // ---------------------------------------------------------------------------
 const USUARIOS_POR_EMPRESA = {
   atlasgr: [
     { nome: "AtlasGR", senhaHash: "971b5af4a5fda505e27419910527bf48b52b754ca55cc34592a3ea6c4f466d7a", podeEscrever: true },
-  ],
-  totaltrac: [
-    { nome: "Total Trac", senhaHash: "d2f14884650339d997e82d0cde51942573bf7c1c0400a9714112eca7f5a0c2e6", podeEscrever: true },
   ],
 };
 
