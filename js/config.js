@@ -345,6 +345,7 @@ const RELATORIOS = {
   receita_sdr: { grupo:"SDR & Leads", label:"💰 Receita Originada pelo SDR", descricao:"Receita comprovada gerada a partir de Leads trabalhados pelo SDR.", handler:"catalogo", periodo:"mensal" },
 
   atividades_pendentes: { grupo:"Operação & Qualidade", label:"📌 Atividades pendentes e atrasadas", descricao:"Backlog de atividades abertas, atrasadas, sem prazo e por responsável.", handler:"catalogo", periodo:"todas" },
+  diario_atividades: { grupo:"Operação & Qualidade", label:"📆 Diário de Atividades — visão geral", descricao:"Atividades concluídas no dia (ou período escolhido) por responsável e canal, de qualquer papel — sem filtrar por SDR ou Closer.", handler:"catalogo", periodo:"diario" },
   qualidade_crm: { grupo:"Operação & Qualidade", label:"🧹 Qualidade do CRM & campos faltantes", descricao:"Completude de Negócios e Leads nos campos operacionais já mapeados.", handler:"catalogo", periodo:"todas" },
   crm_health_score: { grupo:"Operação & Qualidade", label:"🩺 CRM Health Score", descricao:"Indicador de integridade, atualização e completude dos dados operacionais no CRM.", handler:"catalogo", periodo:"todas" },
   negocios_sem_proxima_atividade: { grupo:"Operação & Qualidade", label:"⚠️ Negócios sem Próxima Atividade", descricao:"Listagem de oportunidades abertas no pipeline sem nenhuma atividade futura agendada.", handler:"catalogo", periodo:"todas" },

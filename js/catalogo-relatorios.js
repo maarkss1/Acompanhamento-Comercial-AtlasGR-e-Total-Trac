@@ -870,6 +870,32 @@ async function extrairRelatorioCatalogo(webhook,chave){
         [{titulo:"Resumo por responsável",dados:Object.values(m).sort((a,b)=>b.ATRASADAS-a.ATRASADAS),colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Pendentes",valor:"PENDENTES"},{label:"Atrasadas",valor:"ATRASADAS"},{label:"Hoje",valor:"HOJE"},{label:"Sem prazo",valor:"SEM_PRAZO"}]},{titulo:"Atividades abertas",dados:rows,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Canal",valor:"CANAL"},{label:"Assunto",valor:"ASSUNTO"},{label:"Deadline",valor:"DEADLINE"},{label:"Situação",valor:"SITUACAO"},{label:"Vínculos",valor:"VINCULOS"}]}]);
     }
 
+    // v36 — "Diário de Atividades" pedido pelo usuário ao lado de "Diário SDR"
+    // (especial, js/sdr.js) e de um card de Closer ainda não construído (falta
+    // decidir com o usuário a fonte de dados — ver conversa/PR). Este aqui é
+    // deliberadamente agnóstico de papel: mesma base de produtividade_atividades
+    // (agrupada por responsável), mas com período padrão "diario" em vez de
+    // "mensal" e uma tabela extra linha-a-linha (o que cada um fez, não só o
+    // total) — sem filtrar por pipeline/funil de ninguém.
+    else if(chave==="diario_atividades"){
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),m={};
+      a.dados.forEach((x)=>{
+        const id=idBitrixString(x.RESPONSIBLE_ID),nome=nomeUsuario(id)||(id?`ID ${id}`:"Sem responsável");
+        if(!m[id||"0"])m[id||"0"]={RESPONSAVEL:nome,ATIVIDADES:0,LIGACOES:0,REUNIOES:0,TAREFAS:0,EMAILS:0,WHATSAPP:0,LEADS:new Set(),NEGOCIOS:new Set()};
+        const r=m[id||"0"];r.ATIVIDADES++;
+        const c=canalAtividadeSDR(x);
+        if(c==="Ligação")r.LIGACOES++;else if(c==="Reunião")r.REUNIOES++;else if(c==="Tarefa")r.TAREFAS++;else if(c==="E-mail")r.EMAILS++;else if(c==="WhatsApp")r.WHATSAPP++;
+        bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")r.LEADS.add(b.OWNER_ID);if(b.OWNER_TYPE_ID==="2")r.NEGOCIOS.add(b.OWNER_ID)});
+      });
+      const resumo=Object.values(m).map((r)=>({RESPONSAVEL:r.RESPONSAVEL,ATIVIDADES:r.ATIVIDADES,LIGACOES:r.LIGACOES,REUNIOES:r.REUNIOES,TAREFAS:r.TAREFAS,EMAILS:r.EMAILS,WHATSAPP:r.WHATSAPP,LEADS_UNICOS:r.LEADS.size,NEGOCIOS_UNICOS:r.NEGOCIOS.size})).sort((a,b)=>b.ATIVIDADES-a.ATIVIDADES);
+      const detalhes=a.dados.map((x)=>({ATIVIDADE_ID:x.ID,RESPONSAVEL:nomeUsuario(x.RESPONSIBLE_ID)||"Sem responsável",CANAL:canalAtividadeSDR(x),ASSUNTO:x.SUBJECT||"",CONCLUIDA_EM:x.END_TIME||"",VINCULOS:bindingsDaAtividade(x).map((b)=>`${nomeTipoEntidadeCRM(b.OWNER_TYPE_ID)}:${b.OWNER_ID}`).join(" | ")})).sort((x,y)=>String(y.CONCLUIDA_EM).localeCompare(String(x.CONCLUIDA_EM)));
+      criarResultadoCatalogo(chave,"Diário de Atividades — visão geral",`Atividades concluídas entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong> — qualquer papel (SDR, Closer ou outro).`,
+        [kpi("Atividades",a.dados.length),kpi("Responsáveis",resumo.length),kpi("Ligações",resumo.reduce((s,r)=>s+r.LIGACOES,0)),kpi("Reuniões",resumo.reduce((s,r)=>s+r.REUNIOES,0)),kpi("WhatsApp",resumo.reduce((s,r)=>s+r.WHATSAPP,0)),kpi("E-mails",resumo.reduce((s,r)=>s+r.EMAILS,0)),kpi("Leads tocados",new Set(a.dados.flatMap((x)=>bindingsDaAtividade(x).filter((b)=>b.OWNER_TYPE_ID==="1").map((b)=>b.OWNER_ID))).size),kpi("Negócios tocados",new Set(a.dados.flatMap((x)=>bindingsDaAtividade(x).filter((b)=>b.OWNER_TYPE_ID==="2").map((b)=>b.OWNER_ID))).size)],
+        [{titulo:"Resumo por responsável",dados:resumo,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Atividades",valor:"ATIVIDADES"},{label:"Ligações",valor:"LIGACOES"},{label:"Reuniões",valor:"REUNIOES"},{label:"WhatsApp",valor:"WHATSAPP"},{label:"E-mails",valor:"EMAILS"},{label:"Leads",valor:"LEADS_UNICOS"},{label:"Negócios",valor:"NEGOCIOS_UNICOS"}]},
+         {titulo:"Atividades concluídas no período",dados:detalhes,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Canal",valor:"CANAL"},{label:"Assunto",valor:"ASSUNTO"},{label:"Concluída em",valor:"CONCLUIDA_EM"},{label:"Vínculos",valor:"VINCULOS"}]}],
+        "Não filtra por papel (SDR/Closer/outro) — mostra qualquer responsável com atividade concluída vinculada no período. Ajuste o período no seletor acima (padrão: hoje).");
+    }
+
     else if(chave==="pipeline_novo_gerado"){
       const b=await baseDealsCatalogo(webhook,true);
       const hj=p.referencia ? new Date(`${p.referencia}T12:00:00`) : new Date();
