@@ -503,10 +503,58 @@ async function extrairRelatorioCatalogo(webhook,chave){
       const closed=won.length+lost.length;
       const hist=await buscarHistoricoEntidade(webhook,2,co.map((d)=>d.ID)),vis={};hist.forEach((h)=>{const d=co.find((x)=>String(x.ID)===String(h.OWNER_ID));if(!d)return;const cat=String(h.CATEGORY_ID??d.CATEGORY_ID),sid=String(h.STAGE_ID||""),lab=b.meta.estagios?.[cat]?.[sid]?.label||sid;(vis[lab]||=new Set()).add(String(h.OWNER_ID));});
       const wids=new Set(won.map((d)=>String(d.ID))),rows=Object.entries(vis).map(([stage,set])=>({ESTAGIO:stage,VISITARAM:set.size,GANHOS:[...set].filter((id)=>wids.has(id)).length})).map((x)=>({...x,CONVERSAO_PCT:taxaPct(x.GANHOS,x.VISITARAM)})).sort((a,b)=>b.VISITARAM-a.VISITARAM);
+
+      // v37 (Fase 1 do redesign pedido pelo usuário) — Win Rate por vendedor.
+      // Não pode rankear só por %: alguém com 2 ganhos em 2 decisões (100%)
+      // não é "melhor" que alguém com 45 ganhos em 80 (56%) — por isso a
+      // tabela sempre mostra decididos+receita ao lado do Win Rate, e a
+      // ordenação é por decididos (quem mais fechou negócio), não por %.
+      const porVendedor={};
+      classificados.forEach((d)=>{
+        const nome=d._RESPONSAVEL||"Sem responsável";
+        (porVendedor[nome]||=({RESPONSAVEL:nome,GANHOS:0,PERDAS:0,ABERTOS:0,RECEITA:0}));
+        const r=porVendedor[nome];
+        if(d._STATUS_REAL==="ganho"){r.GANHOS++;r.RECEITA+=d._VALOR}
+        else if(d._STATUS_REAL==="perda")r.PERDAS++;
+        else r.ABERTOS++;
+      });
+      const rowsVendedor=Object.values(porVendedor).map((r)=>{
+        const decididos=r.GANHOS+r.PERDAS;
+        return{...r,DECIDIDOS:decididos,WIN_RATE_PCT:taxaPct(r.GANHOS,decididos),TICKET:r.GANHOS?r.RECEITA/r.GANHOS:0};
+      }).sort((a,b)=>b.DECIDIDOS-a.DECIDIDOS);
+
+      // Motivos de perda — mesmos dois campos de "Motivo da Negociação
+      // Perdida" já usados por motivos_ganho_perda (ver CAMPO_MOTIVO_PERDA
+      // no topo do arquivo), aplicados só aos negócios que este relatório já
+      // classificou como perda (inclui perda por cancelamento no Financeiro,
+      // não só _SEMANTICA==="failure").
+      let rowsMotivo=[];
+      if(lost.length){
+        const idsPerdidos=lost.map((d)=>d.ID);
+        const [mapaMotivoConv,mapaMotivoAntigoConv,camposMotivoConv]=await Promise.all([
+          mapaOpcoesEnumeracaoDeal(webhook,CAMPO_MOTIVO_PERDA),
+          mapaOpcoesEnumeracaoDeal(webhook,CAMPO_MOTIVO_PERDA_ANTIGO),
+          buscarEntidadesPorIds(webhook,"crm.deal.list",idsPerdidos,["ID",CAMPO_MOTIVO_PERDA,CAMPO_MOTIVO_PERDA_ANTIGO]),
+        ]);
+        const porMotivo={};
+        lost.forEach((d)=>{
+          const registro=camposMotivoConv[String(d.ID)];
+          const motivo=resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA],mapaMotivoConv)
+            ||resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA_ANTIGO],mapaMotivoAntigoConv)
+            ||"Não especificado";
+          (porMotivo[motivo]||=({MOTIVO:motivo,DEALS:0,VALOR:0}));
+          porMotivo[motivo].DEALS++;
+          porMotivo[motivo].VALOR+=d._VALOR;
+        });
+        rowsMotivo=Object.values(porMotivo).sort((a,b)=>b.DEALS-a.DEALS);
+      }
+
       criarResultadoCatalogo(chave,"Conversão Comercial • funil e Win Rate",`Coorte criada entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
         [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",aberto.length),kpi("Piloto (em teste)",piloto.length),kpi("Win Rate (fechados)",`${taxaPct(won.length,closed)}%`),kpi("Loss Rate (fechados)",`${taxaPct(lost.length,closed)}%`),kpi("Conversão da coorte p/ ganho",`${taxaPct(won.length,co.length)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
-        [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]}],
-        `Ganho = contrato assinado no Financeiro (não apenas "Negócios Ganhos" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa. Oportunidades = Ganhos + Perdas + Em aberto + Piloto (em teste) — confira: ${co.length} = ${won.length} + ${lost.length} + ${aberto.length} + ${piloto.length}. Piloto fica fora de "Em aberto" de propósito (mesma regra usada no resto do catálogo: é etapa de teste, não pipeline aberto de verdade), mas segue contado no total da coorte. Win Rate (fechados) considera só quem já foi decidido; Conversão da coorte p/ ganho olha para o total, incluindo quem ainda está em aberto.`);
+        [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]},
+         {titulo:"Win Rate por vendedor",dados:rowsVendedor,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Decididos",valor:"DECIDIDOS"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE_PCT}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Em aberto",valor:"ABERTOS"}]},
+         {titulo:"Motivos de perda",dados:rowsMotivo,colunas:[{label:"Motivo",valor:"MOTIVO"},{label:"Negócios",valor:"DEALS"},{label:"Valor perdido",valor:(x)=>moedaRelatorio(x.VALOR),html:true}]}],
+        `Ganho = contrato assinado no Financeiro (não apenas "Negócios Ganhos" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa. Oportunidades = Ganhos + Perdas + Em aberto + Piloto (em teste) — confira: ${co.length} = ${won.length} + ${lost.length} + ${aberto.length} + ${piloto.length}. Piloto fica fora de "Em aberto" de propósito (mesma regra usada no resto do catálogo: é etapa de teste, não pipeline aberto de verdade), mas segue contado no total da coorte. Win Rate (fechados) considera só quem já foi decidido; Conversão da coorte p/ ganho olha para o total, incluindo quem ainda está em aberto. Win Rate por vendedor ordenado por volume decidido (não por %), pra não deixar quem decidiu pouco parecer "melhor" que quem decidiu muito. Motivos de perda usa os mesmos dois campos de motivo do relatório "Motivos de Ganho e Perda".`);
     }
 
     else if(chave==="aging_sla"){
@@ -3225,11 +3273,16 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .filtro-vendedor-row select{font:inherit;font-weight:700;padding:6px 10px;border-radius:8px;border:1.5px solid var(--orange);background:#fff;color:var(--text-primary)}
 .filtro-vendedor-aviso{font-size:11.5px;font-weight:700;color:var(--atlas-primary)}
 
-/* ---------- v20: fontes maiores, mais negrito e contorno laranja nos cards ---------- */
+/* ---------- v20: fontes maiores, mais negrito nos cards ---------- */
+/* v37 — tirado o contorno laranja de 2px que v20 tinha colocado em TODO kpi/
+   company card/vendor card (virava "tudo grita, nada é prioridade" — pedido
+   do usuário). Laranja Atlas fica reservado pro card de destaque de meta
+   (.meta-card-destaque, o "KPI principal" da página) e pros acentos que já
+   existiam antes (trend-line, ccard-abrir, filtro select) — kpi/ccard/vcard
+   voltam pro contorno neutro --line que já usavam antes do v20. */
 body{font-size:15px}
 h2.section{font-size:17px;font-weight:900}
 .hero h1{font-size:36px}
-.kpi{border:2px solid var(--orange)}
 .kpi .label{font-size:11.5px;font-weight:800}
 .kpi .value{font-size:26px;font-weight:800}
 .kpi .small{font-size:12px;font-weight:700}
@@ -3239,11 +3292,9 @@ h2.section{font-size:17px;font-weight:900}
 .meta-card-linha{font-size:14px;font-weight:600}
 .meta-card-linha strong{font-weight:800}
 .meta-card-pct{font-size:12.5px;font-weight:800}
-.ccard{border:2px solid var(--orange)}
 .ccard-name{font-size:16px;font-weight:800}
 .ccard-value{font-size:17px;font-weight:800}
 .ccard-meta{font-size:13px;font-weight:700}
-.vcard{border:2px solid var(--orange)}
 .vcard-name{font-size:15px;font-weight:800}
 .vcard-stats{font-size:12.5px;font-weight:800}
 
@@ -3266,8 +3317,12 @@ h2.section{font-size:18px}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
 .top3grid{gap:18px}
 .cgrid{gap:16px}
+/* v37 — pisca-pisca contínuo (infinite) chamava atenção pra TODO valor da
+   página o tempo todo, o que na prática não prioriza nada (pedido do
+   usuário). Roda 1x só, ao carregar a página, em vez de ficar piscando pra
+   sempre. */
 @keyframes valorPisca{0%,100%{opacity:1;filter:drop-shadow(0 0 0 rgba(255,86,24,0))}50%{opacity:.72;filter:drop-shadow(0 0 6px rgba(255,86,24,.55))}}
-.valor-pisca{animation:valorPisca 1.7s ease-in-out infinite}
+.valor-pisca{animation:valorPisca 1.1s ease-in-out 1}
 @media(prefers-reduced-motion:reduce){.valor-pisca{animation:none!important}}
 
 .meta-card-topo{display:flex;align-items:center;justify-content:space-between;gap:12px}
