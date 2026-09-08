@@ -5,9 +5,14 @@
   "description": "Script de automacao que gera o Forecast semanal Comercial a partir do Bitrix e envia por e-mail.",
   "scripts": {
     "forecast-semanal": "node scripts/forecast-semanal.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "build": "tsc",
+    "verify-build": "npm run build && git diff --exit-code -- js/*.js"
   },
   "dependencies": {
     "nodemailer": "9.0.5"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3"
   }
 }
