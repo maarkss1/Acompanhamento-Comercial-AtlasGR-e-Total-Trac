@@ -61,12 +61,11 @@
 
   /* Cards de relatório dentro de cada pipeline: precisam ficar bem
      separados uns dos outros (gap maior, largura mínima maior pra não
-     espremer o texto) e com a mesma interatividade/laranja dos cards de
-     pipeline — pedido explícito de que TODOS os cards seguem o padrão. */
-  .home-grupo-body .quick-report-grid { grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:18px; margin-top:12px; }
-  .home-grupo-body .quick-report-card { transition:transform .18s, box-shadow .18s, border-color .18s; }
-  .home-grupo-body .quick-report-card:hover { border-color:var(--brand)!important; transform:translateY(-3px) scale(1.02); }
-  .home-grupo-body .quick-report-card strong { color:var(--brand); font-size:14.5px; }
+     espremer o texto) — cor/tamanho do título e arredondamento já são
+     globais em .quick-report-card (css/styles.css), não precisa repetir
+     aqui. */
+  .home-grupo-body .quick-report-grid { grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:18px; margin-top:12px; }
+  .home-grupo-body .quick-report-card:hover { transform:translateY(-3px) scale(1.02); }
   .home-grupo-body .quick-report-card .report-icon { transition:transform .2s; }
   .home-grupo-body .quick-report-card:hover .report-icon { transform:scale(1.15); }
 
