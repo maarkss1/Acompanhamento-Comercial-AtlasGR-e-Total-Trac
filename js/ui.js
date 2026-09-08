@@ -129,6 +129,27 @@ function esconderNotasRelatorios() {
     .forEach((id) => document.getElementById(id)?.classList.add("oculto"));
 }
 
+// v37 — troca de "Tipo de dado" feita diretamente pelo usuário (não pelo
+// aoTrocarRelatorio() ao selecionar um card) cancelava o relatório
+// selecionado em silêncio, voltando pra extração manual sem aviso nenhum
+// ("mudei de Negócios pra Leads e ele foi pra manual" — mesma classe do bug
+// de card que não gera relatório). Só pede confirmação quando isso realmente
+// vai jogar fora um relatório ativo; se não há relatório selecionado, troca
+// direto (nada a perder). Cancelando, devolve o <select> pro valor de antes
+// (dataset.prev, guardado no onfocus do próprio <select> em extracao.html/
+// forecast.html/sdr.html, sempre antes do onchange disparar).
+function aoTrocarEntidadeManual(selectEl) {
+  const relSel = document.getElementById("relatorio");
+  if (relSel && relSel.value) {
+    const ok = confirm('Trocar o "Tipo de dado" agora cancela o relatório selecionado e volta para extração manual. Quer continuar?');
+    if (!ok) {
+      selectEl.value = selectEl.dataset.prev || selectEl.value;
+      return;
+    }
+  }
+  aoTrocarEntidade(true);
+}
+
 function aoTrocarEntidade(limparRelatorio = false) {
   if (limparRelatorio) document.getElementById("relatorio").value = "";
 

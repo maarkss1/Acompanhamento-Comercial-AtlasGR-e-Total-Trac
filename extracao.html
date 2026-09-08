@@ -118,7 +118,7 @@
     <div class="row">
       <div>
         <div class="label-line"><label for="entidade">Tipo de dado</label><button type="button" class="info-btn" onclick="abrirAjuda('tipoDado')">?</button></div>
-        <select id="entidade" onchange="aoTrocarEntidade(true)"></select>
+        <select id="entidade" onfocus="this.dataset.prev=this.value" onchange="aoTrocarEntidadeManual(this)"></select>
       </div>
       <div>
         <div class="label-line"><label for="relatorio">Relatórios</label><button type="button" class="info-btn" onclick="abrirAjuda('relatorios')">?</button></div>
