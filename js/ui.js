@@ -356,7 +356,27 @@ function atualizarRelogioTopo(){
   const hora=agora.toLocaleTimeString("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit",second:"2-digit"});
   const d=document.getElementById("dataAtualTopo"),h=document.getElementById("horaAtualTopo");
   if(d)d.textContent=data.charAt(0).toUpperCase()+data.slice(1);
-  if(h)h.textContent=`${hora} · São Paulo / Brasília (UTC−03)`;
+  // hora vem só de toLocaleTimeString (sem entrada externa) — innerHTML aqui é seguro.
+  if(h)h.innerHTML=`<span class="live-clock-digits">${hora}</span> · São Paulo / Brasília (UTC−03)`;
+}
+
+async function copiarHorarioTopo(ev){
+  const alvo=ev.currentTarget;
+  const data=document.getElementById("dataAtualTopo")?.textContent||"";
+  const hora=document.getElementById("horaAtualTopo")?.textContent||"";
+  const texto=`${data} · ${hora}`.trim();
+  try{
+    await navigator.clipboard.writeText(texto);
+  }catch(e){
+    const campo=document.createElement("textarea");
+    campo.value=texto;campo.style.position="fixed";campo.style.opacity="0";
+    document.body.appendChild(campo);campo.select();
+    try{document.execCommand("copy");}catch(e2){}
+    document.body.removeChild(campo);
+  }
+  alvo.classList.add("copiado");
+  clearTimeout(alvo._copiadoTimeout);
+  alvo._copiadoTimeout=setTimeout(()=>alvo.classList.remove("copiado"),1800);
 }
 
 function marcarConexaoPendente(){

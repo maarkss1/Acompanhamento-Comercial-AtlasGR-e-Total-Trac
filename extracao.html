@@ -52,7 +52,8 @@
       <div class="letterhead-divider"></div>
       <div class="letterhead-tagline">Central de Inteligência Comercial · Extração e Relatórios Bitrix24</div>
     </div>
-    <div class="live-datetime">
+    <div class="live-datetime live-clock" tabindex="0" role="button" aria-label="Clique para copiar a data e hora atuais" onclick="copiarHorarioTopo(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copiarHorarioTopo(event);}">
+      <span class="live-clock-dot" aria-hidden="true"></span>
       <strong id="dataAtualTopo">Carregando data...</strong>
       <span id="horaAtualTopo">--:--:-- · horário local</span>
     </div>
@@ -62,7 +63,6 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Extração &amp; Diagnóstico</div>
       <h1>Extraia, entenda e atualize o CRM em um só lugar.</h1>
       <p>O motor genérico da ferramenta: escolha qualquer entidade ou relatório do catálogo, filtre por período/campos, execute a consulta ao Bitrix, exporte e sincronize de volta. Página dedicada — os outros painéis do portal (Cockpit, Comercial, SDR) ficam a um clique na navegação abaixo.</p>
     </div>
@@ -372,7 +372,7 @@
 
 
 
-  <div class="card sync-card" id="card-sincronizacao">
+  <div class="card sync-card card-collapsed" id="card-sincronizacao">
     <h2><span class="num">↻</span> Sincronizar alterações de volta com o Bitrix <button type="button" class="info-btn" onclick="abrirAjuda('sincronizacao')">?</button></h2>
     <div class="sync-banner"><div class="sync-icon">↻</div><div><strong>Leitura e escrita ficam separadas.</strong><p>Carregue um registro pelo ID, monte uma prévia e só então habilite a escrita. O extrator não altera o CRM automaticamente depois de uma extração.</p></div></div>
     <div class="sync-grid">
@@ -601,7 +601,7 @@
     <div id="entidades-lista" class="campos-grid" style="grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;"></div>
   </div>
 
-  <div class="card v10-card" id="central-inteligencia-v10">
+  <div class="card v10-card card-collapsed" id="central-inteligencia-v10">
     <h2><span class="num">✨</span> Central de Inteligência <span class="v10-badge-novo">Novo · v10</span> <button type="button" class="info-btn" onclick="abrirAjuda('centralV10')">?</button></h2>
     <p class="rodape-nota" style="margin-top:-8px;margin-bottom:14px;">Funciona em cima do que você já extraiu acima — Jornada, Forecast, Análise SDR, Diário SDR, Catálogo ou uma extração manual. Cada aba calcula na hora, sem nova chamada ao Bitrix.</p>
 
@@ -697,7 +697,7 @@
     </div>
   </div>
 
-  <div class="card" id="analise-ia">
+  <div class="card card-collapsed" id="analise-ia">
     <h2><span class="num">7</span> Analisar com IA</h2>
     <div class="aviso">
       Este extrator não manda seus dados para nenhuma IA por conta própria — mesma lógica de segurança do webhook do passo 1. Em vez disso, ele monta, aqui na sua tela, um prompt pronto (sua pergunta + os dados extraídos) para você colar na conversa com o Claude, ChatGPT ou outra IA que você já usa.
@@ -781,6 +781,7 @@
 <script src="js/sdr.js"></script>
 <script src="js/jornada.js"></script>
 <script src="js/catalogo-relatorios.js"></script>
+<script src="js/relatorio-visual-generico.js"></script>
 <script src="js/exportacoes.js"></script>
 <script src="js/cockpit.js"></script>
 <script src="js/financeiro.js"></script>

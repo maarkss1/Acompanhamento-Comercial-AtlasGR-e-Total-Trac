@@ -163,7 +163,8 @@
       <div class="letterhead-divider"></div>
       <div class="letterhead-tagline">Central de Inteligência Comercial · Extração e Relatórios Bitrix24</div>
     </div>
-    <div class="live-datetime">
+    <div class="live-datetime live-clock" tabindex="0" role="button" aria-label="Clique para copiar a data e hora atuais" onclick="copiarHorarioTopo(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copiarHorarioTopo(event);}">
+      <span class="live-clock-dot" aria-hidden="true"></span>
       <strong id="dataAtualTopo">Carregando data...</strong>
       <span id="horaAtualTopo">--:--:-- · horário local</span>
     </div>
@@ -173,7 +174,6 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Portal Comercial</div>
       <h1>Extraia, entenda e atualize o CRM em um só lugar.</h1>
       <p>Portal com páginas dedicadas: Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico. Comece escolhendo o que você quer descobrir abaixo, ou use a navegação no topo.</p>
     </div>
@@ -310,6 +310,7 @@
 <script src="js/sdr.js"></script>
 <script src="js/jornada.js"></script>
 <script src="js/catalogo-relatorios.js"></script>
+<script src="js/relatorio-visual-generico.js"></script>
 <script src="js/exportacoes.js"></script>
 <script src="js/cockpit.js"></script>
 <script src="js/financeiro.js"></script>
