@@ -730,7 +730,20 @@ function renderizarPreviewSync(){
   if(!syncAlteracoes.length){el.innerHTML='<div class="rodape-nota" style="padding:12px;">Nenhuma alteração preparada.</div>';return}
   el.innerHTML=`<table><thead><tr><th>Campo</th><th>Atual</th><th>Novo</th><th></th></tr></thead><tbody>${syncAlteracoes.map((x)=>`<tr><td><strong>${escapeHtmlRelatorio(x.label)}</strong><br><small>${escapeHtmlRelatorio(x.codigo)}</small></td><td>${escapeHtmlRelatorio(x.atual)}</td><td>${escapeHtmlRelatorio(x.novo)}</td><td><button type="button" class="secundario" onclick="removerAlteracaoSync('${x.campo}')">Remover</button></td></tr>`).join("")}</tbody></table>`;
 }
-function atualizarBotaoSync(){const ok=document.getElementById("syncHabilitarEscrita")?.checked&&document.getElementById("syncConfirmacao")?.value.trim().toUpperCase()==="SINCRONIZAR"&&syncAlteracoes.length>0&&syncRegistroAtual;document.getElementById("btnExecutarSync").disabled=!ok;}
+// v34 — trava por usuário (ver js/auth.js): mesmo com o checkbox marcado e
+// "SINCRONIZAR" digitado, o botão só habilita se o usuário logado tiver
+// podeEscrever:true. Quem não tem permissão recebe uma mensagem explicando
+// o motivo em vez de um botão simplesmente desabilitado sem explicação.
+function atualizarBotaoSync(){
+  const checkboxMarcado=document.getElementById("syncHabilitarEscrita")?.checked&&document.getElementById("syncConfirmacao")?.value.trim().toUpperCase()==="SINCRONIZAR"&&syncAlteracoes.length>0&&syncRegistroAtual;
+  const usuario=typeof usuarioAtual==="function"?usuarioAtual():{nome:"Usuário não identificado",podeEscrever:false};
+  const ok=checkboxMarcado&&usuario.podeEscrever;
+  document.getElementById("btnExecutarSync").disabled=!ok;
+  const logEl=document.getElementById("syncLog");
+  if(logEl&&checkboxMarcado&&!usuario.podeEscrever){
+    logEl.textContent=`Seu usuário ("${usuario.nome}") não tem permissão de escrita no Bitrix. Faça login com um usuário autorizado (ver USUARIOS_POR_EMPRESA em js/auth.js) para sincronizar.`;
+  }
+}
 
 // v20 — auditoria de sincronização: toda escrita no Bitrix (sucesso ou falha)
 // fica registrada neste navegador (localStorage), já que a ferramenta é
@@ -754,11 +767,16 @@ function renderizarAuditoriaSync(){
   const el=document.getElementById("syncAuditoriaLista");if(!el)return;
   const lista=carregarAuditoriaSync();
   if(!lista.length){el.innerHTML='<div class="rodape-nota" style="padding:12px;">Nenhuma sincronização registrada neste navegador ainda.</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Quando</th><th>Registro</th><th>Campos alterados</th><th>Resultado</th></tr></thead><tbody>${lista.map((x)=>`<tr><td>${escapeHtmlRelatorio(x.quando)}</td><td>${escapeHtmlRelatorio(x.registro)}</td><td>${escapeHtmlRelatorio(x.campos)}</td><td><span class="badge-relatorio ${x.ok?"ok":"alerta"}">${x.ok?"OK":"Falhou"}</span></td></tr>`).join("")}</tbody></table>`;
+  el.innerHTML=`<table><thead><tr><th>Quando</th><th>Usuário</th><th>Registro</th><th>Campos alterados</th><th>Resultado</th></tr></thead><tbody>${lista.map((x)=>`<tr><td>${escapeHtmlRelatorio(x.quando)}</td><td>${escapeHtmlRelatorio(x.usuario||"—")}</td><td>${escapeHtmlRelatorio(x.registro)}</td><td>${escapeHtmlRelatorio(x.campos)}</td><td><span class="badge-relatorio ${x.ok?"ok":"alerta"}">${x.ok?"OK":"Falhou"}</span></td></tr>`).join("")}</tbody></table>`;
 }
 
 async function executarSyncBitrix(){
   atualizarBotaoSync();if(document.getElementById("btnExecutarSync").disabled)return;
+  // v34 — segunda checagem (defesa em profundidade): atualizarBotaoSync já
+  // trava o botão, mas não confia só na UI — repete a checagem aqui, igual
+  // já se fazia com validarWebhook logo abaixo.
+  const usuario=typeof usuarioAtual==="function"?usuarioAtual():{nome:"Usuário não identificado",podeEscrever:false};
+  if(!usuario.podeEscrever){mostrarErro(`Seu usuário ("${usuario.nome}") não tem permissão de escrita no Bitrix.`);return}
   const webhook=document.getElementById("webhook").value.trim(),err=validarWebhook(webhook);if(err){mostrarErro(err);return}
   const tipo=document.getElementById("syncEntidade").value,id=Number(document.getElementById("syncId").value),cfg=CAMPOS_SYNC[tipo],fields={};syncAlteracoes.forEach((x)=>fields[x.campo]=x.novo);
   const camposResumo=syncAlteracoes.map((x)=>`${x.codigo}: ${x.atual??""} → ${x.novo??""}`).join("; ");
@@ -766,11 +784,11 @@ async function executarSyncBitrix(){
     document.getElementById("btnExecutarSync").disabled=true;document.getElementById("syncLog").textContent="Enviando alterações ao Bitrix via crm.item.update...";
     const body=await bitrixPostJsonComRetentativa(webhook,"crm.item.update",{entityTypeId:cfg.entityTypeId,id,fields});
     document.getElementById("syncLog").textContent=`Sincronização concluída em ${new Date().toLocaleString("pt-BR")}\nMétodo: crm.item.update\nentityTypeId: ${cfg.entityTypeId}\nID: ${id}\nCampos: ${Object.keys(fields).join(", ")}\nResultado: ${JSON.stringify(body.result)}`;
-    registrarAuditoriaSync({quando:new Date().toLocaleString("pt-BR"),registro:`${cfg.label} #${id}`,campos:camposResumo,ok:true});
+    registrarAuditoriaSync({quando:new Date().toLocaleString("pt-BR"),usuario:usuario.nome,registro:`${cfg.label} #${id}`,campos:camposResumo,ok:true});
     document.getElementById("syncHabilitarEscrita").checked=false;document.getElementById("syncConfirmacao").value="";await carregarRegistroSync();atualizarStatus(`${cfg.label} #${id} atualizado no Bitrix.`);
   }catch(e){
     document.getElementById("syncLog").textContent=`Falha na sincronização: ${e.message}`;
-    registrarAuditoriaSync({quando:new Date().toLocaleString("pt-BR"),registro:`${cfg.label} #${id}`,campos:camposResumo,ok:false});
+    registrarAuditoriaSync({quando:new Date().toLocaleString("pt-BR"),usuario:usuario.nome,registro:`${cfg.label} #${id}`,campos:camposResumo,ok:false});
     mostrarErro("O Bitrix não confirmou a atualização.\n\n"+e.message);
   }finally{atualizarBotaoSync();}
 }

@@ -193,6 +193,12 @@ async function tlCriarCampoEAtualizar() {
     alert('Marque "Habilitar escrita no Bitrix" (card acima) antes de criar o campo.');
     return;
   }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioTl = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioTl.podeEscrever) {
+    alert(`Seu usuário ("${usuarioTl.nome}") não tem permissão de escrita no Bitrix.`);
+    return;
+  }
   const webhook = tlWebhookAtual();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
@@ -275,6 +281,12 @@ function tlAlternarFiltroSemTemp() {
 async function tlSalvarAlteracoes() {
   if (!document.getElementById("tlHabilitarEscrita")?.checked) {
     alert('Marque "Habilitar escrita no Bitrix" (card acima) antes de salvar.');
+    return;
+  }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioTl = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioTl.podeEscrever) {
+    alert(`Seu usuário ("${usuarioTl.nome}") não tem permissão de escrita no Bitrix.`);
     return;
   }
   const idsAlterados = Object.keys(tlState.pendentes);

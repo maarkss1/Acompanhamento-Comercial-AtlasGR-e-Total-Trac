@@ -611,6 +611,12 @@ async function pfaCriarTarefa(idInterno) {
     if (statusEl) statusEl.textContent = 'Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de criar tarefas.';
     return;
   }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioPfaCriar = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioPfaCriar.podeEscrever) {
+    if (statusEl) statusEl.textContent = `Seu usuário ("${usuarioPfaCriar.nome}") não tem permissão de escrita no Bitrix.`;
+    return;
+  }
   if (!it.vendedorId) {
     if (statusEl) statusEl.textContent = "Este negócio não tem um responsável válido no Bitrix — não é possível atribuir a tarefa.";
     return;
@@ -687,6 +693,12 @@ async function pfaEnviarComentarioTarefa(idInterno) {
     if (statusEl) statusEl.textContent = 'Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de comentar.';
     return;
   }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioPfaComentar = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioPfaComentar.podeEscrever) {
+    if (statusEl) statusEl.textContent = `Seu usuário ("${usuarioPfaComentar.nome}") não tem permissão de escrita no Bitrix.`;
+    return;
+  }
   const webhook = document.getElementById("webhook")?.value?.trim() || "";
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
@@ -715,6 +727,12 @@ async function pfaFinalizarTarefa(idInterno) {
   }
   if (!document.getElementById("pfaHabilitarEscrita")?.checked) {
     alert('Marque "Habilitar criação de tarefas no Bitrix" no topo da página antes de finalizar tarefas.');
+    return;
+  }
+  // v34 — trava por usuário (ver USUARIOS_POR_EMPRESA/usuarioAtual em js/auth.js).
+  const usuarioPfaFinalizar = typeof usuarioAtual === "function" ? usuarioAtual() : { nome: "Usuário não identificado", podeEscrever: false };
+  if (!usuarioPfaFinalizar.podeEscrever) {
+    alert(`Seu usuário ("${usuarioPfaFinalizar.nome}") não tem permissão de escrita no Bitrix.`);
     return;
   }
   const webhook = document.getElementById("webhook")?.value?.trim() || "";
