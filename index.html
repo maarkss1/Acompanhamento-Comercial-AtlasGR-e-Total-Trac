@@ -45,16 +45,12 @@
 
   .capa-topo {
     position: relative; z-index: 2;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center;
     max-width: 1180px; width: 100%; margin: 0 auto;
     padding: 26px 24px 0;
   }
   .capa-topo-logo { height: 34px; }
   .capa-topo-logo svg { height: 100%; width: auto; display: block; fill: var(--brand); }
-  .capa-topo-tag {
-    font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--ink-2);
-  }
 
   .capa-hero {
     position: relative; z-index: 2; flex: 1;
@@ -63,11 +59,12 @@
   }
   .capa-eyebrow {
     display: inline-flex; align-items: center; gap: 8px;
-    font-size: 11.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    font-family: var(--font-sans); font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
     color: var(--brand); background: var(--soft); border: 1px solid color-mix(in srgb, var(--brand) 28%, transparent);
-    padding: 7px 16px; border-radius: 999px; margin-bottom: 22px;
+    padding: 7px 18px; border-radius: 999px; margin-bottom: 22px;
   }
   .capa-hero h1 {
+    font-family: var(--font-sans);
     font-size: clamp(30px, 5.4vw, 52px); line-height: 1.06; letter-spacing: -0.03em;
     margin: 0 0 18px; font-weight: 900;
   }
@@ -77,11 +74,13 @@
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .capa-hero p.capa-tagline {
-    font-size: clamp(14.5px, 1.6vw, 17px); color: var(--ink-2); max-width: 620px; margin: 0 0 34px; line-height: 1.55;
+    font-family: var(--font-sans); font-weight: 500;
+    font-size: clamp(14.5px, 1.6vw, 17px); color: var(--ink-2); max-width: 620px; margin: 0 0 34px; line-height: 1.6;
   }
 
   .capa-cta {
     display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--font-sans);
     background: linear-gradient(135deg, var(--brand), var(--brand-2));
     color: #fff; font-size: 15px; font-weight: 800; letter-spacing: -.01em;
     padding: 15px 30px; border-radius: 999px; text-decoration: none;
@@ -92,7 +91,10 @@
   .capa-cta-seta { transition: transform .18s ease; }
   .capa-cta:hover .capa-cta-seta { transform: translateX(3px); }
 
-  .capa-nota-acesso { margin-top: 16px; font-size: 12px; color: var(--ink-2); }
+  .capa-nota-acesso {
+    font-family: var(--font-sans); font-weight: 600;
+    margin-top: 16px; font-size: 12.5px; color: var(--ink-2);
+  }
 
   .capa-modulos {
     position: relative; z-index: 2;
@@ -109,12 +111,56 @@
     font-size: 20px; line-height: 1; border-radius: 50%;
     background: var(--soft);
   }
-  .capa-modulo h3 { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
-  .capa-modulo p { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .capa-modulo h3 { font-family: var(--font-sans); margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+  .capa-modulo p { font-family: var(--font-sans); font-weight: 500; margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
 
   .capa-rodape {
     position: relative; z-index: 2;
-    text-align: center; padding: 20px 24px 30px; font-size: 11.5px; color: var(--ink-2);
+    text-align: center; padding: 20px 24px 30px;
+    font-family: var(--font-sans); font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+    color: var(--ink-2);
+  }
+
+  /* Prévia decorativa do Cockpit — ilustrativa (sem dados reais, capa não
+     é autenticada), só pra dar um gancho visual "interativo" sem expor
+     nada do Bitrix24 numa página sem login. */
+  .capa-preview {
+    position: relative; z-index: 2;
+    width: 100%; max-width: 460px; margin: 4px auto 40px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+    padding: 18px 20px 20px; box-shadow: var(--shadow-card);
+  }
+  .capa-preview-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-sans); font-size: 11.5px; font-weight: 700; color: var(--ink-2);
+    margin-bottom: 16px;
+  }
+  .capa-preview-tag {
+    font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--brand); background: var(--soft); padding: 3px 9px; border-radius: 999px;
+  }
+  .capa-preview-chart { display: flex; align-items: flex-end; gap: 8px; height: 84px; }
+  .capa-bar {
+    flex: 1; height: var(--h); border-radius: 6px 6px 2px 2px;
+    background: linear-gradient(180deg, var(--brand-2), var(--brand));
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .capa-preview-chart:hover .capa-bar { opacity: .5; }
+  .capa-preview-chart .capa-bar:hover { opacity: 1; transform: scaleY(1.04); }
+
+  /* Entrada suave dos blocos principais — puramente decorativo, some se
+     o usuário preferir menos movimento. */
+  .capa-anima {
+    opacity: 0; transform: translateY(16px);
+    animation: capaFadeUp .6s cubic-bezier(.22,1,.36,1) forwards;
+    animation-delay: var(--atraso, 0ms);
+  }
+  @keyframes capaFadeUp { to { opacity: 1; transform: translateY(0); } }
+  @keyframes capaBarGrow { from { height: 0; } to { height: var(--h); } }
+  .capa-bar { animation: capaBarGrow .8s cubic-bezier(.22,1,.36,1) forwards; animation-delay: var(--atraso, 0ms); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .capa-anima, .capa-bar { animation: none; opacity: 1; transform: none; height: var(--h); }
   }
 
   @media (max-width: 560px) {
@@ -138,37 +184,51 @@
         <polygon points="153.4 87.56 167.65 62.87 167.68 62.85 178.13 44.72 178.11 44.68 178.15 44.68 203.95 0 182.97 0 152.31 0 110.4 0 99.17 0 73.37 44.68 73.35 44.72 62.87 62.87 48.62 87.56 48.41 87.94 0 171.76 83.81 171.76 104.78 171.76 125.74 135.49 125.76 135.44 153.19 87.94 153.4 87.56"/>
         <polygon points="203.07 87.94 175.75 87.94 153.9 125.79 153.9 125.83 137.02 155.01 146.7 171.76 209.57 171.76 251.48 171.76 203.07 87.94"/></svg>
     </div>
-    <div class="capa-topo-tag">Bitrix24 · v10.0</div>
   </div>
 
   <main class="capa-hero">
-    <span class="capa-eyebrow">Central de Inteligência Comercial</span>
-    <h1>Extraia, entenda e <em>decida</em><br>sobre o seu funil comercial.</h1>
-    <p class="capa-tagline">Gerenciamento de Risco em Processos Logísticos — Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico do seu CRM Bitrix24, tudo em um só portal.</p>
+    <span class="capa-eyebrow capa-anima" style="--atraso:0ms">Central de Inteligência Comercial</span>
+    <h1 class="capa-anima" style="--atraso:60ms">Extraia, entenda e <em>decida</em><br>sobre o seu funil comercial.</h1>
+    <p class="capa-tagline capa-anima" style="--atraso:120ms">Gerenciamento de Risco em Processos Logísticos — Cockpit Executivo, Relatórios Comerciais, SDR &amp; Operação e Extração &amp; Diagnóstico do seu CRM Bitrix24, tudo em um só portal.</p>
 
-    <a class="capa-cta" href="home.html">
+    <a class="capa-cta capa-anima" style="--atraso:180ms" href="home.html">
       Entrar no portal <span class="capa-cta-seta">→</span>
     </a>
-    <p class="capa-nota-acesso">Acesso restrito — você vai precisar da sua senha na próxima tela.</p>
+    <p class="capa-nota-acesso capa-anima" style="--atraso:220ms">Acesso restrito — você vai precisar da sua senha na próxima tela.</p>
+
+    <div class="capa-preview capa-anima" style="--atraso:280ms" aria-hidden="true">
+      <div class="capa-preview-head">
+        <span>Prévia — Cockpit Executivo</span>
+        <span class="capa-preview-tag">dados ilustrativos</span>
+      </div>
+      <div class="capa-preview-chart">
+        <div class="capa-bar" style="--h:38%; --atraso:340ms"></div>
+        <div class="capa-bar" style="--h:58%; --atraso:380ms"></div>
+        <div class="capa-bar" style="--h:46%; --atraso:420ms"></div>
+        <div class="capa-bar" style="--h:74%; --atraso:460ms"></div>
+        <div class="capa-bar" style="--h:62%; --atraso:500ms"></div>
+        <div class="capa-bar" style="--h:88%; --atraso:540ms"></div>
+      </div>
+    </div>
   </main>
 
   <div class="capa-modulos">
-    <div class="capa-modulo">
+    <div class="capa-modulo capa-anima" style="--atraso:120ms">
       <div class="capa-modulo-icone">🚀</div>
       <h3>Cockpit Executivo</h3>
       <p>Forecast, pipeline, win rate e proteção de receita, atualizados a partir do Bitrix24.</p>
     </div>
-    <div class="capa-modulo">
+    <div class="capa-modulo capa-anima" style="--atraso:180ms">
       <div class="capa-modulo-icone">📊</div>
       <h3>Relatórios Comerciais</h3>
       <p>Catálogo de relatórios prontos sobre conversão, aging, produtos e clientes.</p>
     </div>
-    <div class="capa-modulo">
+    <div class="capa-modulo capa-anima" style="--atraso:240ms">
       <div class="capa-modulo-icone">🎯</div>
       <h3>SDR &amp; Operação</h3>
       <p>Funil de leads, produtividade de atividades e qualidade do CRM.</p>
     </div>
-    <div class="capa-modulo">
+    <div class="capa-modulo capa-anima" style="--atraso:300ms">
       <div class="capa-modulo-icone">🛠️</div>
       <h3>Extração &amp; Diagnóstico</h3>
       <p>Consulta genérica ao Bitrix24, exportações e sincronização controlada.</p>
