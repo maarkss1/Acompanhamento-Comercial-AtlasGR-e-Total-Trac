@@ -1,44 +1,50 @@
-# AGENTS.md
+# AGENTS.md — Governança Multiagente do Acompanhamento Comercial
 
-Guia rápido para quem (humano ou Codex) for mexer neste repositório.
+## Projeto
+Acompanhamento-Comercial-AtlasGR-e-Total-Trac
 
-## O que é
+Portal de BI Comercial sobre Bitrix24 para AtlasGR e Total Trac. O projeto combina HTML/CSS/JS clássico, migração incremental para TypeScript, extrações Bitrix, camada bronze, métricas comerciais, conciliação comercial-financeira, forecast e automação de envio por e-mail.
 
-Portal de Business Intelligence Comercial sobre o CRM Bitrix24, para duas marcas (AtlasGR e Total Trac). HTML/CSS/JS clássico (sem framework, sem bundler), hospedado no GitHub Pages. Ver `AUDITORIA_ESTADO_ATUAL.md` e `COCKPIT_COMERCIAL.md` para contexto de negócio e fórmulas.
+## Roster oficial
+- 00 — Coordenador e Governança
+- 01 — Bitrix, Extração e Camada Bronze
+- 02 — Métricas Comerciais, BI e Data Trust
+- 03 — Forecast, Pipeline e Revenue Intelligence
+- 04 — Financeiro, Faturamento e Conciliação
+- 05 — Produto, UX, Relatórios e Multi-marca
+- 06 — Segurança, Autenticação e Governança de Escrita
+- 07 — Automações, E-mail, Exportações e Jobs
+- 08 — QA, TypeScript, Build e Release
 
-## Comandos
+Prompts: `.agents/prompts/`.
 
-```bash
-npm test           # suíte de testes (node --test), rodar sempre antes de commitar
-npm run build      # compila ts/*.ts -> js/*.js (ver seção TypeScript abaixo)
-npm run verify-build  # build + falha se o js/*.js commitado divergir do .ts (roda no CI)
-```
+## Regras globais
+1. A fonte da verdade operacional é o Bitrix24; não fabricar métricas nem preencher lacunas com estimativas silenciosas.
+2. Toda métrica precisa declarar população, período, timezone, denominador e regra de status quando isso afetar o resultado.
+3. Escrita no Bitrix deve ser fail-closed e respeitar `usuarioAtual().podeEscrever`; nunca transformar proteção de UI em falsa alegação de segurança do webhook.
+4. Arquivos `ts/*.ts` geram `js/*.js` correspondentes. Não editar JS gerado diretamente.
+5. Migração TypeScript é incremental e deve preservar comportamento antes de tipar/refatorar.
+6. Nunca versionar webhook, token, senha, e-mail real de cliente, dados pessoais ou exportação nominal.
+7. Alterações em fórmulas comerciais exigem testes matemáticos e casos de borda.
+8. Alterações em integração Bitrix exigem paginação, rate-limit, retry seguro e proteção contra duplicidade.
+9. Antes de concluir: `npm test`, `npm run build` e `npm run verify-build` quando aplicáveis.
+10. Agentes não editam prompts de outros agentes durante uma missão. Cruzamentos são resolvidos por handoff.
 
-CI (`quality.yml`) roda `npm audit`, `verify-build` e `npm test` em todo push/PR.
+## Propriedade
+- 01: `js/bitrix-api.js`, extratores, `scripts/bitrix-*`, `scripts/bronze-*`, normalização e ingestão.
+- 02: Data Trust, entity resolution, catálogo de indicadores e fórmulas de BI.
+- 03: cockpit, pipeline, forecast, Win Rate, ciclo, aging, metas e previsibilidade.
+- 04: faturamento, financeiro, vendido x faturado/realizado, conciliações e regras financeiras.
+- 05: navegação, HTML/CSS, catálogo de relatórios, acessibilidade, AtlasGR/Total Trac e experiência executiva.
+- 06: `js/auth.js`, permissões, armazenamento de credenciais/config sensível, controles de escrita e hardening client-side.
+- 07: `scripts/forecast-semanal.mjs`, Nodemailer, exportações, agendamentos e artefatos de saída.
+- 08: `tests/**`, CI, tsconfig, build gerado, regressão, smoke e critérios de release.
 
-## Convenções estabelecidas nesta sessão (manter)
+## Arquivos compartilhados
+`package.json`, lockfile, `js/config.js`, `ts/config.ts` e arquivos HTML centrais têm dono único por missão. Quem precisar alterar fora do próprio domínio deve registrar handoff.
 
-### 1. Migração incremental para TypeScript
+## Handoffs
+Formato: `.agents/handoffs/<de>-para-<para>-<slug>.md` com problema, evidência, arquivos, alteração necessária, teste esperado e prioridade.
 
-- Arquivos já migrados vivem em `ts/*.ts` e **geram** o `js/*.js` correspondente via `npm run build` — **nunca edite o `.js` gerado diretamente**, a próxima build sobrescreve.
-- Arquivos ainda não migrados continuam em `js/*.js` como scripts clássicos normais — edite-os direto, sem toolchain nenhuma.
-- Migração é **arquivo por arquivo**, só quando for mexer nele por outro motivo (bug, feature) — não converter tudo de uma vez. Ao migrar um arquivo novo:
-  1. Copie `js/X.js` → `ts/X.ts`, adicione `// @ts-nocheck` no topo, remova o `.js` original, rode `npm run build`, confirme `npm test` e o carregamento da página em navegador antes de committar (zero mudança de comportamento nesse passo).
-  2. Só depois, em um commit separado, remova o `@ts-nocheck` e adicione tipos de verdade (comece pelas estruturas de dados centrais do arquivo — é aí que TypeScript pega bugs de verdade, como o de conciliação Comercial↔Financeiro corrigido em `js/cockpit.js`/`ts/cockpit.ts`).
-
-### 2. Arquivos grandes — dividir "de passagem", não "a frio"
-
-Vários arquivos são grandes (`catalogo-relatorios.js` ~3500 linhas, `cockpit.js`/`cockpit.ts` ~2400 linhas). **Não faça uma refatoração de divisão isolada só por estarem grandes** — o risco de quebrar algo sem um motivo funcional que justifique validar tudo de novo não compensa. Em vez disso:
-
-- Quando for mexer numa área de um arquivo grande por outro motivo (bug, feature), e essa área tiver um limite natural de responsabilidade, é o momento de extrair aquele pedaço para seu próprio arquivo/módulo.
-- Cada extração deve vir com validação own (testes + carregamento em navegador) antes de seguir para a mudança que motivou tocar o arquivo.
-
-### 3. Segurança — usuários e permissão de escrita
-
-- `USUARIOS_POR_EMPRESA` (`js/auth.js`) substitui a antiga senha única por empresa. Cada usuário tem senha própria e um flag `podeEscrever`. `usuarioAtual()` (global) expõe `{nome, podeEscrever}`.
-- Toda tela que escreve no Bitrix (`ui.js`, `temperatura-lead.js`, `faturamento-mensal.js`, `pipeline-financeiro-acompanhamento.js`) deve checar `usuarioAtual().podeEscrever` antes de qualquer chamada de escrita — **fail-closed**: sessão sem usuário identificado nunca pode escrever.
-- Isso é controle de UX/auditoria, **não** substitui configurar o escopo correto (leitura vs. escrita) no próprio webhook de entrada do Bitrix — quem tiver a URL do webhook e souber contornar o JS no navegador ainda está sujeito só ao que aquele webhook permitir no Bitrix. Configure os dois.
-
-## Testes
-
-`tests/*.test.mjs` usa `node:vm` para carregar os scripts clássicos (`tests/helpers/carregar-script-classico.mjs`) — não são módulos ES, então não dá pra `import` direto. Ver comentário no helper para como compor o contexto quando um arquivo depende de globals definidos em outro `<script>`.
+## Critério de release
+Nenhum agente declara release por conta própria. O 08 emite PASS/BLOCKED com evidência, e o 00 consolida o veredito.
