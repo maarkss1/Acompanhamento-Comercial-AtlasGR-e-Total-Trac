@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // PRIMEIRO PASSO da migração incremental pra TypeScript (ver auditoria de
 // segurança/arquitetura desta sessão): este arquivo foi só RENOMEADO de
@@ -33,35 +32,110 @@
 // - Fonte de meta: campos editáveis, pré-preenchidos com
 //   METAS_FORECAST_MENSAL_PADRAO (js/config.js) só como ponto de partida.
 
-let cockpitState = {
-  carregando: false,
-  ultimaAtualizacao: null,
-  ultimaAtualizacaoDeCache: false,
-  deals: [],           // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
-  dealsFiltrados: [],  // após filtro de vendedor/origem
-  leads: [],           // leads já enriquecidos (_SEMANTICA, _FECHAMENTO)
-  leadsFiltrados: [],  // leads após filtro de vendedor/origem
+// Negócio/lead do Bitrix já enriquecido por enriquecerDealCatalogo
+// (js/catalogo-relatorios.js, ainda não migrado). Campos `_MAIUSCULO` são
+// calculados na enriquecição (semântica, valor numérico já convertido,
+// estágio já resolvido pro texto etc.); os demais são campos crus do
+// Bitrix. Lista de campos levantada a partir do que ts/cockpit.ts
+// realmente lê hoje — não é o contrato completo de enriquecerDealCatalogo
+// (esse só fica tipado de verdade quando catalogo-relatorios.js for
+// migrado), então campos além destes seguem acessíveis via index signature.
+interface Deal {
+  ID: string;
+  ASSIGNED_BY_ID?: string;
+  SOURCE_ID?: string;
+  COMPANY_ID?: string;
+  CONTACT_ID?: string;
+  LEAD_ID?: string;
+  STAGE_ID?: string;
+  CATEGORY_ID?: string;
+  CLOSEDATE?: string;
+  DATE_CREATE?: string;
+  DATE_MODIFY?: string;
+  DATE_CLOSED?: string;
+  MOVED_TIME?: string;
+  LAST_ACTIVITY_TIME?: string;
+  OPPORTUNITY?: string | number;
+  PROBABILITY?: string | number;
+  NAME?: string;
+  LAST_NAME?: string;
+  _SEMANTICA?: "process" | "success" | "failure" | string;
+  _ESTAGIO?: string;
+  _VALOR: number;
+  _FECHAMENTO?: string;
+  _CICLO?: number;
+  _RESULTADO?: "ganho" | "perda" | "pendente";
+  _RESPONSAVEL?: string;
+  _RESPONSAVEL_ID?: string;
+  _PIPELINE_ID?: string;
+  _DIA_FECHAMENTO?: string;
+  _DIAS_PARADO?: number;
+  [campoAdicional: string]: any;
+}
+
+interface CockpitPeriodo {
+  inicio: string;
+  fim: string;
+}
+
+interface CockpitState {
+  carregando: boolean;
+  ultimaAtualizacao: Date | null;
+  ultimaAtualizacaoDeCache: boolean;
+  deals: Deal[]; // negócios Comercial (CATEGORY_ID=0) já enriquecidos (_SEMANTICA, _ESTAGIO, ...)
+  dealsFiltrados: Deal[]; // após filtro de vendedor/origem
+  leads: Deal[]; // leads já enriquecidos (_SEMANTICA, _FECHAMENTO)
+  leadsFiltrados: Deal[]; // leads após filtro de vendedor/origem
   // v26 — negócios do funil Financeiro (etapa "Contrato Assinado"), mesma
   // fonte usada pelo Forecast para "Fechado no mês" (ver
   // cockpitBuscarDealsFinanceiro/cockpitGanhosFinanceiroPeriodo abaixo).
-  dealsFinanceiro: [],
-  dealsFinanceiroFiltrados: [],
-  meta: null,           // metadados de funil/estágio (buscarMetadadosFunisEEstagios)
-  periodo: { inicio: "", fim: "" },
+  dealsFinanceiro: Deal[];
+  dealsFinanceiroFiltrados: Deal[];
+  meta: any; // metadados de funil/estágio (buscarMetadadosFunisEEstagios)
+  periodo: CockpitPeriodo;
   // Reuniões (TYPE_ID=1) — busca sob demanda (não faz parte de "Atualizar
   // agora"), ver cockpitCarregarReunioes. null até o primeiro clique em
   // "↻ Carregar reuniões".
-  reunioes: null,
+  reunioes: any;
   // v33 — { ano, mes } (mes null = ano inteiro) quando "Simular mês/ano" está
   // ativo; null = mês/ano real (comportamento padrão). Ver cockpitMesAtual().
+  simulacao: { ano: number; mes: number | null } | null;
+  // Preenchido só após o primeiro cálculo (cockpitCalcular) — resultado
+  // completo em cache, reaproveitado pelo ticker/exportações/IA sem
+  // recalcular. Ver cockpitCalcular() mais abaixo.
+  ultimoCalculo?: { c: any; g: any; s: any; q: any; alertasInfo: any };
+}
+
+let cockpitState: CockpitState = {
+  carregando: false,
+  ultimaAtualizacao: null,
+  ultimaAtualizacaoDeCache: false,
+  deals: [],
+  dealsFiltrados: [],
+  leads: [],
+  leadsFiltrados: [],
+  dealsFinanceiro: [],
+  dealsFinanceiroFiltrados: [],
+  meta: null,
+  periodo: { inicio: "", fim: "" },
+  reunioes: null,
   simulacao: null,
 };
 
 // Guarda, por card clicável, a lista de negócios que compõe aquele número —
-// é a base do drill-down (requisito 9 do Cockpit).
-let cockpitDrill = {};
+// é a base do drill-down (requisito 9 do Cockpit). Todo valor é sempre uma
+// lista de Deal (o conjunto de negócios/leads por trás daquele número) —
+// nunca um outro formato, por isso Record<string, Deal[]> em vez de nomear
+// cada uma das ~40 chaves usadas hoje.
+let cockpitDrill: Record<string, Deal[]> = {};
 
-function cockpitEl(id) { return document.getElementById(id); }
+// Tipado `any` de propósito (não é preguiça): o código chama `.value`,
+// `.checked`, `.options`, `.disabled` etc conforme o elemento esperado em
+// cada `id`, e não há como o TypeScript inferir qual subtipo de
+// HTMLElement é sem anotar cada uma das dezenas de chamadas — isso é
+// trabalho pra quando cada trecho for tocado de novo (ver CLAUDE.md,
+// "migração incremental"), não pra fazer de uma vez só aqui.
+function cockpitEl(id: string): any { return document.getElementById(id); }
 
 // O painel completo do Cockpit (todos os blocos, filtros, exportações) começa
 // recolhido -- a primeira tela deve mostrar só o ticker e os cards de
@@ -152,7 +226,7 @@ function cockpitAtualizarTicker() {
   // Duplica a lista para o loop do CSS (translateX -50%) ficar contínuo, sem "salto".
   const html = itens.map((t) => `<span class="cockpit-ticker-item">${escapeHtmlRelatorio(t)}</span>`).join("");
   track.innerHTML = html + html;
-  const label = document.querySelector("#cockpitTicker .cockpit-ticker-label");
+  const label = document.querySelector<HTMLElement>("#cockpitTicker .cockpit-ticker-label");
   if (label) label.title = cockpitState.ultimaAtualizacao ? `Atualizado às ${cockpitState.ultimaAtualizacao.toLocaleTimeString("pt-BR")}` : "Ainda sem dados nesta sessão";
 }
 
@@ -169,7 +243,7 @@ function cockpitIniciarAutoAtualizacao() {
     if (cockpitState.carregando) return;
     const salvo = typeof obterWebhookSalvo === "function" ? obterWebhookSalvo() : "";
     if (!salvo) return;
-    const campo = document.getElementById("webhook");
+    const campo = document.getElementById("webhook") as HTMLInputElement | null;
     if (campo && !campo.value.trim()) campo.value = salvo;
     atualizarCockpit();
   }, COCKPIT_AUTO_ATUALIZACAO_MS);
@@ -275,7 +349,7 @@ function cockpitLimparSimulacao() {
 }
 
 async function carregarVendedoresCockpit() {
-  const webhook = document.getElementById("webhook").value.trim();
+  const webhook = (document.getElementById("webhook") as HTMLInputElement).value.trim();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
   try {
@@ -298,7 +372,7 @@ async function carregarVendedoresCockpit() {
 }
 
 async function carregarOrigensCockpit() {
-  const webhook = document.getElementById("webhook").value.trim();
+  const webhook = (document.getElementById("webhook") as HTMLInputElement).value.trim();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
   try {
@@ -307,7 +381,7 @@ async function carregarOrigensCockpit() {
     if (!sel) return;
     const anterior = sel.value;
     sel.innerHTML = '<option value="">Todas as origens</option>';
-    Object.entries(origens).forEach(([id, nome]) => {
+    Object.entries(origens as Record<string, any>).forEach(([id, nome]) => {
       const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = nome;
@@ -329,7 +403,7 @@ async function carregarOrigensCockpit() {
 // Cockpit — porque reuniões podem estar vinculadas a negócio de qualquer funil.
 // ---------------------------------------------------------------------------
 async function cockpitCarregarReunioes() {
-  const webhook = document.getElementById("webhook").value.trim();
+  const webhook = (document.getElementById("webhook") as HTMLInputElement).value.trim();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
   const status = cockpitEl("cockpitReunioesStatus");
@@ -351,7 +425,7 @@ function cockpitPopularPipelineReunioes(meta) {
   if (!sel) return;
   const anterior = sel.value;
   sel.innerHTML = '<option value="">Todos os pipelines</option>';
-  Object.entries(meta.categorias || {}).forEach(([id, label]) => {
+  Object.entries((meta.categorias || {}) as Record<string, any>).forEach(([id, label]) => {
     const opt = document.createElement("option");
     opt.value = id;
     opt.textContent = label;
@@ -436,7 +510,7 @@ async function aplicarFiltroProdutoCockpit() {
     renderizarCockpit();
     return;
   }
-  const webhook = document.getElementById("webhook").value.trim();
+  const webhook = (document.getElementById("webhook") as HTMLInputElement).value.trim();
   if (!cockpitState.deals.length) { mostrarErro("Clique em \"Atualizar agora\" antes de filtrar por produto."); return; }
   if (status) status.textContent = "Buscando produtos dos negócios carregados (pode levar alguns segundos)...";
   const base = cockpitFiltrarPorVendedorOrigem(cockpitState.deals);
@@ -522,7 +596,7 @@ function cockpitFinanceiroConciliadoComFiltro(dealsFinanceiro, dealsComerciaisFi
 // Carregamento principal
 // ---------------------------------------------------------------------------
 async function atualizarCockpit() {
-  const webhook = document.getElementById("webhook").value.trim();
+  const webhook = (document.getElementById("webhook") as HTMLInputElement).value.trim();
   const erro = validarWebhook(webhook);
   if (erro) { mostrarErro(erro); return; }
   if (cockpitState.carregando) return;
@@ -605,7 +679,7 @@ async function cockpitBuscarDealsFinanceiro(webhook, base) {
     "ASSIGNED_BY_ID", "COMPANY_ID", "CONTACT_ID", "LEAD_ID", "SOURCE_ID", "DATE_CREATE", "MOVED_TIME", "CLOSEDATE",
   ];
   const busca = await listarCompletoRelatorio(webhook, "crm.deal.list", campos, filtro, { ID: "ASC" }, "Cockpit: buscando negócios do funil Financeiro...");
-  const idsFaltando = [...new Set(busca.dados.map((d) => d.COMPANY_ID).filter(idBitrixValido).map(idBitrixString))].filter((id) => !base.empresas[id]);
+  const idsFaltando = [...new Set<string>(busca.dados.map((d) => d.COMPANY_ID).filter(idBitrixValido).map(idBitrixString))].filter((id) => !base.empresas[id]);
   if (idsFaltando.length) {
     const empresasFin = await buscarEntidadesPorIds(webhook, "crm.company.list", idsFaltando, ["ID", "TITLE", "PHONE", "EMAIL", "DATE_CREATE", "ASSIGNED_BY_ID"]);
     Object.assign(base.empresas, empresasFin);
@@ -706,7 +780,7 @@ const COCKPIT_AGING_CRITICO_ELEGIBILIDADE_DIAS = 45;
 function cockpitAgingAtualDias(d, refISO) {
   const mt = parteDataISO(d.MOVED_TIME);
   if (!mt) return null;
-  return Math.max(0, Math.floor((new Date(`${refISO}T12:00:00`) - new Date(`${mt}T12:00:00`)) / 86400000));
+  return Math.max(0, Math.floor((new Date(`${refISO}T12:00:00`).getTime() - new Date(`${mt}T12:00:00`).getTime()) / 86400000));
 }
 
 // Verifica os 5 critérios de elegibilidade aplicáveis (ver nota da
@@ -868,7 +942,7 @@ function cockpitCalcular() {
   const leads = cockpitState.leadsFiltrados || [];
   const dealsFinanceiro = cockpitState.dealsFinanceiroFiltrados || [];
   const mes = cockpitMesAtual();
-  const drill = {};
+  const drill: Record<string, Deal[]> = {};
 
   // v28 — calculados cedo porque alimentam o Forecast (bloco B, derating por
   // confiança) e o bloco F (Win Rate/Ticket médio/Ciclo, já confirmados no
@@ -1081,14 +1155,14 @@ function cockpitCalcular() {
   // -------------------- G) Pipeline por Estágio -----------------------------
   const refAging = new Date(`${mes.referencia}T12:00:00`);
   function agruparPorEstagio(lista) {
-    const porEstagio = {};
+    const porEstagio: Record<string, any> = {};
     lista.forEach((d) => {
       const k = d._ESTAGIO || "Sem estágio";
       if (!porEstagio[k]) porEstagio[k] = { estagio: k, qtd: 0, valor: 0, agingSoma: 0, agingN: 0, deals: [] };
       const g = porEstagio[k];
       g.qtd++; g.valor += d._VALOR; g.deals.push(d);
       const mt = parteDataISO(d.MOVED_TIME);
-      if (mt) { g.agingSoma += Math.max(0, Math.floor((refAging - new Date(`${mt}T12:00:00`)) / 86400000)); g.agingN++; }
+      if (mt) { g.agingSoma += Math.max(0, Math.floor((refAging.getTime() - new Date(`${mt}T12:00:00`).getTime()) / 86400000)); g.agingN++; }
     });
     const total = Object.values(porEstagio).reduce((a, g) => a + g.valor, 0);
     return Object.values(porEstagio).map((g) => ({
@@ -1116,7 +1190,7 @@ function cockpitCalcular() {
     if (ehEstagioPiloto(d.STAGE_ID, d._ESTAGIO)) return false;
     const dataRef = parteDataISO(d.MOVED_TIME) || parteDataISO(d.DATE_CREATE);
     if (!dataRef) return false;
-    const dias = Math.floor((refAging - new Date(`${dataRef}T12:00:00`)) / 86400000);
+    const dias = Math.floor((refAging.getTime() - new Date(`${dataRef}T12:00:00`).getTime()) / 86400000);
     return dias >= 0 && dias <= 60;
   });
   const estagiosForecastLista = agruparPorEstagio(abertosPipelineEstagio);
@@ -1195,7 +1269,7 @@ function cockpitCalcular() {
 function cockpitCalcularGeracaoPipeline(c) {
   const deals = cockpitState.dealsFiltrados || [];
   const mes = c.mes;
-  const drill = {};
+  const drill: Record<string, Deal[]> = {};
 
   // Pipeline criado no período = negócios abertos ou fechados cujo
   // DATE_CREATE cai no período filtrado (mesmo recorte de "Pipeline criado
@@ -1405,7 +1479,7 @@ function cockpitCalcularAlertas(c, g) {
       if (d._SEMANTICA !== "process" || d._VALOR < limiarGrande) return false;
       const act = d.LAST_ACTIVITY_TIME || d.DATE_MODIFY;
       if (!act) return true;
-      const dias = Math.floor((refHoje - new Date(act.split("T")[0] + "T12:00:00")) / 86400000);
+      const dias = Math.floor((refHoje.getTime() - new Date(act.split("T")[0] + "T12:00:00").getTime()) / 86400000);
       return dias > diasInativoMax;
     });
     if (grandesInativos.length) {
@@ -1621,13 +1695,6 @@ function cockpitGerarResumoIA() {
   } else {
     alert("Módulo de IA não carregado nesta página.");
   }
-}
-
-function cockpitKpiCard(rotulo, valor, chaveDrill, extraClasse = "", subTexto = "") {
-  const clique = chaveDrill ? ` onclick="cockpitAbrirDrill('${chaveDrill}','${escapeHtmlRelatorio(rotulo).replace(/'/g, "\\'")}')"` : "";
-  const cls = chaveDrill ? "cockpit-kpi cockpit-kpi-clicavel" : "cockpit-kpi";
-  const sub = subTexto ? `<div style="font-size:10px; margin-top:4px; color:var(--ink-2); line-height:1.2;">${subTexto}</div>` : "";
-  return `<div class="${cls} ${extraClasse}"${clique}><span class="valor">${valor}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span>${sub}</div>`;
 }
 
 // Ids de todos os containers de KPI/lista do Cockpit que ficam vazios até o
@@ -1969,9 +2036,9 @@ function cockpitAbrirDrill(chave, titulo) {
   modal.classList.add("aberto");
 }
 
-window.filtrarTabelaDrillDown = function(input) {
+window.filtrarTabelaDrillDown = function(input: HTMLInputElement) {
   const filtro = input.value.toLowerCase();
-  const linhas = document.querySelectorAll("#cockpitDrillConteudo table tbody tr");
+  const linhas = document.querySelectorAll<HTMLElement>("#cockpitDrillConteudo table tbody tr");
   linhas.forEach(linha => {
     const texto = linha.textContent.toLowerCase();
     linha.style.display = texto.includes(filtro) ? "" : "none";
@@ -2133,7 +2200,7 @@ function cockpitExportarJSON() {
 // agrupados por bloco — usado tanto no export "resumo" quanto no "completo".
 function cockpitHtmlKpiBlocos(cache, blocosIncluir) {
   const linhas = cockpitListaKpisExport(cache);
-  const porBloco = {};
+  const porBloco: Record<string, any[]> = {};
   linhas.forEach((l) => {
     if (blocosIncluir && !blocosIncluir.includes(l.bloco)) return;
     (porBloco[l.bloco] ||= []).push(l);
@@ -2274,14 +2341,14 @@ function cockpitRenderizarMetasDesdobradas(c) {
   const ganhosMes = c.resultadoMes.deals || [];
 
   // Agrupar por vendedor
-  const vendasVendedor = {};
+  const vendasVendedor: Record<string, number> = {};
   ganhosMes.forEach(d => {
     const v = d._RESPONSAVEL || "Desconhecido";
     vendasVendedor[v] = (vendasVendedor[v] || 0) + d._VALOR;
   });
-  const vendedores = [...new Set((c.deals || []).map(d => d._RESPONSAVEL || "Desconhecido"))];
-  
-  let salvo = {};
+  const vendedores = [...new Set<string>((c.deals || []).map(d => d._RESPONSAVEL || "Desconhecido"))];
+
+  let salvo: Record<string, number> = {};
   // v29 — chave por empresa: sem isso, meta desdobrada de uma marca
   // vazava/sobrescrevia a da outra no mesmo navegador.
   try { salvo = JSON.parse(localStorage.getItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""))) || {}; } catch(e){}
@@ -2302,9 +2369,9 @@ function cockpitRenderizarMetasDesdobradas(c) {
 }
 
 window.cockpitSalvarMetasIndividuais = function() {
-  const inputs = document.querySelectorAll(".meta-vendedor");
-  const metas = {};
-  inputs.forEach(i => { metas[i.dataset.vendedor] = parseFloat(i.value) || 0; });
+  const inputs = document.querySelectorAll<HTMLInputElement>(".meta-vendedor");
+  const metas: Record<string, number> = {};
+  inputs.forEach(i => { metas[i.dataset.vendedor as string] = parseFloat(i.value) || 0; });
   try { localStorage.setItem("atlas-metas-desdobradas" + (typeof marcaAtiva === "function" ? marcaAtiva().sufixoStorage : ""), JSON.stringify(metas)); } catch(e){}
   atualizarStatus("Metas individuais salvas localmente!");
   setTimeout(() => renderizarCockpit(), 500);
@@ -2326,7 +2393,7 @@ function initDragAndDrop() {
     });
   });
 
-  container.addEventListener('dragover', e => {
+  container.addEventListener('dragover', (e: DragEvent) => {
     e.preventDefault();
     const afterElement = getDragAfterElement(container, e.clientY);
     const draggable = document.querySelector('.dragging');
