@@ -558,13 +558,19 @@
   .workspace-title p { margin:4px 0 0; color:var(--ink-2); font-size:12px; }
   .quick-report-grupo { margin-bottom:18px; }
   .quick-report-grupo h3 { margin:0 0 10px; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--brand); }
-  .quick-report-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-  .quick-report-card { text-align:left; background:var(--surface)!important; color:var(--ink)!important; border:1px solid var(--line)!important; box-shadow:var(--shadow-soft-forecast)!important; border-radius:13px!important; padding:15px!important; min-height:98px; position:relative; overflow:hidden; }
-  .quick-report-card::before { content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--brand),var(--gold)); }
-  .quick-report-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-forecast)!important; }
-  .quick-report-card strong { display:block;font-size:12.5px;margin-bottom:5px; }
-  .quick-report-card span { display:block;color:var(--ink-2);font-size:10.5px;line-height:1.45;font-weight:500; }
-  .quick-report-card .report-icon { font-size:20px;margin-bottom:8px; }
+  .quick-report-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  /* v40 — cards maiores, mais arredondados, sem sublinhado (alguns desses
+     cards são <a href>, não <button> — sem text-decoration:none aqui eles
+     saíam com o azul/sublinhado padrão de link do navegador, inconsistente
+     com o resto) e sem a barrinha lateral laranja decorativa (tirada a
+     pedido: "quando tudo grita, nada é prioridade"). Título sempre laranja,
+     não só dentro de .home-grupo-body — pra não ter card com título cinza
+     numa tela e laranja em outra. */
+  .quick-report-card { text-align:left; text-decoration:none!important; background:var(--surface)!important; color:var(--ink)!important; border:1px solid var(--line)!important; box-shadow:var(--shadow-soft-forecast)!important; border-radius:22px!important; padding:22px!important; min-height:128px; position:relative; transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .quick-report-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-forecast)!important; border-color:var(--brand)!important; }
+  .quick-report-card strong { display:block; color:var(--brand); font-size:14.5px; font-weight:800; margin-bottom:6px; }
+  .quick-report-card span { display:block;color:var(--ink-2);font-size:12px;line-height:1.5;font-weight:500; }
+  .quick-report-card .report-icon { font-size:24px;margin-bottom:10px; display:block; }
 
   .config-summary { margin:14px 0 0; display:flex; gap:7px; flex-wrap:wrap; }
   .config-chip { background:var(--cream); border:1px solid var(--line); color:var(--text-secondary); border-radius:999px; padding:5px 9px; font-size:10px; font-weight:700; }
