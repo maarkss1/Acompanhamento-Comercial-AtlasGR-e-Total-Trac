@@ -67,6 +67,53 @@
   .capa-preview-chart .capa-bar:hover { opacity: 1; transform: scaleY(1.04); }
   @keyframes capaBarGrow { from { height: 0; } to { height: var(--h); } }
 
+  /* Bloco "dor -> solução": pergunta que nomeia um problema real da
+     operação comercial de hoje, seguida de como o portal resolve — em
+     vez de só listar módulos, dá contexto de POR QUE eles existem. */
+  .capa-dor {
+    background: var(--surface-2);
+    padding: 48px 24px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .capa-dor-card { max-width: 760px; margin: 0 auto; text-align: center; }
+  .capa-dor-tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--brand); background: var(--soft); padding: 6px 16px; border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  .capa-dor-pergunta {
+    margin: 0 0 16px; font-size: clamp(21px, 3.1vw, 29px); line-height: 1.32;
+    font-weight: 800; letter-spacing: -0.015em; color: var(--ink);
+  }
+  .capa-dor-pergunta mark {
+    background: none; color: var(--brand); font-weight: 900;
+  }
+  .capa-dor-resposta {
+    margin: 0 auto 34px; max-width: 620px;
+    font-size: 14.5px; font-weight: 500; line-height: 1.65; color: var(--ink-2);
+  }
+  .capa-dor-passos {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    text-align: left;
+  }
+  @media (max-width: 720px) {
+    .capa-dor-passos { grid-template-columns: 1fr; }
+  }
+  .capa-dor-passo {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+    padding: 18px 20px;
+  }
+  .capa-dor-passo-num {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--brand); color: #fff; font-weight: 800; font-size: 13.5px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .capa-dor-passo strong { display: block; font-size: 14px; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
+  .capa-dor-passo p { margin: 0; font-size: 12.5px; font-weight: 500; line-height: 1.5; color: var(--ink-2); }
+
   /* Cards de módulo — mesmo padrão visual de .home-grupo-card (ícone
      circular + título laranja + descrição), sem <details> (a capa não
      tem relatório nenhum pra abrir aqui — cada card só leva pro
@@ -198,15 +245,38 @@
     </div>
   </div>
 
-  <section class="workspace-intro">
-    <div class="workspace-title">
-      <div>
-        <h2>Conheça os módulos do portal</h2>
-        <p>Clique em qualquer um para entrar — a senha é pedida na próxima tela.</p>
+</main>
+
+<section class="capa-dor capa-anima" style="--atraso:240ms">
+  <div class="capa-dor-card">
+    <span class="capa-dor-tag">Antes de continuar</span>
+    <h2 class="capa-dor-pergunta">Você sabe, agora, quantos negócios da sua operação estão <mark>parados sem nenhuma atividade</mark> — e quanto isso já custou em receita?</h2>
+    <p class="capa-dor-resposta">É exatamente isso que o Portal Comercial resolve: ele lê o seu Bitrix24 automaticamente e mostra, em tempo real, onde o funil está travado, qual é o Win Rate de verdade e o que priorizar primeiro — sem planilha paralela e sem achismo.</p>
+    <div class="capa-dor-passos">
+      <div class="capa-dor-passo">
+        <span class="capa-dor-passo-num">1</span>
+        <div><strong>Cockpit Executivo</strong><p>Forecast e Win Rate atualizados direto do CRM, sem esperar o fechamento do mês.</p></div>
+      </div>
+      <div class="capa-dor-passo">
+        <span class="capa-dor-passo-num">2</span>
+        <div><strong>Relatórios Comerciais</strong><p>Aponta sozinho os negócios sem próxima atividade e os riscos abertos no pipeline.</p></div>
+      </div>
+      <div class="capa-dor-passo">
+        <span class="capa-dor-passo-num">3</span>
+        <div><strong>SDR &amp; Operação</strong><p>Garante que nenhum lead fique esquecido entre a qualificação e a venda.</p></div>
       </div>
     </div>
-  </section>
-</main>
+  </div>
+</section>
+
+<section class="workspace-intro" style="max-width:1080px; margin:28px auto 0; padding:0 20px;">
+  <div class="workspace-title">
+    <div>
+      <h2>Conheça os módulos do portal</h2>
+      <p>Clique em qualquer um para entrar — a senha é pedida na próxima tela.</p>
+    </div>
+  </div>
+</section>
 
 <div class="capa-modulos">
   <a class="capa-modulo capa-anima" style="--atraso:120ms" href="home.html">
