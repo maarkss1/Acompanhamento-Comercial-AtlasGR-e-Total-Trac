@@ -14,10 +14,7 @@
   // pode ficar em localStorage. O webhook só persiste após ação explícita no botão Salvar webhook.
   (function () {
     try {
-      // v29 — chave por empresa (data-empresa), pra tema de uma marca
-      // nao vazar/sobrescrever o da outra no mesmo navegador.
-      var sufixoEmpresaTema = document.documentElement.getAttribute("data-empresa") === "totaltrac" ? "__totaltrac" : "";
-      var salvo = localStorage.getItem("atlas-extrator-tema" + sufixoEmpresaTema);
+      var salvo = localStorage.getItem("atlas-extrator-tema");
       var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
       document.documentElement.setAttribute("data-tema", tema);
     } catch (e) {
@@ -121,7 +118,7 @@
     <div class="row">
       <div>
         <div class="label-line"><label for="entidade">Tipo de dado</label><button type="button" class="info-btn" onclick="abrirAjuda('tipoDado')">?</button></div>
-        <select id="entidade" onchange="aoTrocarEntidade(true)"></select>
+        <select id="entidade" onfocus="this.dataset.prev=this.value" onchange="aoTrocarEntidadeManual(this)"></select>
       </div>
       <div>
         <div class="label-line"><label for="relatorio">Relatórios</label><button type="button" class="info-btn" onclick="abrirAjuda('relatorios')">?</button></div>

@@ -11,8 +11,7 @@
 <script>
   (function () {
     try {
-      var sufixoEmpresaTema = document.documentElement.getAttribute("data-empresa") === "totaltrac" ? "__totaltrac" : "";
-      var salvo = localStorage.getItem("atlas-extrator-tema" + sufixoEmpresaTema);
+      var salvo = localStorage.getItem("atlas-extrator-tema");
       var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
       document.documentElement.setAttribute("data-tema", tema);
     } catch (e) {

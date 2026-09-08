@@ -67,6 +67,66 @@ function enriquecerDealCatalogo(d,b){
     _VALOR:valorDeal(d),_FECHAMENTO:fecharDataDeal(d),_CICLO:cicloDealDias(d)};
 }
 
+// v39 — extraído de dentro de conversao_comercial (Fase 3 do redesign de Win
+// Rate pedido pelo usuário: comparativo vs período anterior/YoY e tendência
+// mês a mês) pra rodar a MESMA classificação Ganho/Perda/Aberto/Piloto em
+// QUALQUER período, sem duplicar a lógica e sem nenhuma chamada nova ao
+// Bitrix — só refiltra negócios e o cross-reference Comercial↔Financeiro que
+// baseDealsCatalogo já buscou uma vez (deals/finPorCliente não mudam de
+// período pra período, só o filtro de data muda).
+function situacaoFinanceiroPorCliente(lista){
+  if(lista.some((d)=>normalizarTextoChave(d._ESTAGIO).includes("contrato assinado")||(d._SEMANTICA==="success"&&normalizarTextoChave(d._ESTAGIO).includes("assin"))))return"assinado";
+  if(lista.some((d)=>d._SEMANTICA==="failure"||normalizarTextoChave(d._ESTAGIO).includes("cancelado")))return"cancelado";
+  return"pendente";
+}
+function classificarCoortePeriodo(dealsEnriquecidos,finPorCliente,periodoAlvo){
+  const co=dealsEnriquecidos.filter((d)=>dentroPeriodoCatalogo(d.DATE_CREATE,periodoAlvo));
+  const classificados=co.map((d)=>{
+    if(d._SEMANTICA==="failure")return{...d,_STATUS_REAL:"perda"};
+    if(d._SEMANTICA==="process")return{...d,_STATUS_REAL:"aberto"};
+    const fin=finPorCliente[chaveClienteDealModelo(d)],sit=fin?situacaoFinanceiroPorCliente(fin):"pendente";
+    return{...d,_STATUS_REAL:sit==="assinado"?"ganho":sit==="cancelado"?"perda":"aberto"};
+  });
+  const won=classificados.filter((d)=>d._STATUS_REAL==="ganho");
+  const lost=classificados.filter((d)=>d._STATUS_REAL==="perda");
+  const piloto=classificados.filter((d)=>d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
+  const aberto=classificados.filter((d)=>d._STATUS_REAL==="aberto"&&!(d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)));
+  return{co,classificados,won,lost,piloto,aberto};
+}
+// Desloca um intervalo [inicio,fim] em N dias corridos, preservando a duração.
+function periodoDeslocado(inicioISO,fimISO,deslocamentoDias){
+  const ini=new Date(`${inicioISO}T12:00:00`),fim=new Date(`${fimISO}T12:00:00`);
+  ini.setDate(ini.getDate()+deslocamentoDias);
+  fim.setDate(fim.getDate()+deslocamentoDias);
+  const isoFim=formatarDataISO(fim);
+  return{inicio:formatarDataISO(ini),fim:isoFim,referencia:isoFim};
+}
+// Período anterior de mesma duração, imediatamente antes de p.inicio. Sem
+// inicio/fim (usuário escolheu "todas as datas") não dá pra definir uma
+// duração — retorna null, e quem chama trata como "sem comparativo".
+function periodoAnteriorEquivalente(p){
+  if(!p.inicio||!p.fim)return null;
+  const duracaoDias=Math.round((new Date(`${p.fim}T12:00:00`)-new Date(`${p.inicio}T12:00:00`))/86400000)+1;
+  return periodoDeslocado(p.inicio,p.fim,-duracaoDias);
+}
+// Mesmas datas, um ano antes (YoY).
+function periodoMesmaFaixaAnoAnterior(p){
+  if(!p.inicio||!p.fim)return null;
+  const desloca=(iso)=>{const d=new Date(`${iso}T12:00:00`);d.setFullYear(d.getFullYear()-1);return formatarDataISO(d);};
+  const novoFim=desloca(p.fim);
+  return{inicio:desloca(p.inicio),fim:novoFim,referencia:novoFim};
+}
+// Formata a variação entre dois números — "pp" (pontos percentuais, pra
+// comparar duas taxas) ou "pct" (variação percentual, pra comparar
+// contagens/receita). "—" quando não há base de comparação.
+function deltaFormatado(atual,anterior,tipo){
+  if(anterior===null||anterior===undefined)return"—";
+  if(tipo==="pp"){const d=Math.round((atual-anterior)*10)/10;return`${d>=0?"+":""}${d} p.p.`;}
+  if(anterior===0)return atual===0?"0%":"—";
+  const d=Math.round(((atual-anterior)/Math.abs(anterior))*1000)/10;
+  return`${d>=0?"+":""}${d}%`;
+}
+
 // v30 — igual a baseDealsCatalogo, mas busca só o(s) funil(is) que batem com
 // `palavras` (mesmo casamento por nome de encontrarCategoriasPorPalavras) em
 // vez de "só Comercial" ou "tudo". Usado pelos relatórios dedicados de
@@ -282,7 +342,7 @@ function renderizarRelatorioCatalogo(){
   document.getElementById("bloco-relatorio-catalogo").classList.remove("oculto");
   document.getElementById("relatorioResultadoTitulo").textContent=r.titulo;
   document.getElementById("relatorioResultadoSubtitulo").innerHTML=r.subtitulo||"";
-  document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>kpiCardHtml(x.rotulo,x.valor,r.tabelas?.length?"relatorioResultadoTabelas":undefined)).join("");
+  document.getElementById("relatorioResultadoKpis").innerHTML=(r.kpis||[]).map((x)=>kpiCardHtml(x.rotulo,x.valor,r.tabelas?.length?"relatorioResultadoTabelas":undefined,x.descricao)).join("");
   const metaBarrasEl=document.getElementById("relatorioResultadoMetaBarras");if(metaBarrasEl)metaBarrasEl.innerHTML=r.barra_meta||"";
   const iaEl=document.getElementById("relatorioResultadoIA");
   if(iaEl && typeof iaDiagnosticarRelatorioCatalogo==="function"){
@@ -327,7 +387,17 @@ function formatarNumeroGenerico(v,chave){
 function renderBarGenerico(rows,titulo,chaveValor){
   if(!rows?.length)return "";
   const max=Math.max(1,...rows.map((x)=>x.VALOR||0)),cores=["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#7254c7"];
-  return `<div class="mini-chart"><div class="mini-chart-title">${escapeHtmlRelatorio(titulo)}</div>`+rows.map((x,i)=>`<div class="barrow"><div class="barlabel">${escapeHtmlRelatorio(x.ROTULO)}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(x.VALOR/max)*100).toFixed(1)}%;background:${cores[i%cores.length]}"></div></div><div class="barvalue valor-pisca">${formatarNumeroGenerico(x.VALOR,chaveValor)}</div></div>`).join("")+`</div>`;
+  const total=rows.reduce((s,x)=>s+(x.VALOR||0),0);
+  // v38 — interatividade: cada barra mostra o valor exato + % do total num
+  // tooltip nativo (title, sem JS) ao passar o mouse, e a linha inteira
+  // realça (.barrow:hover, CSS em modeloExecutivoCssParaMarca) — antes só
+  // dava pra "ler" o valor formatado ao lado, sem contexto de participação.
+  return `<div class="mini-chart"><div class="mini-chart-title">${escapeHtmlRelatorio(titulo)}</div>`+rows.map((x,i)=>{
+    const valorFmt=formatarNumeroGenerico(x.VALOR,chaveValor);
+    const participacao=total?((x.VALOR||0)/total*100).toFixed(1):"0.0";
+    const dica=`${escapeHtmlRelatorio(x.ROTULO)}: ${valorFmt} (${participacao}% do total)`;
+    return `<div class="barrow" title="${dica}"><div class="barlabel">${escapeHtmlRelatorio(x.ROTULO)}</div><div class="bartrack"><div class="barfill valor-pisca" style="width:${Math.max(2,(x.VALOR/max)*100).toFixed(1)}%;background:${cores[i%cores.length]}"></div></div><div class="barvalue valor-pisca">${valorFmt}</div></div>`;
+  }).join("")+`</div>`;
 }
 // Escolhe automaticamente 1 coluna numérica (métrica) e 1 coluna de texto
 // (rótulo) de QUALQUER tabela do catálogo pra virar gráfico de barras — só
@@ -360,17 +430,26 @@ function graficoAutomaticoTabela(t){
 function gerarHTMLRelatorioVisualGenerico(r){
   if(!r?.titulo)return "";
   const marca=marcaAtiva();
-  const kpisHtml=(r.kpis||[]).map((x)=>`<div class="kpi"><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value valor-pisca">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
+  const kpisHtml=(r.kpis||[]).map((x,i)=>`<div class="kpi anima-entrada" style="--atraso:${i*40}ms"${x.descricao?` title="${escapeHtmlRelatorio(x.descricao)}"`:""}><div class="label">${escapeHtmlRelatorio(x.rotulo)}</div><div class="value valor-pisca">${escapeHtmlRelatorio(x.valor)}</div></div>`).join("");
   const atencaoHtml=pontosDeAtencaoGenerico(r.kpis);
+  // v39 — mesmo "IA Embarcada" (diagnóstico automático baseado em regras
+  // sobre os KPIs/tabelas já calculados, sem chamar nenhuma IA externa —
+  // ver js/ia-engine.js) que já existia só na visão inline do catálogo,
+  // agora também no modelo visual exportado/baixado. somenteLeitura=true
+  // porque o botão "Aprofundar com Copiloto IA" chama uma função que só
+  // existe na página viva do app, não neste HTML autocontido.
+  const diagIA=typeof iaDiagnosticarRelatorioCatalogo==="function"?iaDiagnosticarRelatorioCatalogo(r):null;
+  const iaHtml=diagIA&&typeof iaRenderizarCardInsightsHTML==="function"?iaRenderizarCardInsightsHTML(diagIA,true):"";
   const tabelasHtml=(r.tabelas||[]).map((t,i)=>{
     const grafico=graficoAutomaticoTabela(t);
     const tabela=tabelaModelo((t.colunas||[]).map((c)=>({label:c.label,valor:typeof c.valor==="function"?c.valor:(row)=>row[c.valor],html:!!c.html})),(t.dados||[]).slice(0,t.limite||300));
-    return `${grafico}<details class="vcard section-card"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
+    return `${grafico}<details class="vcard section-card anima-entrada" style="--atraso:${Math.min(i,6)*60}ms"${i===0?" open":""}><summary><span class="vcard-name">${escapeHtmlRelatorio(t.titulo||`Tabela ${i+1}`)}</span><span class="vcard-stats">${(t.dados||[]).length} registro(s)</span><span class="vcard-chevron">▾</span></summary><div class="vcard-body">${tabela}</div></details>`;
   }).join("");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(r.titulo)} · ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>`+
   `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>Relatório Comercial</strong><br>Extraído do Bitrix24 em ${formatarDataBR(formatarDataISO(new Date()))}</div></div></div>`+
   `<header class="hero"><div class="hero-inner"><p class="eyebrow">Relatório Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(r.titulo)}</h1><p class="subtitle">${(r.subtitulo||"").replace(/<[^>]+>/g,"")||`Extraído automaticamente pelo extrator ${escapeHtmlRelatorio(marca.nome)}.`}</p></div></header>`+
   `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">Visão geral</h2>${atencaoHtml}<div class="kpis">${kpisHtml||'<p class="small-note">Sem indicadores.</p>'}</div></div>`+
+  iaHtml+
   `<h2 class="section">Detalhamento</h2><div class="top3grid">${tabelasHtml||'<p class="small-note">Sem tabelas neste relatório.</p>'}</div>`+
   (r.nota?`<div class="note">${escapeHtmlRelatorio(r.nota)}</div>`:"")+
   `<a class="back-to-overview" href="#visao-geral">↑ Voltar à Visão geral</a></div><footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · ${escapeHtmlRelatorio(r.titulo)}</footer></body></html>`;
@@ -460,7 +539,7 @@ async function extrairRelatorioCatalogo(webhook,chave){
 
     else if(chave==="conversao_comercial"){
       const b=await baseDealsCatalogo(webhook,true);
-      const co=b.deals.map((d)=>enriquecerDealCatalogo(d,b)).filter((d)=>dentroPeriodoCatalogo(d.DATE_CREATE,p));
+      const dealsEnriquecidosConv=b.deals.map((d)=>enriquecerDealCatalogo(d,b));
       // v25 — "Negócios Ganhos" no funil Comercial NÃO é o cliente ganho de fato:
       // o negócio só é realmente ganho quando o contrato é assinado no Financeiro
       // (mesmo critério de "Fechado" já usado em construirDadosModeloForecast,
@@ -479,26 +558,218 @@ async function extrairRelatorioCatalogo(webhook,chave){
       }
       const finPorCliente={};
       finDealsConversao.map((d)=>enriquecerDealCatalogo(d,b)).forEach((d)=>{(finPorCliente[chaveClienteDealModelo(d)]||=[]).push(d);});
-      const situacaoFinanceiro=(lista)=>{
-        if(lista.some((d)=>normalizarTextoChave(d._ESTAGIO).includes("contrato assinado")||(d._SEMANTICA==="success"&&normalizarTextoChave(d._ESTAGIO).includes("assin"))))return"assinado";
-        if(lista.some((d)=>d._SEMANTICA==="failure"||normalizarTextoChave(d._ESTAGIO).includes("cancelado")))return"cancelado";
-        return"pendente";
-      };
-      const classificados=co.map((d)=>{
-        if(d._SEMANTICA==="failure")return{...d,_STATUS_REAL:"perda"};
-        if(d._SEMANTICA==="process")return{...d,_STATUS_REAL:"aberto"};
-        const fin=finPorCliente[chaveClienteDealModelo(d)],sit=fin?situacaoFinanceiro(fin):"pendente";
-        return{...d,_STATUS_REAL:sit==="assinado"?"ganho":sit==="cancelado"?"perda":"aberto"};
-      });
-      const won=classificados.filter((d)=>d._STATUS_REAL==="ganho"),lost=classificados.filter((d)=>d._STATUS_REAL==="perda");
-      const aberto=classificados.filter((d)=>d._STATUS_REAL==="aberto"&&!(d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)));
+      // v39 (Fase 3) — mesma classificação Ganho/Perda/Aberto/Piloto de sempre,
+      // agora via classificarCoortePeriodo (extraída pra cima) pra poder rodar
+      // de novo em outros períodos (comparativo, tendência) sem duplicar a
+      // lógica nem refazer as duas buscas acima.
+      const atualConv=classificarCoortePeriodo(dealsEnriquecidosConv,finPorCliente,p);
+      const{co,classificados,won,lost,piloto,aberto}=atualConv;
       const closed=won.length+lost.length;
       const hist=await buscarHistoricoEntidade(webhook,2,co.map((d)=>d.ID)),vis={};hist.forEach((h)=>{const d=co.find((x)=>String(x.ID)===String(h.OWNER_ID));if(!d)return;const cat=String(h.CATEGORY_ID??d.CATEGORY_ID),sid=String(h.STAGE_ID||""),lab=b.meta.estagios?.[cat]?.[sid]?.label||sid;(vis[lab]||=new Set()).add(String(h.OWNER_ID));});
       const wids=new Set(won.map((d)=>String(d.ID))),rows=Object.entries(vis).map(([stage,set])=>({ESTAGIO:stage,VISITARAM:set.size,GANHOS:[...set].filter((id)=>wids.has(id)).length})).map((x)=>({...x,CONVERSAO_PCT:taxaPct(x.GANHOS,x.VISITARAM)})).sort((a,b)=>b.VISITARAM-a.VISITARAM);
+
+      // v39 (Fase 3) — Funil de conversão com drop-off sequencial: ordena as
+      // etapas pela ordem real do pipeline no Bitrix (SORT, preservada pela
+      // ordem de inserção do objeto b.meta.estagios[cat] — mesma fonte de
+      // "rows" acima, só que ordenada por etapa em vez de por volume) e mede,
+      // etapa a etapa, quantos negócios que passaram pela etapa N também
+      // aparecem na etapa N+1 (interseção de IDs, não só o total da próxima
+      // etapa — evita contar quem entrou "por fora" como se tivesse avançado).
+      const catsFunilConv=encontrarCategoriasPorPalavras(b.meta,["comercial"],true);
+      const estagiosOrdenadosConv=catsFunilConv.length===1?Object.values(b.meta.estagios?.[catsFunilConv[0]]||{}).map((e)=>e.label):[];
+      const etapasComVisita=Object.keys(vis);
+      const ordemFunilConv=[...estagiosOrdenadosConv.filter((lab)=>vis[lab]),...etapasComVisita.filter((lab)=>!estagiosOrdenadosConv.includes(lab))];
+      const rowsFunil=ordemFunilConv.map((label,i)=>{
+        const atualSet=vis[label],proximaLabel=ordemFunilConv[i+1],proximaSet=proximaLabel?vis[proximaLabel]:null;
+        const avancaram=proximaSet?[...atualSet].filter((id)=>proximaSet.has(id)).length:null;
+        return{ETAPA:label,PASSARAM:atualSet.size,AVANCOU:avancaram===null?"—":avancaram,
+          TAXA_AVANCO_PCT:avancaram===null?null:taxaPct(avancaram,atualSet.size),
+          QUEDA:avancaram===null?"—":atualSet.size-avancaram};
+      });
+
+      // Comparativo vs período anterior (mesma duração, imediatamente antes)
+      // e vs mesma faixa de datas no ano passado (YoY) — mesma classificação,
+      // sem nenhuma chamada nova ao Bitrix (só refiltra dealsEnriquecidosConv/
+      // finPorCliente, já buscados uma vez acima). Sem período específico
+      // selecionado ("todas as datas"), não há duração pra replicar — os dois
+      // campos de comparação ficam "—" e a nota do relatório explica por quê.
+      const periodoAntConv=periodoAnteriorEquivalente(p),periodoYoYConv=periodoMesmaFaixaAnoAnterior(p);
+      const resumoPeriodoConv=(r)=>{if(!r)return null;const decididos=r.won.length+r.lost.length;return{winRate:taxaPct(r.won.length,decididos),ganhos:r.won.length,perdas:r.lost.length,receita:r.won.reduce((a,d)=>a+d._VALOR,0)};};
+      const compAtualConv=resumoPeriodoConv({won,lost});
+      const compAntConv=resumoPeriodoConv(periodoAntConv?classificarCoortePeriodo(dealsEnriquecidosConv,finPorCliente,periodoAntConv):null);
+      const compYoYConv=resumoPeriodoConv(periodoYoYConv?classificarCoortePeriodo(dealsEnriquecidosConv,finPorCliente,periodoYoYConv):null);
+      const rowsComparativo=[
+        {METRICA:"Win Rate (fechados)",ATUAL:`${compAtualConv.winRate}%`,ANTERIOR:compAntConv?`${compAntConv.winRate}%`:"—",DELTA:compAntConv?deltaFormatado(compAtualConv.winRate,compAntConv.winRate,"pp"):"—",ANO_ANTERIOR:compYoYConv?`${compYoYConv.winRate}%`:"—",DELTA_YOY:compYoYConv?deltaFormatado(compAtualConv.winRate,compYoYConv.winRate,"pp"):"—"},
+        {METRICA:"Ganhos",ATUAL:String(compAtualConv.ganhos),ANTERIOR:compAntConv?String(compAntConv.ganhos):"—",DELTA:compAntConv?deltaFormatado(compAtualConv.ganhos,compAntConv.ganhos,"pct"):"—",ANO_ANTERIOR:compYoYConv?String(compYoYConv.ganhos):"—",DELTA_YOY:compYoYConv?deltaFormatado(compAtualConv.ganhos,compYoYConv.ganhos,"pct"):"—"},
+        {METRICA:"Perdas",ATUAL:String(compAtualConv.perdas),ANTERIOR:compAntConv?String(compAntConv.perdas):"—",DELTA:compAntConv?deltaFormatado(compAtualConv.perdas,compAntConv.perdas,"pct"):"—",ANO_ANTERIOR:compYoYConv?String(compYoYConv.perdas):"—",DELTA_YOY:compYoYConv?deltaFormatado(compAtualConv.perdas,compYoYConv.perdas,"pct"):"—"},
+        {METRICA:"Receita ganha",ATUAL:moedaRelatorio(compAtualConv.receita),ANTERIOR:compAntConv?moedaRelatorio(compAntConv.receita):"—",DELTA:compAntConv?deltaFormatado(compAtualConv.receita,compAntConv.receita,"pct"):"—",ANO_ANTERIOR:compYoYConv?moedaRelatorio(compYoYConv.receita):"—",DELTA_YOY:compYoYConv?deltaFormatado(compAtualConv.receita,compYoYConv.receita,"pct"):"—"},
+      ];
+
+      // Tendência do Win Rate — últimos 12 meses fechados na data de
+      // referência do relatório, INDEPENDENTE do período escolhido acima
+      // (mesma ideia de "Win Rate mensal" pedida pelo usuário): 12 chamadas
+      // de classificarCoortePeriodo, mas todas em cima do MESMO
+      // dealsEnriquecidosConv já em memória — zero chamada nova ao Bitrix.
+      const refTendenciaConv=new Date(`${p.referencia}T12:00:00`);
+      const rowsTendencia=Array.from({length:12},(_,idx)=>11-idx).map((i)=>{
+        const d0=new Date(refTendenciaConv.getFullYear(),refTendenciaConv.getMonth()-i,1);
+        const inicioMes=formatarDataISO(d0);
+        const ultimoDiaMes=new Date(d0.getFullYear(),d0.getMonth()+1,0);
+        const fimMes=ultimoDiaMes>refTendenciaConv?formatarDataISO(refTendenciaConv):formatarDataISO(ultimoDiaMes);
+        const r=classificarCoortePeriodo(dealsEnriquecidosConv,finPorCliente,{inicio:inicioMes,fim:fimMes,referencia:fimMes});
+        const decididosMes=r.won.length+r.lost.length;
+        return{MES:inicioMes.slice(0,7),OPORTUNIDADES:r.co.length,GANHOS:r.won.length,PERDAS:r.lost.length,WIN_RATE_PCT:taxaPct(r.won.length,decididosMes)};
+      });
+
+      // v37 (Fase 1 do redesign pedido pelo usuário) — Win Rate por vendedor.
+      // Não pode rankear só por %: alguém com 2 ganhos em 2 decisões (100%)
+      // não é "melhor" que alguém com 45 ganhos em 80 (56%) — por isso a
+      // tabela sempre mostra decididos+receita ao lado do Win Rate, e a
+      // ordenação é por decididos (quem mais fechou negócio), não por %.
+      const porVendedor={};
+      classificados.forEach((d)=>{
+        const nome=d._RESPONSAVEL||"Sem responsável";
+        (porVendedor[nome]||=({RESPONSAVEL:nome,GANHOS:0,PERDAS:0,ABERTOS:0,RECEITA:0}));
+        const r=porVendedor[nome];
+        if(d._STATUS_REAL==="ganho"){r.GANHOS++;r.RECEITA+=d._VALOR}
+        else if(d._STATUS_REAL==="perda")r.PERDAS++;
+        else r.ABERTOS++;
+      });
+      const rowsVendedor=Object.values(porVendedor).map((r)=>{
+        const decididos=r.GANHOS+r.PERDAS;
+        return{...r,DECIDIDOS:decididos,WIN_RATE_PCT:taxaPct(r.GANHOS,decididos),TICKET:r.GANHOS?r.RECEITA/r.GANHOS:0};
+      }).sort((a,b)=>b.DECIDIDOS-a.DECIDIDOS);
+
+      // Motivos de perda — mesmos dois campos de "Motivo da Negociação
+      // Perdida" já usados por motivos_ganho_perda (ver CAMPO_MOTIVO_PERDA
+      // no topo do arquivo), aplicados só aos negócios que este relatório já
+      // classificou como perda (inclui perda por cancelamento no Financeiro,
+      // não só _SEMANTICA==="failure").
+      let rowsMotivo=[];
+      if(lost.length){
+        const idsPerdidos=lost.map((d)=>d.ID);
+        const [mapaMotivoConv,mapaMotivoAntigoConv,camposMotivoConv]=await Promise.all([
+          mapaOpcoesEnumeracaoDeal(webhook,CAMPO_MOTIVO_PERDA),
+          mapaOpcoesEnumeracaoDeal(webhook,CAMPO_MOTIVO_PERDA_ANTIGO),
+          buscarEntidadesPorIds(webhook,"crm.deal.list",idsPerdidos,["ID",CAMPO_MOTIVO_PERDA,CAMPO_MOTIVO_PERDA_ANTIGO]),
+        ]);
+        const porMotivo={};
+        lost.forEach((d)=>{
+          const registro=camposMotivoConv[String(d.ID)];
+          const motivo=resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA],mapaMotivoConv)
+            ||resolverValorEnumeracao(registro?.[CAMPO_MOTIVO_PERDA_ANTIGO],mapaMotivoAntigoConv)
+            ||"Não especificado";
+          (porMotivo[motivo]||=({MOTIVO:motivo,DEALS:0,VALOR:0}));
+          porMotivo[motivo].DEALS++;
+          porMotivo[motivo].VALOR+=d._VALOR;
+        });
+        rowsMotivo=Object.values(porMotivo).sort((a,b)=>b.DEALS-a.DEALS);
+      }
+
+      // v38 (Fase 2) — Win Rate por origem. SOURCE_ID já vem em todo negócio
+      // buscado por baseDealsCatalogo, então só falta o de-para ID->nome
+      // (mapaOrigensRelatorio, mesmo helper usado por origens_canais) — zero
+      // chamada nova além dessa.
+      const mapaOrigemConv=await mapaOrigensRelatorio(webhook);
+      const porOrigem={};
+      classificados.forEach((d)=>{
+        const origem=mapaOrigemConv[String(d.SOURCE_ID||"")]||"Sem origem";
+        (porOrigem[origem]||=({ORIGEM:origem,GANHOS:0,PERDAS:0,ABERTOS:0,RECEITA:0}));
+        const r=porOrigem[origem];
+        if(d._STATUS_REAL==="ganho"){r.GANHOS++;r.RECEITA+=d._VALOR}
+        else if(d._STATUS_REAL==="perda")r.PERDAS++;
+        else r.ABERTOS++;
+      });
+      const rowsOrigem=Object.values(porOrigem).map((r)=>{
+        const decididos=r.GANHOS+r.PERDAS;
+        return{...r,DECIDIDOS:decididos,WIN_RATE_PCT:taxaPct(r.GANHOS,decididos)};
+      }).sort((a,b)=>b.DECIDIDOS-a.DECIDIDOS);
+
+      // Ciclo de vendas — distribuição em faixas, não só a média (_CICLO já
+      // vem calculado por enriquecerDealCatalogo: DATE_CREATE até CLOSEDATE/
+      // data do contrato). Só considera decididos (won+lost) — negócio aberto
+      // ainda não tem ciclo fechado pra contar.
+      const FAIXAS_CICLO=[{ate:15,label:"0–15 dias"},{ate:30,label:"16–30 dias"},{ate:60,label:"31–60 dias"},{ate:90,label:"61–90 dias"},{ate:Infinity,label:"90+ dias"}];
+      const decididosComCiclo=[...won,...lost].filter((d)=>Number.isFinite(d._CICLO)&&d._CICLO!=="");
+      const distribCiclo=FAIXAS_CICLO.map((f)=>({FAIXA:f.label,NEGOCIOS:0,ate:f.ate}));
+      decididosComCiclo.forEach((d)=>{const faixa=distribCiclo.find((f)=>d._CICLO<=f.ate)||distribCiclo[distribCiclo.length-1];faixa.NEGOCIOS++});
+      const totalComCiclo=decididosComCiclo.length;
+      const rowsCiclo=distribCiclo.map((f)=>({FAIXA:f.FAIXA,NEGOCIOS:f.NEGOCIOS,PARTICIPACAO_PCT:taxaPct(f.NEGOCIOS,totalComCiclo)}));
+      const ciclosOrdenados=decididosComCiclo.map((d)=>d._CICLO).sort((a,b)=>a-b);
+      const cicloMedio=ciclosOrdenados.length?Math.round(ciclosOrdenados.reduce((s,v)=>s+v,0)/ciclosOrdenados.length):0;
+      const cicloMediano=ciclosOrdenados.length?ciclosOrdenados[Math.floor((ciclosOrdenados.length-1)/2)]:0;
+
+      // Coorte mensal — mesma coorte `co`/`classificados`, só reagrupada por
+      // mês de criação (YYYY-MM de DATE_CREATE). Evita comparar um mês ainda
+      // "verde" (setembro, com muito negócio aberto) direto com um mês já
+      // maduro (janeiro) sem esse contexto.
+      const porMes={};
+      classificados.forEach((d)=>{
+        const mes=(parteDataISO(d.DATE_CREATE)||"").slice(0,7)||"Sem data";
+        (porMes[mes]||=({MES:mes,OPORTUNIDADES:0,GANHOS:0,PERDAS:0,ABERTOS:0}));
+        const r=porMes[mes];
+        r.OPORTUNIDADES++;
+        if(d._STATUS_REAL==="ganho")r.GANHOS++;
+        else if(d._STATUS_REAL==="perda")r.PERDAS++;
+        else r.ABERTOS++;
+      });
+      const rowsCoorte=Object.values(porMes).map((r)=>({...r,WIN_RATE_FECHADOS_PCT:taxaPct(r.GANHOS,r.GANHOS+r.PERDAS)})).sort((a,b)=>a.MES.localeCompare(b.MES));
+
+      // Win Rate por produto — N+1 (crm.deal.productrows.get não tem versão
+      // em lote no Bitrix), mesmo padrão já usado em produtos_receita
+      // (aguardar(100) entre chamadas + status de progresso + respeita
+      // "Parar"). Só nos negócios já DECIDIDOS (won+lost) — é o universo que
+      // dá pra calcular Win Rate de verdade; aberto ainda não tem resultado.
+      const decididosParaProduto=[...won,...lost];
+      const porProduto={};
+      for(let i=0;i<decididosParaProduto.length;i++){
+        if(extracaoCancelada)break;
+        const d=decididosParaProduto[i];
+        atualizarStatus(`Win Rate por produto: negócio ${i+1}/${decididosParaProduto.length}`);
+        const bodyProd=await bitrixFetchComRetentativa(`${webhook.replace(/\/$/,"")}/crm.deal.productrows.get.json?id=${encodeURIComponent(d.ID)}`);
+        const itensProd=bodyProd.result||[];
+        const nomesVistos=new Set();
+        itensProd.forEach((x)=>{
+          const nome=x.PRODUCT_NAME||`Produto ${x.PRODUCT_ID||""}`;
+          if(nomesVistos.has(nome))return; // um negócio com o mesmo produto em 2 linhas conta 1x no Win Rate do produto
+          nomesVistos.add(nome);
+          (porProduto[nome]||=({PRODUTO:nome,GANHOS:0,PERDAS:0,RECEITA:0}));
+          const r=porProduto[nome];
+          if(d._STATUS_REAL==="ganho"){r.GANHOS++;r.RECEITA+=d._VALOR}
+          else r.PERDAS++;
+        });
+        await aguardar(100);
+      }
+      const rowsProduto=Object.values(porProduto).map((r)=>{
+        const decididos=r.GANHOS+r.PERDAS;
+        return{...r,DECIDIDOS:decididos,WIN_RATE_PCT:taxaPct(r.GANHOS,decididos)};
+      }).sort((a,b)=>b.DECIDIDOS-a.DECIDIDOS);
+
       criarResultadoCatalogo(chave,"Conversão Comercial • funil e Win Rate",`Coorte criada entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
-        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",aberto.length),kpi("Win Rate (coorte por criação)",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
-        [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]}],
-        "Ganho = contrato assinado no Financeiro (não apenas \"Negócios Ganhos\" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa.");
+        [kpi("Oportunidades",co.length,"Todo negócio criado no funil Comercial dentro do período — inclui ganhos, perdas, abertos e Piloto."),
+         kpi("Ganhos",won.length,"Contrato assinado no Financeiro — não apenas marcado \"Ganho\" no Comercial."),
+         kpi("Perdas",lost.length,"Marcado como perdido no Comercial, OU ganho no Comercial e depois cancelado no Financeiro."),
+         kpi("Em aberto",aberto.length,"Ainda em andamento no funil Comercial, sem contar negócios em Piloto."),
+         kpi("Piloto (em teste)",piloto.length,"Etapa de teste — fica fora de \"Em aberto\" de propósito, mas conta no total de Oportunidades."),
+         kpi("Win Rate (fechados)",`${taxaPct(won.length,closed)}%`,"Ganhos ÷ (Ganhos + Perdas) — de quem já foi decidido, quanto vira cliente. É o Win Rate tradicional."),
+         kpi("Loss Rate (fechados)",`${taxaPct(lost.length,closed)}%`,"Perdas ÷ (Ganhos + Perdas) — o complemento do Win Rate (fechados)."),
+         kpi("Conversão da coorte p/ ganho",`${taxaPct(won.length,co.length)}%`,"Ganhos ÷ Oportunidades — de tudo que entrou no período, quanto já virou cliente (inclui quem ainda está em aberto no denominador)."),
+         kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`,"(Ganhos + Perdas) ÷ Oportunidades — quanto da coorte já teve uma decisão (ganhou ou perdeu), o resto ainda está em aberto."),
+         kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0)),"Soma do valor (OPPORTUNITY) só dos negócios Ganhos."),
+         kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0),"Receita ganha ÷ número de Ganhos."),
+         kpi("Ciclo médio (decididos)",cicloMedio?`${cicloMedio} dias`:"—","Média de dias entre a criação e o fechamento (ganho ou perda) — sensível a outliers, veja também a mediana e a distribuição por faixa."),
+         kpi("Ciclo mediano (decididos)",cicloMediano?`${cicloMediano} dias`:"—","Valor do meio da distribuição de ciclo — menos afetado por negócios muito rápidos ou muito demorados que a média.")],
+        [{titulo:"Funil de conversão — avanço por etapa",dados:rowsFunil,colunas:[{label:"Etapa",valor:"ETAPA"},{label:"Passaram",valor:"PASSARAM"},{label:"Avançaram p/ próxima",valor:"AVANCOU"},{label:"Taxa de avanço",valor:(x)=>x.TAXA_AVANCO_PCT===null?"—":`${x.TAXA_AVANCO_PCT}%`},{label:"Queda",valor:"QUEDA"}]},
+         {titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]},
+         {titulo:"Comparativo — período anterior e mesma faixa no ano passado",dados:rowsComparativo,colunas:[{label:"Métrica",valor:"METRICA"},{label:"Atual",valor:"ATUAL"},{label:"Período anterior",valor:"ANTERIOR"},{label:"Δ",valor:"DELTA"},{label:"Mesma faixa ano passado",valor:"ANO_ANTERIOR"},{label:"Δ YoY",valor:"DELTA_YOY"}]},
+         {titulo:"Tendência do Win Rate — últimos 12 meses",dados:rowsTendencia,colunas:[{label:"Mês",valor:"MES"},{label:"Oportunidades",valor:"OPORTUNIDADES"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE_PCT}%`}]},
+         {titulo:"Win Rate por vendedor",dados:rowsVendedor,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Decididos",valor:"DECIDIDOS"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE_PCT}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Ticket médio",valor:(x)=>moedaRelatorio(x.TICKET),html:true},{label:"Em aberto",valor:"ABERTOS"}]},
+         {titulo:"Win Rate por origem",dados:rowsOrigem,colunas:[{label:"Origem",valor:"ORIGEM"},{label:"Decididos",valor:"DECIDIDOS"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE_PCT}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true},{label:"Em aberto",valor:"ABERTOS"}]},
+         {titulo:"Win Rate por produto",dados:rowsProduto,colunas:[{label:"Produto",valor:"PRODUTO"},{label:"Decididos",valor:"DECIDIDOS"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Win Rate",valor:(x)=>`${x.WIN_RATE_PCT}%`},{label:"Receita",valor:(x)=>moedaRelatorio(x.RECEITA),html:true}]},
+         {titulo:"Motivos de perda",dados:rowsMotivo,colunas:[{label:"Motivo",valor:"MOTIVO"},{label:"Negócios",valor:"DEALS"},{label:"Valor perdido",valor:(x)=>moedaRelatorio(x.VALOR),html:true}]},
+         {titulo:"Ciclo de vendas — distribuição (decididos)",dados:rowsCiclo,colunas:[{label:"Faixa",valor:"FAIXA"},{label:"Negócios",valor:"NEGOCIOS"},{label:"% do total decidido",valor:(x)=>`${x.PARTICIPACAO_PCT}%`}]},
+         {titulo:"Coorte mensal (mês de criação)",dados:rowsCoorte,colunas:[{label:"Mês",valor:"MES"},{label:"Oportunidades",valor:"OPORTUNIDADES"},{label:"Ganhos",valor:"GANHOS"},{label:"Perdas",valor:"PERDAS"},{label:"Em aberto/Piloto",valor:"ABERTOS"},{label:"Win Rate (fechados)",valor:(x)=>`${x.WIN_RATE_FECHADOS_PCT}%`}]}],
+        `Ganho = contrato assinado no Financeiro (não apenas "Negócios Ganhos" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa. Oportunidades = Ganhos + Perdas + Em aberto + Piloto (em teste) — confira: ${co.length} = ${won.length} + ${lost.length} + ${aberto.length} + ${piloto.length}. Piloto fica fora de "Em aberto" de propósito (mesma regra usada no resto do catálogo: é etapa de teste, não pipeline aberto de verdade), mas segue contado no total da coorte. Win Rate (fechados) considera só quem já foi decidido; Conversão da coorte p/ ganho olha para o total, incluindo quem ainda está em aberto. Win Rate por vendedor/origem ordenado por volume decidido (não por %), pra não deixar quem decidiu pouco parecer "melhor" que quem decidiu muito. Win Rate por produto conta 1x por negócio decidido mesmo que o produto apareça em mais de uma linha do mesmo negócio, e é a única tabela que faz uma chamada por negócio ao Bitrix (crm.deal.productrows.get) — pode demorar mais que o resto do relatório em coortes grandes. Motivos de perda usa os mesmos dois campos de motivo do relatório "Motivos de Ganho e Perda". A coorte mensal ajuda a não comparar um mês ainda "verde" (muito negócio em aberto) com um mês já maduro. O Funil de conversão mede avanço real (interseção de IDs entre etapas consecutivas, não só volume) na ordem de pipeline do Bitrix. O Comparativo usa a mesma duração de dias do período escolhido, deslocada pra trás (período anterior) ou um ano (YoY) — com "Todas as datas" selecionado não há duração pra replicar, por isso os campos ficam "—". A Tendência de 12 meses é sempre fixa (últimos 12 meses a partir da data de referência), independente do período escolhido acima. Passe o mouse nos gráficos e nos KPIs sublinhados para ver o cálculo exato de cada número.`);
     }
 
     else if(chave==="aging_sla"){
@@ -868,6 +1139,32 @@ async function extrairRelatorioCatalogo(webhook,chave){
       criarResultadoCatalogo(chave,"Atividades pendentes e atrasadas",`Referência: <strong>${escapeHtmlRelatorio(ref)}</strong>.`,
         [kpi("Pendentes",rows.length),kpi("Atrasadas",rows.filter((x)=>x.SITUACAO==="Atrasada").length),kpi("Vencem hoje",rows.filter((x)=>x.SITUACAO==="Vence hoje").length),kpi("Sem prazo",rows.filter((x)=>x.SITUACAO==="Sem prazo").length),kpi("Responsáveis",Object.keys(m).length),kpi("Ligações",rows.filter((x)=>x.CANAL==="Ligação").length),kpi("Reuniões",rows.filter((x)=>x.CANAL==="Reunião").length),kpi("Tarefas",rows.filter((x)=>x.CANAL==="Tarefa").length)],
         [{titulo:"Resumo por responsável",dados:Object.values(m).sort((a,b)=>b.ATRASADAS-a.ATRASADAS),colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Pendentes",valor:"PENDENTES"},{label:"Atrasadas",valor:"ATRASADAS"},{label:"Hoje",valor:"HOJE"},{label:"Sem prazo",valor:"SEM_PRAZO"}]},{titulo:"Atividades abertas",dados:rows,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Canal",valor:"CANAL"},{label:"Assunto",valor:"ASSUNTO"},{label:"Deadline",valor:"DEADLINE"},{label:"Situação",valor:"SITUACAO"},{label:"Vínculos",valor:"VINCULOS"}]}]);
+    }
+
+    // v36 — "Diário de Atividades" pedido pelo usuário ao lado de "Diário SDR"
+    // (especial, js/sdr.js) e de um card de Closer ainda não construído (falta
+    // decidir com o usuário a fonte de dados — ver conversa/PR). Este aqui é
+    // deliberadamente agnóstico de papel: mesma base de produtividade_atividades
+    // (agrupada por responsável), mas com período padrão "diario" em vez de
+    // "mensal" e uma tabela extra linha-a-linha (o que cada um fez, não só o
+    // total) — sem filtrar por pipeline/funil de ninguém.
+    else if(chave==="diario_atividades"){
+      const a=await atividadesCatalogo(webhook,true,p.inicio,p.fim),m={};
+      a.dados.forEach((x)=>{
+        const id=idBitrixString(x.RESPONSIBLE_ID),nome=nomeUsuario(id)||(id?`ID ${id}`:"Sem responsável");
+        if(!m[id||"0"])m[id||"0"]={RESPONSAVEL:nome,ATIVIDADES:0,LIGACOES:0,REUNIOES:0,TAREFAS:0,EMAILS:0,WHATSAPP:0,LEADS:new Set(),NEGOCIOS:new Set()};
+        const r=m[id||"0"];r.ATIVIDADES++;
+        const c=canalAtividadeSDR(x);
+        if(c==="Ligação")r.LIGACOES++;else if(c==="Reunião")r.REUNIOES++;else if(c==="Tarefa")r.TAREFAS++;else if(c==="E-mail")r.EMAILS++;else if(c==="WhatsApp")r.WHATSAPP++;
+        bindingsDaAtividade(x).forEach((b)=>{if(b.OWNER_TYPE_ID==="1")r.LEADS.add(b.OWNER_ID);if(b.OWNER_TYPE_ID==="2")r.NEGOCIOS.add(b.OWNER_ID)});
+      });
+      const resumo=Object.values(m).map((r)=>({RESPONSAVEL:r.RESPONSAVEL,ATIVIDADES:r.ATIVIDADES,LIGACOES:r.LIGACOES,REUNIOES:r.REUNIOES,TAREFAS:r.TAREFAS,EMAILS:r.EMAILS,WHATSAPP:r.WHATSAPP,LEADS_UNICOS:r.LEADS.size,NEGOCIOS_UNICOS:r.NEGOCIOS.size})).sort((a,b)=>b.ATIVIDADES-a.ATIVIDADES);
+      const detalhes=a.dados.map((x)=>({ATIVIDADE_ID:x.ID,RESPONSAVEL:nomeUsuario(x.RESPONSIBLE_ID)||"Sem responsável",CANAL:canalAtividadeSDR(x),ASSUNTO:x.SUBJECT||"",CONCLUIDA_EM:x.END_TIME||"",VINCULOS:bindingsDaAtividade(x).map((b)=>`${nomeTipoEntidadeCRM(b.OWNER_TYPE_ID)}:${b.OWNER_ID}`).join(" | ")})).sort((x,y)=>String(y.CONCLUIDA_EM).localeCompare(String(x.CONCLUIDA_EM)));
+      criarResultadoCatalogo(chave,"Diário de Atividades — visão geral",`Atividades concluídas entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong> — qualquer papel (SDR, Closer ou outro).`,
+        [kpi("Atividades",a.dados.length),kpi("Responsáveis",resumo.length),kpi("Ligações",resumo.reduce((s,r)=>s+r.LIGACOES,0)),kpi("Reuniões",resumo.reduce((s,r)=>s+r.REUNIOES,0)),kpi("WhatsApp",resumo.reduce((s,r)=>s+r.WHATSAPP,0)),kpi("E-mails",resumo.reduce((s,r)=>s+r.EMAILS,0)),kpi("Leads tocados",new Set(a.dados.flatMap((x)=>bindingsDaAtividade(x).filter((b)=>b.OWNER_TYPE_ID==="1").map((b)=>b.OWNER_ID))).size),kpi("Negócios tocados",new Set(a.dados.flatMap((x)=>bindingsDaAtividade(x).filter((b)=>b.OWNER_TYPE_ID==="2").map((b)=>b.OWNER_ID))).size)],
+        [{titulo:"Resumo por responsável",dados:resumo,colunas:[{label:"Responsável",valor:"RESPONSAVEL"},{label:"Atividades",valor:"ATIVIDADES"},{label:"Ligações",valor:"LIGACOES"},{label:"Reuniões",valor:"REUNIOES"},{label:"WhatsApp",valor:"WHATSAPP"},{label:"E-mails",valor:"EMAILS"},{label:"Leads",valor:"LEADS_UNICOS"},{label:"Negócios",valor:"NEGOCIOS_UNICOS"}]},
+         {titulo:"Atividades concluídas no período",dados:detalhes,colunas:[{label:"ID",valor:"ATIVIDADE_ID"},{label:"Responsável",valor:"RESPONSAVEL"},{label:"Canal",valor:"CANAL"},{label:"Assunto",valor:"ASSUNTO"},{label:"Concluída em",valor:"CONCLUIDA_EM"},{label:"Vínculos",valor:"VINCULOS"}]}],
+        "Não filtra por papel (SDR/Closer/outro) — mostra qualquer responsável com atividade concluída vinculada no período. Ajuste o período no seletor acima (padrão: hoje).");
     }
 
     else if(chave==="pipeline_novo_gerado"){
@@ -2913,6 +3210,11 @@ const MODELO_EXECUTIVO_CSS = String.raw`
   .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 14px 0 0; }
   .kpi { background: var(--white); border: 1px solid var(--line); border-radius: 12px; padding: 18px; text-align: center; }
   .kpi .label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+  /* v38 — KPI com explicação (kpi(rotulo,valor,descricao)) ganha sublinhado
+     pontilhado + cursor de ajuda no rótulo, pra avisar que dá pra passar o
+     mouse e ler o que aquele número quer dizer (tooltip nativo, via title
+     no card inteiro). */
+  .kpi[title] .label { border-bottom: 1px dashed var(--muted); display: inline-block; cursor: help; }
   .kpi .value { font-size: 22px; font-weight: 800; margin-top: 6px; color: var(--text-primary); }
   .kpi .small { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
   .kpi.good { border-top: 3px solid var(--good); }
@@ -2943,10 +3245,21 @@ const MODELO_EXECUTIVO_CSS = String.raw`
   .back-to-overview:hover { text-decoration: underline; }
 
   .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 28px; }
-  .barrow { display: grid; grid-template-columns: minmax(0,190px) 1fr minmax(0,110px); align-items: center; gap: 10px; margin-bottom: 9px; }
+  .barrow {
+    display: grid; grid-template-columns: minmax(0,190px) 1fr minmax(0,110px); align-items: center; gap: 10px;
+    margin-bottom: 9px; padding: 3px 6px; margin-left: -6px; margin-right: -6px; border-radius: 8px;
+    cursor: default; transition: background .15s ease;
+  }
+  /* v38 — interatividade: linha realça e a barra cresce sutilmente ao passar
+     o mouse (o tooltip com valor exato + % do total vem do title, ver
+     renderBarGenerico) — antes o gráfico era só decorativo, sem reação
+     nenhuma ao hover. */
+  .barrow:hover { background: var(--cream); }
+  .barrow:hover .barlabel { color: var(--atlas-dark); font-weight: 700; }
+  .barrow:hover .barfill { filter: brightness(1.1); transform: scaleY(1.12); }
   .barlabel { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bartrack { background: var(--grid); border-radius: 12px; height: 16px; position: relative; overflow: hidden; }
-  .barfill { height: 100%; border-radius: 8px; min-width: 6px; }
+  .barfill { height: 100%; border-radius: 8px; min-width: 6px; transition: filter .15s ease, transform .15s ease; }
   .barvalue { font-size: 11.5px; color: var(--text-primary); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 
   .full { grid-column: 1 / -1; }
@@ -3191,11 +3504,16 @@ const MODELO_EXECUTIVO_CSS = String.raw`
 .filtro-vendedor-row select{font:inherit;font-weight:700;padding:6px 10px;border-radius:8px;border:1.5px solid var(--orange);background:#fff;color:var(--text-primary)}
 .filtro-vendedor-aviso{font-size:11.5px;font-weight:700;color:var(--atlas-primary)}
 
-/* ---------- v20: fontes maiores, mais negrito e contorno laranja nos cards ---------- */
+/* ---------- v20: fontes maiores, mais negrito nos cards ---------- */
+/* v37 — tirado o contorno laranja de 2px que v20 tinha colocado em TODO kpi/
+   company card/vendor card (virava "tudo grita, nada é prioridade" — pedido
+   do usuário). Laranja Atlas fica reservado pro card de destaque de meta
+   (.meta-card-destaque, o "KPI principal" da página) e pros acentos que já
+   existiam antes (trend-line, ccard-abrir, filtro select) — kpi/ccard/vcard
+   voltam pro contorno neutro --line que já usavam antes do v20. */
 body{font-size:15px}
 h2.section{font-size:17px;font-weight:900}
 .hero h1{font-size:36px}
-.kpi{border:2px solid var(--orange)}
 .kpi .label{font-size:11.5px;font-weight:800}
 .kpi .value{font-size:26px;font-weight:800}
 .kpi .small{font-size:12px;font-weight:700}
@@ -3205,11 +3523,9 @@ h2.section{font-size:17px;font-weight:900}
 .meta-card-linha{font-size:14px;font-weight:600}
 .meta-card-linha strong{font-weight:800}
 .meta-card-pct{font-size:12.5px;font-weight:800}
-.ccard{border:2px solid var(--orange)}
 .ccard-name{font-size:16px;font-weight:800}
 .ccard-value{font-size:17px;font-weight:800}
 .ccard-meta{font-size:13px;font-weight:700}
-.vcard{border:2px solid var(--orange)}
 .vcard-name{font-size:15px;font-weight:800}
 .vcard-stats{font-size:12.5px;font-weight:800}
 
@@ -3232,8 +3548,12 @@ h2.section{font-size:18px}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
 .top3grid{gap:18px}
 .cgrid{gap:16px}
+/* v37 — pisca-pisca contínuo (infinite) chamava atenção pra TODO valor da
+   página o tempo todo, o que na prática não prioriza nada (pedido do
+   usuário). Roda 1x só, ao carregar a página, em vez de ficar piscando pra
+   sempre. */
 @keyframes valorPisca{0%,100%{opacity:1;filter:drop-shadow(0 0 0 rgba(255,86,24,0))}50%{opacity:.72;filter:drop-shadow(0 0 6px rgba(255,86,24,.55))}}
-.valor-pisca{animation:valorPisca 1.7s ease-in-out infinite}
+.valor-pisca{animation:valorPisca 1.1s ease-in-out 1}
 @media(prefers-reduced-motion:reduce){.valor-pisca{animation:none!important}}
 
 .meta-card-topo{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -3258,6 +3578,32 @@ h2.section{font-size:18px}
 .stat-valor{font-size:18px;font-weight:800;color:var(--atlas-dark)}
 .stat-sub{font-size:11px;color:var(--text-secondary);font-weight:600}
 @media(max-width:640px){.donut-box{flex-direction:column;align-items:flex-start}}
+
+/* ---------- v39 (Fase 3 do redesign de Win Rate): entrada animada, hover
+   nos KPIs e "IA Embarcada" portada pro modelo visual exportado ---------- */
+@keyframes animaEntradaFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.anima-entrada{opacity:0;animation:animaEntradaFadeUp .5s cubic-bezier(.22,1,.36,1) forwards;animation-delay:var(--atraso,0ms)}
+@media(prefers-reduced-motion:reduce){.anima-entrada{animation:none;opacity:1}}
+.kpi:hover{transform:translateY(-3px);box-shadow:0 14px 30px -16px rgba(0,0,0,.22)}
+
+/* IA Embarcada — mesmo cartão/paleta de css/styles.css (.ia-insights-*),
+   reescrito com os tokens PRÓPRIOS deste modelo (--orange/--gold/--white/
+   --line/--good), já que o HTML exportado é autocontido e não carrega
+   css/styles.css. */
+.ia-insights-card{border:1px solid color-mix(in srgb,var(--orange) 30%,var(--line));border-radius:16px;padding:18px 22px;background:color-mix(in srgb,var(--orange) 3%,var(--white));box-shadow:0 8px 24px -8px rgba(0,0,0,.08);margin:18px 0 22px;position:relative;overflow:hidden}
+.ia-insights-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--orange),var(--gold),#4774d9)}
+.ia-insights-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.ia-insights-badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--orange)}
+.ia-insights-badge .ia-sparkle{font-size:15px}
+.ia-insights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.ia-insights-coluna{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:0 4px 12px -6px rgba(0,0,0,.06)}
+.ia-insights-coluna h4{margin:0 0 10px;font-size:12px;font-weight:800;letter-spacing:-0.01em}
+.ia-insights-coluna ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.ia-insights-coluna li{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45;color:var(--text-primary)}
+.ia-bullet{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:6px;font-size:10px;font-weight:900;flex:0 0 auto;margin-top:1px}
+.ia-bullet.ok{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.ia-bullet.alerta{background:color-mix(in srgb,var(--gold) 22%,transparent);color:#b37400}
+.ia-bullet.acao{background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange)}
 `;
 const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="http://www.w3.org/2000/svg" fill="#FF5618"><path d="M403.66,171.69l-10-28.49h-57l-9.78,28.49H294.09L350.17,21.5h29.14L437.2,171.69ZM365,61.19l-18.66,53.73H383.9Z"/>
         <path d="M494.61,145.14h13.58v26.55H487q-18.16,0-28.69-10.53t-10.53-28.89v-47h-21.4V78.88L472.8,32.47h4.35V61.31h31v24H477.65v43q0,8.08,4.39,12.47t12.57,4.39"/>
@@ -3266,23 +3612,6 @@ const MODELO_EXECUTIVO_LOGO = String.raw`<svg viewBox="0 0 800 174.78" xmlns="ht
         <path d="M753.69,174.78q-20.75,0-33.48-10.82t-12.82-28.6h29q.11,7.09,5.14,10.88T754.89,150A20.3,20.3,0,0,0,766,147.14a9.17,9.17,0,0,0,4.54-8.18,7.43,7.43,0,0,0-1.55-4.69,11.43,11.43,0,0,0-4.84-3.35,43.86,43.86,0,0,0-6.48-2.09q-3.2-.75-8.39-1.65-4.68-.8-7.88-1.45t-7.73-1.94a44.3,44.3,0,0,1-7.64-2.85,43.08,43.08,0,0,1-6.54-4.14,23,23,0,0,1-5.49-5.74,29.62,29.62,0,0,1-3.39-7.63,34.21,34.21,0,0,1-1.35-9.88,31.18,31.18,0,0,1,12.28-25.5q12.27-9.82,32.13-9.83t32,10.13q12.07,10.13,12.17,26.7H769.56q-.09-6.49-4.44-9.78T752.9,82q-6.9,0-10.83,2.9a9.07,9.07,0,0,0-3.94,7.68,7.92,7.92,0,0,0,.64,3.25,5.9,5.9,0,0,0,2.3,2.49q1.65,1,3.09,1.8a22.06,22.06,0,0,0,4.39,1.49c2,.5,3.56.87,4.79,1.1l5.64,1q16.07,2.89,23.16,6,17.86,8,17.86,27.94,0,16.86-12.67,27t-33.64,10.12"/>
         <polygon points="153.4 87.56 167.65 62.87 167.68 62.85 178.13 44.72 178.11 44.68 178.15 44.68 203.95 0 182.97 0 152.31 0 110.4 0 99.17 0 73.37 44.68 73.35 44.72 62.87 62.87 48.62 87.56 48.41 87.94 0 171.76 83.81 171.76 104.78 171.76 125.74 135.49 125.76 135.44 153.19 87.94 153.4 87.56"/>
         <polygon points="203.07 87.94 175.75 87.94 153.9 125.79 153.9 125.83 137.02 155.01 146.7 171.76 209.57 171.76 251.48 171.76 203.07 87.94"/></svg>`;
-
-// v27 — logo da Total Trac para os relatórios exportáveis (segundo tenant do
-// portal), reproduzindo o símbolo (pin de localização + ondas de wi-fi) e o
-// wordmark de duas cores do manual de identidade visual deles (TOTAL em
-// navy #374898, TRAC em azul #008FCE) — mesmo padrão String.raw do logo
-// acima, usado por gerarHTMLRelatorioVisualGenerico/cockpitGerarHTMLExport/
-// gerarHTMLForecastModelo/gerarHTMLRelatorioAnaliseSdr via marcaAtiva().logoSvg.
-const MODELO_EXECUTIVO_LOGO_TOTALTRAC = String.raw`<svg viewBox="0 0 620 120" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(2,4)">
-    <path d="M52 0C27 0 7 19 7 43c0 30 45 71 45 71s45-41 45-71C97 19 77 0 52 0z" fill="#93DBF2"/>
-    <circle cx="52" cy="43" r="15" fill="#ffffff"/>
-    <circle cx="52" cy="43" r="6.5" fill="#374898"/>
-    <path d="M52 20a24 24 0 0 1 24 20" stroke="#ffffff" stroke-width="6.5" fill="none" stroke-linecap="round"/>
-    <path d="M52 31a13 13 0 0 1 13 11" stroke="#ffffff" stroke-width="5.5" fill="none" stroke-linecap="round"/>
-  </g>
-  <text x="122" y="76" font-family="Poppins, Arial, sans-serif" font-weight="800" font-size="54"><tspan fill="#374898">TOTAL</tspan><tspan fill="#008FCE">TRAC</tspan></text>
-</svg>`;
 
 // Constrói o CSS do modelo executivo (letterhead/kpis/etc.) trocando a cor de
 // marca (--orange/--orange-2/--orange-3) pelas cores da empresa ativa — os

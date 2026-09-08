@@ -343,9 +343,10 @@ function escapeHtmlRelatorio(valor) {
 // Diário SDR, Análise SDR, Catálogo, Cockpit). Quando `alvoId` aponta pra um
 // elemento que existe na página, o card fica clicável e rola até lá — dá
 // pra consultar o detalhe sem precisar abrir o modelo visual completo.
-function kpiCardHtml(rotulo, valor, alvoId) {
+function kpiCardHtml(rotulo, valor, alvoId, descricao) {
   const clique = alvoId ? ` kpi-clicavel" onclick="rolarParaSecao('${alvoId}')` : "";
-  return `<div class="relatorio-especial-kpi${clique}"><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
+  const dica = descricao ? ` title="${escapeHtmlRelatorio(descricao)}"` : "";
+  return `<div class="relatorio-especial-kpi${clique}"${dica}><span class="valor">${escapeHtmlRelatorio(valor)}</span><span class="rotulo">${escapeHtmlRelatorio(rotulo)}</span></div>`;
 }
 function rolarParaSecao(id) {
   const el = document.getElementById(id);
@@ -596,7 +597,7 @@ function cicloDealDias(d) {
   return Math.max(0,Math.floor((new Date(`${b}T12:00:00`)-new Date(`${a}T12:00:00`))/86400000));
 }
 function dentroPeriodoCatalogo(v,p){ return (!p.inicio&&!p.fim)?true:dataDentroFaixa(v,p.inicio,p.fim); }
-function kpi(rotulo,valor){return{rotulo,valor};}
+function kpi(rotulo,valor,descricao){return descricao?{rotulo,valor,descricao}:{rotulo,valor};}
 
 // v11 — barra de atingimento de meta (semanal/mensal), reutilizada nos blocos
 // de Forecast semanal e Forecast mensal para mostrar visualmente se a meta

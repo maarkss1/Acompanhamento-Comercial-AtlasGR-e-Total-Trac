@@ -11,10 +11,7 @@
 <script>
   (function () {
     try {
-      // v29 — chave por empresa (data-empresa), pra tema de uma marca
-      // nao vazar/sobrescrever o da outra no mesmo navegador.
-      var sufixoEmpresaTema = document.documentElement.getAttribute("data-empresa") === "totaltrac" ? "__totaltrac" : "";
-      var salvo = localStorage.getItem("atlas-extrator-tema" + sufixoEmpresaTema);
+      var salvo = localStorage.getItem("atlas-extrator-tema");
       var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
       document.documentElement.setAttribute("data-tema", tema);
     } catch (e) {
@@ -108,7 +105,7 @@
     <div class="row">
       <div>
         <label for="entidade">Tipo de dado</label>
-        <select id="entidade" onchange="aoTrocarEntidade(true)"></select>
+        <select id="entidade" onfocus="this.dataset.prev=this.value" onchange="aoTrocarEntidadeManual(this)"></select>
       </div>
       <div>
         <label for="relatorio">Relatórios</label>
