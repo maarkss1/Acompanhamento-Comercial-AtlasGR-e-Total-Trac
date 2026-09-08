@@ -13,11 +13,16 @@ import { carregarScriptClassico } from "./helpers/carregar-script-classico.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CAMINHO_CONFIG = path.join(__dirname, "..", "js", "config.js");
 const CAMINHO_JORNADA = path.join(__dirname, "..", "js", "jornada.js");
+const CAMINHO_FORECAST = path.join(__dirname, "..", "js", "forecast.js");
 const CAMINHO_COCKPIT = path.join(__dirname, "..", "js", "cockpit.js");
 
 const config = carregarScriptClassico(CAMINHO_CONFIG);
 const jornada = carregarScriptClassico(CAMINHO_JORNADA, { contextoExtra: config });
-const cockpit = carregarScriptClassico(CAMINHO_COCKPIT, { contextoExtra: { ...config, ...jornada } });
+// forecast.js precisa entrar no contexto do Cockpit por causa de
+// chaveClienteDealModelo (conciliação Comercial↔Financeiro) — ver
+// cockpitFinanceiroConciliadoComFiltro/cockpitClassificarComercialFinanceiro.
+const forecast = carregarScriptClassico(CAMINHO_FORECAST, { contextoExtra: { ...config, ...jornada } });
+const cockpit = carregarScriptClassico(CAMINHO_COCKPIT, { contextoExtra: { ...config, ...jornada, ...forecast } });
 
 describe("cockpit.js — cockpitContarComValor", () => {
   test("conta só itens com _VALOR numérico > 0 (v29 — ver comentário na função)", () => {
@@ -77,5 +82,57 @@ describe("cockpit.js vs jornada.js — alinhamento de thresholds do bucket de fo
       jornada.classificarBucketForecast(5, "process"),
       cockpit.cockpitClassificarBucketForecast(5)
     );
+  });
+});
+
+describe("cockpit.js — cockpitFinanceiroConciliadoComFiltro (regressão: Win Rate/Resultado do Mês zerados ao filtrar Vendedor/Origem)", () => {
+  // Cenário relatado pelo usuário: o Cockpit tinha um negócio Comercial
+  // GANHO (vendedor A) já confirmado no Financeiro (Contrato Assinado), mas
+  // o registro do funil Financeiro pertence a outro responsável no Bitrix
+  // (equipe financeira, não o vendedor A) — comum quando o pipeline
+  // Financeiro tem dono/origem próprios. Ao trocar o filtro "Todos os
+  // vendedores" para o vendedor A, Win Rate e Resultado do Mês zeravam
+  // porque o registro Financeiro era descartado pelo filtro de vendedor
+  // ANTES de chegar em cockpitClassificarComercialFinanceiro — a conciliação
+  // Comercial↔Financeiro é por CLIENTE (chaveClienteDealModelo), nunca por
+  // vendedor/origem (o Financeiro não tem esse conceito aplicável).
+  const dealComercial = {
+    ID: "1001", COMPANY_ID: "500", ASSIGNED_BY_ID: "1", SOURCE_ID: "CALL",
+    _SEMANTICA: "success", _VALOR: 10000, _FECHAMENTO: "2026-08-15",
+  };
+  const dealFinanceiroDonoDiferente = {
+    ID: "2001", COMPANY_ID: "500", ASSIGNED_BY_ID: "999", SOURCE_ID: "",
+    _SEMANTICA: "success", _ESTAGIO: "Contrato Assinado", _VALOR: 10000,
+  };
+
+  test("sem filtro ativo (Todos/Todas): devolve a lista completa, sem restringir por cliente", () => {
+    const resultado = cockpit.cockpitFinanceiroConciliadoComFiltro(
+      [dealFinanceiroDonoDiferente], [dealComercial], false
+    );
+    assert.deepEqual(resultado, [dealFinanceiroDonoDiferente]);
+  });
+
+  test("com filtro ativo: mantém o registro Financeiro cujo CLIENTE está nos negócios Comerciais filtrados, mesmo com dono/origem diferentes", () => {
+    const dealsComerciaisFiltrados = [dealComercial]; // já filtrado por Vendedor=1
+    const resultado = cockpit.cockpitFinanceiroConciliadoComFiltro(
+      [dealFinanceiroDonoDiferente], dealsComerciaisFiltrados, true
+    );
+    assert.deepEqual(resultado, [dealFinanceiroDonoDiferente]);
+  });
+
+  test("com filtro ativo: descarta registros Financeiro de clientes que não sobraram no filtro Comercial", () => {
+    const outroClienteFinanceiro = { ...dealFinanceiroDonoDiferente, ID: "2002", COMPANY_ID: "777" };
+    const resultado = cockpit.cockpitFinanceiroConciliadoComFiltro(
+      [dealFinanceiroDonoDiferente, outroClienteFinanceiro], [dealComercial], true
+    );
+    assert.deepEqual(resultado, [dealFinanceiroDonoDiferente]);
+  });
+
+  test("efeito fim-a-fim: com a conciliação por cliente, o negócio é classificado 'ganho' (não 'pendente') mesmo filtrando por vendedor", () => {
+    const financeiroConciliado = cockpit.cockpitFinanceiroConciliadoComFiltro(
+      [dealFinanceiroDonoDiferente], [dealComercial], true
+    );
+    const [classificado] = cockpit.cockpitClassificarComercialFinanceiro([dealComercial], financeiroConciliado, null);
+    assert.equal(classificado._RESULTADO, "ganho");
   });
 });

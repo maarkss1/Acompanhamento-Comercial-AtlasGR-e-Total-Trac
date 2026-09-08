@@ -411,8 +411,13 @@ function cockpitRenderReunioes() {
 async function aplicarFiltroProdutoCockpit() {
   const termo = (cockpitEl("cockpitProduto")?.value || "").trim();
   const status = cockpitEl("cockpitProdutoStatus");
+  const vendedor = cockpitEl("cockpitVendedor")?.value || "";
+  const origem = cockpitEl("cockpitOrigem")?.value || "";
   if (!termo) {
     cockpitState.dealsFiltrados = cockpitFiltrarPorVendedorOrigem(cockpitState.deals);
+    cockpitState.dealsFinanceiroFiltrados = cockpitFinanceiroConciliadoComFiltro(
+      cockpitState.dealsFinanceiro || [], cockpitState.dealsFiltrados, !!(vendedor || origem)
+    );
     if (status) status.textContent = "";
     renderizarCockpit();
     return;
@@ -434,6 +439,11 @@ async function aplicarFiltroProdutoCockpit() {
     await aguardar(60);
   }
   cockpitState.dealsFiltrados = comProduto;
+  // Filtro de produto sempre restringe (mesmo com Vendedor/Origem em
+  // "Todos"/"Todas") — ver cockpitFinanceiroConciliadoComFiltro acima.
+  cockpitState.dealsFinanceiroFiltrados = cockpitFinanceiroConciliadoComFiltro(
+    cockpitState.dealsFinanceiro || [], comProduto, true
+  );
   if (status) status.textContent = `${comProduto.length} negócio(s) com produto correspondente a "${escapeHtmlRelatorio(termo)}" entre os ${base.length} carregados.`;
   renderizarCockpit();
 }
@@ -445,8 +455,12 @@ function cockpitReaplicarFiltros() {
   if (!cockpitState.deals.length) return;
   const termo = (cockpitEl("cockpitProduto")?.value || "").trim();
   if (termo) { aplicarFiltroProdutoCockpit(); return; }
+  const vendedor = cockpitEl("cockpitVendedor")?.value || "";
+  const origem = cockpitEl("cockpitOrigem")?.value || "";
   cockpitState.dealsFiltrados = cockpitFiltrarPorVendedorOrigem(cockpitState.deals);
-  cockpitState.dealsFinanceiroFiltrados = cockpitFiltrarPorVendedorOrigem(cockpitState.dealsFinanceiro || []);
+  cockpitState.dealsFinanceiroFiltrados = cockpitFinanceiroConciliadoComFiltro(
+    cockpitState.dealsFinanceiro || [], cockpitState.dealsFiltrados, !!(vendedor || origem)
+  );
   renderizarCockpit();
 }
 
@@ -458,6 +472,36 @@ function cockpitFiltrarPorVendedorOrigem(deals) {
     if (origem && String(d.SOURCE_ID || "") !== String(origem)) return false;
     return true;
   });
+}
+
+// BUG (relatado pelo usuário: Win Rate e "vários outros lugares" ficavam
+// vazios ao trocar Vendedor/Origem do "Todos"/"Todas" padrão) — causa raiz:
+// o funil Financeiro é um pipeline separado no Bitrix (CATEGORY_ID próprio,
+// buscado em cockpitBuscarDealsFinanceiro) cujo ASSIGNED_BY_ID/SOURCE_ID
+// refletem o dono/origem DAQUELE pipeline (em geral a equipe financeira),
+// não o vendedor/origem do negócio Comercial correspondente. A conciliação
+// Comercial↔Financeiro sempre foi por CLIENTE (chaveClienteDealModelo, ver
+// cockpitClassificarComercialFinanceiro) — nunca por vendedor/origem.
+// Filtrar o Financeiro pelos SEUS PRÓPRIOS ASSIGNED_BY_ID/SOURCE_ID (como
+// cockpitFiltrarPorVendedorOrigem faz) órfãos essa conciliação sempre que
+// esses campos divergem do negócio Comercial: o negócio ganho passa no
+// filtro do lado Comercial, mas o registro Financeiro que confirma esse
+// ganho (Contrato Assinado) some do lado Financeiro — e
+// cockpitClassificarComercialFinanceiro classifica o negócio como
+// "pendente" (nem ganho nem perda), zerando Win Rate, Resultado do Mês,
+// Forecast Ajustado (confiança) e Contratos não Assinados assim que
+// qualquer vendedor/origem/produto específico é selecionado.
+// Correção: restringir o Financeiro aos CLIENTES que sobraram no filtro do
+// lado Comercial (mesma chave da conciliação), nunca pelos campos do
+// próprio registro Financeiro. Sem filtro ativo (Todos/Todas, sem produto),
+// devolve a lista completa — sem essa ressalva, um registro Financeiro cujo
+// cliente não tenha nenhum negócio Comercial ativo no momento (ex.: negócio
+// Comercial arquivado/fora do período extraído) seria descartado mesmo sem
+// nenhum filtro do usuário, uma regressão em relação ao comportamento atual.
+function cockpitFinanceiroConciliadoComFiltro(dealsFinanceiro, dealsComerciaisFiltrados, filtroAtivo) {
+  if (!filtroAtivo) return dealsFinanceiro || [];
+  const clientesPermitidos = new Set((dealsComerciaisFiltrados || []).map((d) => chaveClienteDealModelo(d)));
+  return (dealsFinanceiro || []).filter((d) => clientesPermitidos.has(chaveClienteDealModelo(d)));
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +553,11 @@ async function atualizarCockpit() {
     atualizarStatus("Cockpit: buscando negócios do funil Financeiro...");
     const dealsFinanceiro = await cockpitBuscarDealsFinanceiro(webhook, base);
     cockpitState.dealsFinanceiro = dealsFinanceiro;
-    cockpitState.dealsFinanceiroFiltrados = cockpitFiltrarPorVendedorOrigem(dealsFinanceiro);
+    const vendedorAtual = cockpitEl("cockpitVendedor")?.value || "";
+    const origemAtual = cockpitEl("cockpitOrigem")?.value || "";
+    cockpitState.dealsFinanceiroFiltrados = cockpitFinanceiroConciliadoComFiltro(
+      dealsFinanceiro, cockpitState.dealsFiltrados, !!(vendedorAtual || origemAtual)
+    );
 
     cockpitState.periodo = cockpitPeriodoFiltro();
     cockpitState.ultimaAtualizacao = new Date();
