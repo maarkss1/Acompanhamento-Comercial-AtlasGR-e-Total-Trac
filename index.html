@@ -3,24 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light">
 <title>AtlasGR — Portal Comercial</title>
 <meta name="description" content="Central de Inteligência Comercial da AtlasGR: Cockpit Executivo, Relatórios, SDR e Extração de dados do Bitrix24 em um só lugar.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
-  // Mesmo tema salvo (ou do sistema) usado no resto do portal — só pra não
-  // piscar claro→escuro ao carregar.
-  (function () {
-    try {
-      var salvo = localStorage.getItem("atlas-extrator-tema");
-      var tema = salvo || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro");
-      document.documentElement.setAttribute("data-tema", tema);
-    } catch (e) {
-      document.documentElement.setAttribute("data-tema", "claro");
-    }
-  })();
+  // Capa é sempre modo claro, independente do tema salvo pro resto do
+  // portal — o toggle claro/escuro só existe a partir de home.html.
+  document.documentElement.setAttribute("data-tema", "claro");
 </script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
@@ -108,11 +100,15 @@
     display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;
   }
   .capa-modulo {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-    padding: 20px 20px 22px; box-shadow: var(--shadow-card);
-    display: flex; flex-direction: column; gap: 8px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 24px;
+    padding: 22px 22px 24px; box-shadow: var(--shadow-card);
+    display: flex; flex-direction: column; gap: 10px;
   }
-  .capa-modulo-icone { font-size: 22px; line-height: 1; }
+  .capa-modulo-icone {
+    width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; line-height: 1; border-radius: 50%;
+    background: var(--soft);
+  }
   .capa-modulo h3 { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
   .capa-modulo p { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
 
