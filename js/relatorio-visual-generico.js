@@ -1,28 +1,32 @@
 // ---------------------------------------------------------------------------
-// v41 — Modelo visual GENÉRICO dos relatórios (catálogo, Jornada, Diário SDR):
-// gera um HTML autocontido (CSS + JS inline, sem dependência externa) a partir
-// do resultado padrão { titulo, subtitulo, kpis[], tabelas[], nota }.
+// v42 — Modelo visual GENÉRICO dos relatórios (catálogo, Jornada, Diário SDR)
+// no estilo "AtlasGR Executive Intelligence": gera um HTML autocontido a
+// partir do resultado padrão { titulo, subtitulo, kpis[], tabelas[], nota }.
 //
-// Extraído de js/catalogo-relatorios.js "de passagem" (ver CLAUDE.md) ao
-// redesenhar o layout: o anterior misturava gráfico e tabela num grid de 3
-// colunas (.top3grid), o que embaralhava a leitura assim que a primeira
-// tabela abria. Aqui cada tabela é uma seção inteira, com gráfico + tabela
-// lado a lado, ordenação, filtro, "como ler" e glossário dos indicadores.
+// Estrutura do documento gerado:
+//   timbre → hero editorial com placar → sumário fixo → "executive pulse"
+//   (bento) → indicadores complementares (gaveta) → capítulos → cockpit
+//   (orbe, composição, tendência, funil, foco conectado) → diagnóstico IA →
+//   uma seção por tabela (gráfico primeiro, dados sob demanda) → metodologia.
 //
-// Dependências globais (carregadas por outros <script> da página):
-//   escapeHtmlRelatorio (jornada.js), marcaAtiva (config.js),
-//   moedaRelatorio, formatarDataBR/formatarDataISO (bitrix-api.js),
-//   iaDiagnosticarRelatorioCatalogo/iaRenderizarCardInsightsHTML (ia-engine.js, opcionais).
+// Tudo é derivado dos dados: nenhum número é inventado. Heurísticas olham
+// rótulos/valores dos KPIs e chaves/valores das tabelas. Relatórios podem
+// enriquecer com campos opcionais: tabela.descricao (texto "como ler"),
+// resultado.capitulos ([{antes, titulo, descricao}]) e resultado.manchete.
+//
+// CSS e JS embutidos vivem em js/relatorio-visual-runtime.js.
+// Dependências globais: escapeHtmlRelatorio (jornada.js), marcaAtiva
+// (config.js), moedaRelatorio, formatarDataBR/formatarDataISO (bitrix-api.js),
+// iaDiagnosticarRelatorioCatalogo/iaRenderizarCardInsightsHTML (opcionais).
 // ---------------------------------------------------------------------------
 
 // Interpreta um texto já formatado ("R$ 1.513,87", "50.93%", "30 dias",
-// "1.234", "—") como número, ou null quando não é numérico. Usada aqui (para
-// marcar KPIs animáveis) e embutida via .toString() no JS do relatório
-// exportado (ordenação das tabelas) — uma fonte só, testável no Node.
+// "1.234", "—") como número, ou null. Usada aqui e embutida via .toString()
+// no JS do relatório exportado — uma fonte só, testável no Node.
 function relatorioVisualParseNumero(texto) {
   var s = String(texto == null ? "" : texto).trim();
   if (!s || s === "—" || s === "-") return null;
-  var m = s.match(/^(?:R\$\s?)?(-?[\d.,]+)\s*(%|dias?|d|h|min)?$/i);
+  var m = s.match(/^(?:R\$\s?)?([-+]?[\d.,]+)\s*(%|p\.p\.|dias?|d|h|min)?$/i);
   if (!m) return null;
   var n = m[1];
   if (n.indexOf(".") > -1 && n.indexOf(",") > -1) n = n.replace(/\./g, "").replace(",", ".");
@@ -32,8 +36,6 @@ function relatorioVisualParseNumero(texto) {
   return Number.isFinite(v) ? v : null;
 }
 
-// Decide se o valor de um KPI pode ser animado (contagem subindo até o valor
-// final) e devolve os atributos data-* que o JS do relatório usa pra isso.
 function relatorioVisualKpiAnimacao(valor) {
   var s = String(valor == null ? "" : valor).trim();
   var m;
@@ -44,6 +46,34 @@ function relatorioVisualKpiAnimacao(valor) {
   return null;
 }
 
+function relatorioVisualTipoKpi(anim) {
+  if (!anim) return "texto";
+  if (anim.prefixo === "R$ ") return "moeda";
+  if (anim.sufixo === "%") return "pct";
+  if (anim.sufixo) return "unidade";
+  return "contagem";
+}
+
+// Classifica os KPIs pra alimentar hero, bento e cockpit: indicador
+// principal (primeiro percentual), receita (primeiro R$), contagens e a
+// "composição" — subconjunto de contagens que soma exatamente a primeira
+// (ex.: Oportunidades = Ganhos + Perdas + Em aberto + Piloto).
+function relatorioVisualClassificarKpis(kpis) {
+  var lista = (kpis || []).map(function (k, i) { var anim = relatorioVisualKpiAnimacao(k.valor); return { indice: i, rotulo: k.rotulo, valor: k.valor, descricao: k.descricao || "", anim: anim, tipo: relatorioVisualTipoKpi(anim) }; });
+  var porTipo = function (t) { return lista.filter(function (k) { return k.tipo === t; }); };
+  var contagens = porTipo("contagem"), pcts = porTipo("pct"), moedas = porTipo("moeda"), unidades = porTipo("unidade");
+  var primario = pcts[0] || contagens[0] || lista[0] || null;
+  var composicao = null;
+  if (contagens.length >= 3) {
+    var base = contagens[0], partes = contagens.slice(1);
+    for (var n = partes.length; n >= 2; n--) {
+      var sub = partes.slice(0, n), soma = sub.reduce(function (s, k) { return s + k.anim.numero; }, 0);
+      if (soma === base.anim.numero && base.anim.numero > 0) { composicao = { base: base, partes: sub }; break; }
+    }
+  }
+  return { lista: lista, primario: primario, moeda: moedas[0] || null, moedas: moedas, contagens: contagens, pcts: pcts, unidades: unidades, composicao: composicao };
+}
+
 function relatorioVisualFormatarNumero(v, chave) {
   var n = Number(v) || 0;
   if (/VALOR|RECEITA|TICKET|PONDERAD|FATURA/i.test(chave || "")) return moedaRelatorio(n);
@@ -51,43 +81,114 @@ function relatorioVisualFormatarNumero(v, chave) {
 }
 
 function relatorioVisualRotuloBonito(chave) {
-  return String(chave || "").replace(/_/g, " ").toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); });
+  var mapa = { MES: "Mês", ESTAGIO: "Estágio", RESPONSAVEL: "Responsável", NEGOCIOS: "Negócios", PASSARAM: "Passaram", VISITARAM: "Passaram", DECIDIDOS: "Decididos", OPORTUNIDADES: "Oportunidades", RECEITA: "Receita", VALOR: "Valor", DEALS: "Negócios", ATIVIDADES: "Atividades", LEADS: "Leads", GANHOS: "Ganhos", PERDAS: "Perdas", WIN_RATE_PCT: "Win Rate", TAXA_AVANCO_PCT: "Taxa de avanço" };
+  if (mapa[chave]) return mapa[chave];
+  var base = String(chave || "").replace(/_PCT$/, "");
+  if (mapa[base]) return mapa[base];
+  return base.replace(/_/g, " ").toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); });
 }
 
-// Escolhe automaticamente 1 coluna numérica (métrica) e 1 coluna de texto
-// (rótulo) de QUALQUER tabela pra virar gráfico de barras — olha só os dados
-// brutos (t.dados). Sem par óbvio, ou com um único rótulo distinto, não há
-// gráfico (evita gráfico sem sentido).
+function relatorioVisualRotuloCurto(titulo) {
+  var s = String(titulo || "").split(/\s[—–•|]\s|\s\(/)[0].trim();
+  return s.length > 26 ? s.slice(0, 25).trim() + "…" : s;
+}
+
+function relatorioVisualPct(v, d) {
+  return (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 1 : d }) + "%";
+}
+
 var RELATORIO_VISUAL_CHAVES_ROTULO = ["CLIENTE", "RESPONSAVEL", "STATUS", "ESTAGIO", "FUNIL", "CANAL", "PIPELINE", "NOME", "ORIGEM", "PRODUTO", "SDR", "MES", "ETAPA", "SITUACAO", "TIPO", "RESULTADO", "CATEGORIA", "EMPRESA", "VENDEDOR", "MOTIVO", "FAIXA", "METRICA"];
 var RELATORIO_VISUAL_CHAVES_METRICA = ["VALOR", "RECEITA", "ATIVIDADES", "NEGOCIOS", "LEADS", "QUANTIDADE", "TICKET", "GANHOS", "PERDIDOS", "TOTAL", "MEDIA_DIA", "VISITARAM", "PONDERADO", "DIAS", "PENDENTES", "ATRASADAS", "PASSARAM", "DECIDIDOS", "DEALS", "OPORTUNIDADES"];
-function relatorioVisualDadosGrafico(t) {
-  var dados = t && t.dados;
-  if (!dados || dados.length < 2) return null;
+
+function relatorioVisualChaves(t) {
+  var dados = (t && t.dados) || [];
+  if (!dados.length) return { dados: dados, chaves: [], numericas: [], textuais: [], pcts: [] };
   var chaves = Object.keys(dados[0] || {});
-  var numericas = chaves.filter(function (k) { return !/(^|_)ID$/i.test(k) && dados.every(function (r) { return typeof r[k] === "number"; }); });
-  if (!numericas.length) return null;
-  var metrica = RELATORIO_VISUAL_CHAVES_METRICA.find(function (k) { return numericas.includes(k); }) || numericas[0];
-  var textuais = chaves.filter(function (k) { return k !== metrica && !/(^|_)ID$/i.test(k) && dados.every(function (r) { return typeof r[k] === "string"; }); });
-  if (!textuais.length) return null;
-  var rotuloChave = RELATORIO_VISUAL_CHAVES_ROTULO.find(function (k) { return textuais.includes(k); }) || textuais[0];
-  if (new Set(dados.map(function (r) { return r[rotuloChave]; })).size < 2) return null;
-  var total = dados.reduce(function (s, r) { return s + (Number(r[metrica]) || 0); }, 0);
-  if (total <= 0) return null;
-  var linhas = dados.slice().sort(function (a, b) { return (Number(b[metrica]) || 0) - (Number(a[metrica]) || 0); }).slice(0, 8)
-    .map(function (r) { return { ROTULO: r[rotuloChave] || "—", VALOR: Number(r[metrica]) || 0 }; });
-  return { rotuloChave: rotuloChave, metrica: metrica, linhas: linhas, total: total, titulo: relatorioVisualRotuloBonito(metrica) + " por " + relatorioVisualRotuloBonito(rotuloChave).toLowerCase() };
+  var numericas = chaves.filter(function (k) { return !/(^|_)ID$/i.test(k) && dados.every(function (r) { return typeof r[k] === "number" || r[k] === null; }) && dados.some(function (r) { return typeof r[k] === "number"; }); });
+  var textuais = chaves.filter(function (k) { return !/(^|_)ID$/i.test(k) && dados.every(function (r) { return typeof r[k] === "string"; }); });
+  var pcts = numericas.filter(function (k) { return /_PCT$|PERCENT|^PCT/i.test(k); });
+  return { dados: dados, chaves: chaves, numericas: numericas, textuais: textuais, pcts: pcts };
 }
 
-// Quebra a nota metodológica (um parágrafo longo) em frases, pra virar lista.
+// Par rótulo × métrica de qualquer tabela (gráfico de barras padrão).
+function relatorioVisualDadosGrafico(t) {
+  var c = relatorioVisualChaves(t);
+  if (c.dados.length < 2) return null;
+  var metricas = c.numericas.filter(function (k) { return c.pcts.indexOf(k) < 0; });
+  if (!metricas.length) return null;
+  var metrica = RELATORIO_VISUAL_CHAVES_METRICA.find(function (k) { return metricas.includes(k); }) || metricas[0];
+  var textuais = c.textuais.filter(function (k) { return k !== metrica; });
+  if (!textuais.length) return null;
+  var rotuloChave = RELATORIO_VISUAL_CHAVES_ROTULO.find(function (k) { return textuais.includes(k); }) || textuais[0];
+  if (new Set(c.dados.map(function (r) { return r[rotuloChave]; })).size < 2) return null;
+  var total = c.dados.reduce(function (s, r) { return s + (Number(r[metrica]) || 0); }, 0);
+  if (total <= 0) return null;
+  var pctChave = c.pcts[0] || null;
+  var linhas = c.dados.slice().sort(function (a, b) { return (Number(b[metrica]) || 0) - (Number(a[metrica]) || 0); }).slice(0, 9)
+    .map(function (r) { return { ROTULO: r[rotuloChave] || "—", VALOR: Number(r[metrica]) || 0, PCT: pctChave ? r[pctChave] : null }; });
+  return { rotuloChave: rotuloChave, metrica: metrica, pctChave: pctChave, linhas: linhas, total: total, titulo: relatorioVisualRotuloBonito(metrica) + " por " + relatorioVisualRotuloBonito(rotuloChave).toLowerCase() };
+}
+
+function relatorioVisualEhMes(v) { return /^\d{4}-\d{2}/.test(String(v || "")); }
+
+// Decide o tipo de visual da seção: tendência (série mensal), comparativo
+// (atual × anterior), distribuição (poucas faixas com %) ou barras.
+function relatorioVisualTipoVisual(t) {
+  var c = relatorioVisualChaves(t);
+  if (!c.dados.length) return { tipo: null };
+  var rotulos = (t.colunas || []).map(function (x) { return String(x.label || ""); });
+  if (rotulos.some(function (l) { return /atual/i.test(l); }) && rotulos.some(function (l) { return /anterior/i.test(l); })) return { tipo: "comparativo" };
+  var mesChave = c.textuais.find(function (k) { return c.dados.every(function (r) { return relatorioVisualEhMes(r[k]); }); });
+  if (mesChave && c.dados.length >= 3 && c.numericas.length) {
+    var y = c.pcts[c.pcts.length - 1] || null;
+    var contagem = c.numericas.find(function (k) { return c.pcts.indexOf(k) < 0 && /DECIDIDOS|NEGOCIOS|DEALS|TOTAL|OPORTUNIDADES|ATIVIDADES|LEADS/i.test(k); }) || c.numericas.find(function (k) { return c.pcts.indexOf(k) < 0; }) || null;
+    var g = c.numericas.find(function (k) { return /GANHOS/i.test(k); }), p = c.numericas.find(function (k) { return /PERDAS|PERDIDOS/i.test(k); });
+    return { tipo: "tendencia", mesChave: mesChave, yChave: y || contagem, ehPct: !!y, barrasChave: y ? (g && p ? null : contagem) : null, ganhosChave: g || null, perdasChave: p || null };
+  }
+  // Distribuição = a coluna % é participação no total (soma ≈ 100). Taxas por
+  // linha (avanço, win rate) não somam 100 e caem no ranking de barras.
+  var participacao = c.pcts.find(function (k) { var soma = c.dados.reduce(function (s, r) { return s + (Number(r[k]) || 0); }, 0); return soma >= 95 && soma <= 105; });
+  if (c.dados.length <= 8 && participacao && c.textuais.length) return { tipo: "distribuicao", rotuloChave: c.textuais[0], pctChave: participacao, contagemChave: c.numericas.find(function (k) { return c.pcts.indexOf(k) < 0; }) || null };
+  var g2 = relatorioVisualDadosGrafico(t);
+  return g2 ? { tipo: "barras", grafico: g2 } : { tipo: null };
+}
+
+// Funil pro cockpit: tabela com etapa + volume que passou.
+function relatorioVisualDadosFunil(tabelas) {
+  for (var i = 0; i < (tabelas || []).length; i++) {
+    var t = tabelas[i], c = relatorioVisualChaves(t);
+    var etapa = c.textuais.find(function (k) { return /ETAPA|ESTAGIO|FASE/i.test(k); });
+    var vol = c.numericas.find(function (k) { return /PASSARAM|VISITARAM|ENTRARAM/i.test(k); });
+    if (!etapa || !vol || c.dados.length < 2) continue;
+    var taxa = c.pcts.find(function (k) { return /AVANCO|TAXA/i.test(k); }) || null;
+    var linhas = c.dados.map(function (r) { return { nome: r[etapa], vol: Number(r[vol]) || 0, taxa: taxa && typeof r[taxa] === "number" ? r[taxa] : null }; }).filter(function (r) { return r.vol > 0; }).sort(function (a, b) { return b.vol - a.vol; }).slice(0, 6);
+    if (linhas.length < 2) continue;
+    var gargalo = linhas.filter(function (r) { return r.taxa != null && r.vol >= 20 && !/ganho|perdid/i.test(r.nome); }).sort(function (a, b) { return a.taxa - b.taxa; })[0] || null;
+    return { indice: i, linhas: linhas, gargalo: gargalo, volChave: vol };
+  }
+  return null;
+}
+
+// Série mensal pro cockpit (sparkline): primeira tabela do tipo tendência.
+function relatorioVisualDadosSerie(tabelas) {
+  for (var i = 0; i < (tabelas || []).length; i++) {
+    var tv = relatorioVisualTipoVisual(tabelas[i]);
+    if (tv.tipo !== "tendencia" || !tv.yChave) continue;
+    var pts = tabelas[i].dados.slice().sort(function (a, b) { return String(a[tv.mesChave]).localeCompare(String(b[tv.mesChave])); })
+      .map(function (r) { return { m: r[tv.mesChave], v: typeof r[tv.yChave] === "number" ? r[tv.yChave] : null, n: tv.ganhosChave && tv.perdasChave ? (Number(r[tv.ganhosChave]) || 0) + (Number(r[tv.perdasChave]) || 0) : (tv.barrasChave ? Number(r[tv.barrasChave]) || 0 : null) }; })
+      .filter(function (p) { return p.v != null; });
+    if (pts.length < 2) continue;
+    return { indice: i, pontos: pts, ehPct: tv.ehPct, rotulo: relatorioVisualRotuloBonito(tv.yChave) };
+  }
+  return null;
+}
+
 function relatorioVisualNotaEmItens(nota) {
   var s = String(nota || "").trim();
   if (!s) return [];
   return s.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ("])/).map(function (x) { return x.trim(); }).filter(Boolean);
 }
 
-// Alertas automáticos: varre os KPIs à procura de padrões que sempre indicam
-// algo que merece atenção (vencido, atrasado, fora do SLA, crítico...) —
-// funciona em qualquer relatório sem lógica dedicada, só olhando rótulo+valor.
 function pontosDeAtencaoGenerico(kpis) {
   var PADROES = /vencid|atrasad|sem atividade|sem closedate|sem clientedate|fora do sla|fora sla|cr[ií]tico|sem contato|pendente|não localizado/i;
   var achados = (kpis || []).filter(function (x) {
@@ -99,308 +200,255 @@ function pontosDeAtencaoGenerico(kpis) {
   return '<div class="alerta anima"><span class="alerta-icone">⚠️</span><div><strong>Pontos de atenção encontrados neste relatório</strong><ul>' + itens + "</ul></div></div>";
 }
 
-function relatorioVisualCss(marca) {
-  return String.raw`
-  :root{--brand:${marca.corPrimaria};--brand-2:${marca.corSecundaria1};--brand-3:${marca.corSecundaria2};--gold:#FFC500;--ink:#2B2723;--ink-2:#5C564F;--muted:#8A8078;--line:#EAE1D8;--cream:#FBF3EC;--surface:#FFFFFF;--plane:#FAF9F7;--ok:#0F9D58;--warn:#E9A100;--bad:#D03B3B;--maxw:1240px;--radius:20px;--shadow:0 18px 40px -24px rgba(43,39,35,.28);--shadow-soft:0 8px 20px -14px rgba(43,39,35,.22)}
-  *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:70px}[hidden]{display:none!important}
-  body{margin:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif;font-size:14px;color:var(--ink);background:linear-gradient(180deg,#FAF9F7 0%,#F3F0EA 100%) fixed;-webkit-font-smoothing:antialiased;padding-bottom:60px}
-  a{color:var(--brand)}button{font-family:inherit}
-  .anima{transition:opacity .55s ease,transform .55s cubic-bezier(.2,.8,.2,1)}html.anima-on .anima{opacity:0;transform:translateY(14px)}html.anima-on .anima.visivel{opacity:1;transform:none}
-  .letterhead{background:var(--surface);border-bottom:3px solid var(--brand)}
-  .letterhead-inner{max-width:var(--maxw);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-  .letterhead-brand{display:flex;align-items:center;gap:16px;min-width:0}.letterhead-brand svg{width:126px;height:auto;display:block}
-  .letterhead-divider{width:1.5px;align-self:stretch;min-height:36px;background:var(--line)}
-  .letterhead-tagline{font-size:10.5px;font-weight:800;letter-spacing:.055em;text-transform:uppercase;color:var(--ink-2);max-width:250px;line-height:1.45}
-  .letterhead-ref{display:flex;align-items:center;gap:14px}
-  .letterhead-ref .ref{font-size:11.5px;color:var(--muted);text-align:right;line-height:1.5}.letterhead-ref .ref strong{display:block;color:var(--ink);font-size:12.5px;font-weight:800}
-  .btn-imprimir{border:1px solid var(--line);background:var(--surface);color:var(--brand);font-weight:800;font-size:12px;padding:9px 14px;border-radius:999px;cursor:pointer;transition:background .18s,transform .12s}.btn-imprimir:hover{background:var(--cream)}.btn-imprimir:active{transform:scale(.97)}
-  .hero{position:relative;overflow:hidden;background:linear-gradient(115deg,var(--brand) 0%,var(--brand-3) 55%,var(--brand-2) 100%);color:#fff;padding:26px 24px 34px;clip-path:polygon(0 0,100% 0,100% 92%,0 100%)}
-  .hero::after{content:"";position:absolute;right:-6%;top:-50%;width:520px;height:520px;background:radial-gradient(circle,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 70%);pointer-events:none}
-  .hero-inner{max-width:var(--maxw);margin:0 auto;position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
-  .hero-eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:11px;font-weight:800;opacity:.85;margin:0 0 8px}
-  .hero h1{margin:0 0 6px;font-size:clamp(22px,2.8vw,30px);font-weight:800;line-height:1.15;letter-spacing:-.02em}
-  .hero .subtitulo{margin:0;font-size:13px;opacity:.94;max-width:680px}
-  .hero-chips{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);border-radius:14px;padding:8px 14px;min-width:96px;text-align:center}
-  .chip strong{display:block;font-size:20px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}.chip span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;opacity:.9}
-  .sumario{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-  .sumario-inner{max-width:var(--maxw);margin:0 auto;padding:8px 24px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin}
-  .sumario a{white-space:nowrap;text-decoration:none;color:var(--ink-2);font-size:11.5px;font-weight:800;padding:8px 12px;border-radius:999px;border:1px solid transparent;transition:background .18s,color .18s}
-  .sumario a:hover{background:var(--cream);color:var(--brand)}.sumario a.ativo{background:var(--brand);color:#fff}
-  .sumario a .n{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:999px;background:var(--cream);color:var(--brand);font-size:10px;text-align:center;margin-right:6px}.sumario a.ativo .n{background:rgba(255,255,255,.25);color:#fff}
-  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
-  h2.titulo-secao{font-size:15px;font-weight:800;margin:34px 0 4px;padding-left:14px;position:relative;text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:baseline;gap:10px}
-  h2.titulo-secao::before{content:"";position:absolute;left:0;top:2px;bottom:2px;width:5px;border-radius:3px;background:linear-gradient(180deg,var(--brand),var(--gold))}
-  p.sub-secao{margin:0 0 16px 19px;font-size:12.5px;color:var(--ink-2)}
-  .painel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px 26px}
-  .alerta{display:flex;gap:12px;align-items:flex-start;background:#FFF8E6;border:1px solid #F5D98B;border-radius:14px;padding:14px 16px;margin-bottom:16px;font-size:12.5px}.alerta ul{margin:6px 0 0;padding-left:18px}.alerta-icone{font-size:18px}
-  .kpis{display:flex;flex-wrap:wrap;gap:12px}
-  .kpi{flex:1 1 180px;min-width:180px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-  .kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--brand)}
-  .kpi-destaque{flex:1 1 220px;background:linear-gradient(180deg,#fff 0%,var(--cream) 100%)}
-  .kpi-destaque::before{content:"";position:absolute;left:18px;right:18px;top:0;height:3px;border-radius:0 0 3px 3px;background:linear-gradient(90deg,var(--brand),var(--gold))}
-  .kpi-rotulo{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--muted);margin-bottom:6px}
-  .kpi-valor{font-size:24px;font-weight:800;color:var(--brand);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}.kpi-destaque .kpi-valor{font-size:32px}
-  .kpi-desc{margin-top:8px;font-size:11.5px;line-height:1.45;color:var(--ink-2)}
-  .kpi::after{content:"Copiado ✓";position:absolute;right:12px;top:10px;background:var(--brand);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:8px;opacity:0;transform:translateY(-4px);transition:opacity .18s,transform .18s;pointer-events:none}.kpi.copiado::after{opacity:1;transform:none}
-  .kpis-sec{margin-top:12px}
-  .ia-insights-card{border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));border-radius:var(--radius);padding:20px 24px;background:color-mix(in srgb,var(--brand) 3%,#fff);box-shadow:var(--shadow-soft);margin:18px 0 0;position:relative;overflow:hidden}
-  .ia-insights-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--brand),var(--gold),#4774d9)}
-  .ia-insights-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
-  .ia-insights-badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--brand)}.ia-insights-badge .ia-sparkle{font-size:15px}
-  .ia-insights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-  .ia-insights-coluna{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-  .ia-insights-coluna h4{margin:0 0 10px;font-size:12px;font-weight:800}.ia-insights-coluna ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-  .ia-insights-coluna li{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45}
-  .ia-bullet{flex:0 0 18px;height:18px;border-radius:50%;font-size:10px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;color:#fff}.ia-bullet.ok{background:var(--ok)}.ia-bullet.alerta{background:var(--warn)}.ia-bullet.acao{background:var(--brand)}
-  .secao{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
-  .secao-head{display:flex;align-items:center;gap:12px;padding:16px 22px;background:var(--cream);border-bottom:1px solid var(--line);flex-wrap:wrap}
-  .secao-num{flex:0 0 30px;width:30px;height:30px;border-radius:10px;background:var(--brand);color:#fff;font-weight:800;font-size:12px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -8px var(--brand)}
-  .secao-titulo{font-size:15px;font-weight:800;margin:0;flex:1 1 auto;min-width:200px}
-  .secao-head .contagem{font-size:11.5px;font-weight:700;color:var(--ink-2);background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 10px}
-  .secao-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .filtro-input{border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:12px;font-family:inherit;min-width:190px;background:#fff;outline:none;transition:border-color .18s,box-shadow .18s}.filtro-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
-  .btn-mini{border:1px solid var(--line);background:#fff;color:var(--brand);font-weight:800;font-size:11.5px;padding:7px 12px;border-radius:999px;cursor:pointer;transition:background .18s}.btn-mini:hover{background:var(--cream)}
-  .chip-filtro{display:inline-flex;align-items:center;gap:6px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:5px 10px;cursor:pointer}
-  .secao.recolhida .secao-body{display:none}.secao-toggle .chev{display:inline-block;transition:transform .18s}.secao.recolhida .secao-toggle .chev{transform:rotate(-90deg)}
-  .secao-como-ler{padding:10px 22px;font-size:12px;color:var(--ink-2);border-bottom:1px dashed var(--line);display:flex;gap:8px;align-items:flex-start;line-height:1.5}.secao-como-ler .i{flex:0 0 auto;color:var(--brand);font-weight:900}
-  .secao-body{padding:18px 22px 22px;display:grid;gap:22px;grid-template-columns:1fr}
-  .secao-body.com-grafico{grid-template-columns:minmax(260px,2fr) 3fr;align-items:start}
-  .grafico-titulo{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--muted);margin:0 0 12px;display:flex;justify-content:space-between;gap:8px}
-  .barra-linha{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:10px;padding:6px 8px;margin:0 -8px;border-radius:10px;cursor:pointer;transition:background .15s}
-  .barra-linha:hover{background:var(--cream)}.barra-linha.ativa{background:color-mix(in srgb,var(--brand) 10%,#fff);outline:1px solid color-mix(in srgb,var(--brand) 35%,transparent)}
-  .barra-rotulo{font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .barra-track{height:12px;border-radius:999px;background:var(--plane);border:1px solid var(--line);overflow:hidden}
-  .barra-fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--brand),var(--brand-2));opacity:var(--o,1);transition:width .9s cubic-bezier(.2,.8,.2,1)}.visivel .barra-fill{width:var(--w)}
-  .barra-valor{font-size:12px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}.barra-valor small{color:var(--muted);font-weight:600;margin-left:4px}
-  .tabela-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;max-height:560px}
-  table.tabela{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
-  table.tabela th{position:sticky;top:0;z-index:1;background:var(--cream);color:var(--ink-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
-  table.tabela th:hover{color:var(--brand)}table.tabela th::after{content:"↕";margin-left:6px;opacity:.35;font-size:10px}table.tabela th[data-ordem="asc"]::after{content:"↑";opacity:1;color:var(--brand)}table.tabela th[data-ordem="desc"]::after{content:"↓";opacity:1;color:var(--brand)}
-  table.tabela td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}table.tabela tbody tr:nth-child(even) td{background:#FCFAF7}table.tabela tbody tr:hover td{background:var(--cream)}
-  table.tabela td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  table.tabela td.pct{background-image:linear-gradient(90deg,color-mix(in srgb,var(--brand) 16%,transparent) var(--pct),transparent var(--pct));background-repeat:no-repeat;font-weight:700}
-  table.tabela tr[hidden]{display:none}
-  .tabela-rodape{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:var(--muted)}
-  .glossario{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
-  .glossario-item{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-  .glossario-item dt{font-size:12px;font-weight:800;color:var(--brand);margin:0 0 4px}.glossario-item dd{margin:0;font-size:12px;line-height:1.5;color:var(--ink-2)}
-  .notas{margin:14px 0 0;padding-left:20px;font-size:12.5px;line-height:1.6;color:var(--ink-2)}.notas li{margin-bottom:6px}.notas li::marker{color:var(--brand)}
-  .voltar-topo{position:fixed;right:22px;bottom:22px;width:44px;height:44px;border-radius:50%;background:var(--brand);color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 12px 26px -10px var(--brand);opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;z-index:30}.voltar-topo.visivel{opacity:1;transform:none}
-  footer{max-width:var(--maxw);margin:36px auto 0;padding:22px 24px 0;border-top:1px solid var(--line);text-align:center;font-size:11.5px;color:var(--muted)}
-  .footer-brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}.footer-brand svg{height:15px;width:auto}.footer-brand span{font-weight:800;color:var(--ink);letter-spacing:.04em}
-  @media (max-width:900px){.secao-body.com-grafico{grid-template-columns:1fr}.letterhead-tagline,.letterhead-divider{display:none}.hero-inner{align-items:flex-start}}
-  @media (max-width:620px){.wrap,.letterhead-inner,.sumario-inner{padding-left:14px;padding-right:14px}.painel{padding:18px}.kpi-destaque .kpi-valor{font-size:26px}}
-  @media (prefers-reduced-motion:reduce){.anima{opacity:1;transform:none;transition:none}.barra-fill{transition:none;width:var(--w)}}
-  @media print{body{background:#fff;padding:0}.sumario,.voltar-topo,.btn-imprimir,.secao-tools,.tabela-rodape,.filtro-input{display:none!important}.anima{opacity:1;transform:none}.barra-fill{width:var(--w)}.secao,.painel,.kpi{box-shadow:none;break-inside:avoid}.secao.recolhida .secao-body{display:grid}.tabela-wrap{max-height:none;overflow:visible}table.tabela tr[hidden]{display:table-row}.hero{clip-path:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-  `;
-}
-
-function relatorioVisualJs() {
-  return String.raw`
-  (function(){
-    var reduz=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    var parseNumero=${relatorioVisualParseNumero.toString()};
-
-    var animados=document.querySelectorAll('.anima');
-    if('IntersectionObserver' in window&&!reduz){
-      document.documentElement.classList.add('anima-on');
-      var io=new IntersectionObserver(function(entradas){entradas.forEach(function(e){if(e.isIntersecting){e.target.classList.add('visivel');io.unobserve(e.target);}});},{threshold:.1});
-      animados.forEach(function(el){io.observe(el);});
-      setTimeout(function(){animados.forEach(function(el){el.classList.add('visivel');});},2500);
-    }
-
-    document.querySelectorAll('.kpi-valor[data-numero]').forEach(function(el){
-      var alvo=parseFloat(el.getAttribute('data-numero'));var textoFinal=el.textContent;
-      if(!isFinite(alvo)||reduz)return;
-      var prefixo=el.getAttribute('data-prefixo')||'',sufixo=el.getAttribute('data-sufixo')||'';
-      var dec=parseInt(el.getAttribute('data-decimais')||'0',10),milhar=el.getAttribute('data-milhar')==='1';
-      var ini=null,dur=1000;
-      function fmt(v){return prefixo+(milhar?v.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec}):v.toFixed(dec))+sufixo;}
-      function passo(ts){if(ini===null)ini=ts;var p=Math.min(1,(ts-ini)/dur);var e=1-Math.pow(1-p,3);el.textContent=fmt(alvo*e);if(p<1)requestAnimationFrame(passo);else el.textContent=textoFinal;}
-      requestAnimationFrame(passo);
-    });
-
-    document.querySelectorAll('.kpi').forEach(function(card){
-      card.addEventListener('click',function(){
-        var texto=(card.querySelector('.kpi-rotulo')||{}).textContent+': '+(card.querySelector('.kpi-valor')||{}).textContent;
-        var ok=function(){card.classList.add('copiado');clearTimeout(card._t);card._t=setTimeout(function(){card.classList.remove('copiado');},1500);};
-        if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(texto).then(ok,ok);}else{ok();}
-      });
-    });
-
-    function aplicarFiltros(secao){
-      var table=secao.querySelector('table.tabela');if(!table)return;
-      var campo=secao.querySelector('.filtro-input');var termo=campo?campo.value.trim().toLowerCase():'';
-      var barra=secao.getAttribute('data-filtro-barra')||'';
-      var todas=secao.classList.contains('mostrar-todas');
-      var limite=parseInt(secao.getAttribute('data-limite')||'12',10);
-      var visiveis=0,total=0;
-      Array.prototype.forEach.call(table.tBodies[0].rows,function(tr){
-        var ok=(!termo||tr.textContent.toLowerCase().indexOf(termo)>-1)&&(!barra||tr.getAttribute('data-rotulo')===barra);
-        if(ok){total++;var mostrar=todas||visiveis<limite;tr.hidden=!mostrar;if(mostrar)visiveis++;}else{tr.hidden=true;}
-      });
-      var cont=secao.querySelector('.contagem');if(cont)cont.textContent=visiveis+' de '+total+' registro(s)';
-      var btn=secao.querySelector('.btn-todas');if(btn){btn.hidden=todas||total<=limite;btn.textContent='Mostrar todas ('+total+')';}
-      var chip=secao.querySelector('.chip-filtro');if(chip){chip.hidden=!barra;var sp=chip.querySelector('span');if(sp)sp.textContent=barra;}
-      secao.querySelectorAll('.barra-linha').forEach(function(b){b.classList.toggle('ativa',!!barra&&b.getAttribute('data-rotulo')===barra);});
-    }
-
-    document.querySelectorAll('.secao').forEach(function(secao){
-      var table=secao.querySelector('table.tabela');
-      if(table){
-        Array.prototype.forEach.call(table.tBodies[0].rows,function(tr){
-          Array.prototype.forEach.call(tr.cells,function(td){
-            var t=td.textContent.trim();var n=parseNumero(t);
-            if(n!==null){td.classList.add('num');}
-            if(/^-?\d+(\.\d+)?%$/.test(t)){td.classList.add('pct');td.style.setProperty('--pct',Math.max(0,Math.min(100,n))+'%');}
-          });
-        });
-        Array.prototype.forEach.call(table.tHead.rows[0].cells,function(th,idx){
-          th.title='Clique para ordenar';
-          th.addEventListener('click',function(){
-            var asc=th.getAttribute('data-ordem')!=='asc';
-            Array.prototype.forEach.call(table.tHead.rows[0].cells,function(o){o.removeAttribute('data-ordem');});
-            th.setAttribute('data-ordem',asc?'asc':'desc');
-            var tbody=table.tBodies[0],linhas=Array.prototype.slice.call(tbody.rows);
-            linhas.sort(function(a,b){
-              var ta=a.cells[idx]?a.cells[idx].textContent.trim():'',tb=b.cells[idx]?b.cells[idx].textContent.trim():'';
-              var na=parseNumero(ta),nb=parseNumero(tb),r;
-              if(na!==null&&nb!==null)r=na-nb;else if(na!==null)r=-1;else if(nb!==null)r=1;else r=ta.localeCompare(tb,'pt-BR');
-              return asc?r:-r;
-            });
-            linhas.forEach(function(l){tbody.appendChild(l);});
-            aplicarFiltros(secao);
-          });
-        });
-      }
-      var campo=secao.querySelector('.filtro-input');if(campo)campo.addEventListener('input',function(){secao.classList.remove('mostrar-todas');aplicarFiltros(secao);});
-      var btn=secao.querySelector('.btn-todas');if(btn)btn.addEventListener('click',function(){secao.classList.add('mostrar-todas');aplicarFiltros(secao);});
-      var chip=secao.querySelector('.chip-filtro');if(chip)chip.addEventListener('click',function(){secao.removeAttribute('data-filtro-barra');aplicarFiltros(secao);});
-      secao.querySelectorAll('.barra-linha').forEach(function(b){
-        b.addEventListener('click',function(){
-          var r=b.getAttribute('data-rotulo');
-          if(secao.getAttribute('data-filtro-barra')===r)secao.removeAttribute('data-filtro-barra');else secao.setAttribute('data-filtro-barra',r);
-          secao.classList.remove('mostrar-todas');aplicarFiltros(secao);
-        });
-      });
-      var toggle=secao.querySelector('.secao-toggle');if(toggle)toggle.addEventListener('click',function(){secao.classList.toggle('recolhida');toggle.setAttribute('aria-expanded',secao.classList.contains('recolhida')?'false':'true');});
-      aplicarFiltros(secao);
-    });
-
-    var links=Array.prototype.slice.call(document.querySelectorAll('.sumario a'));
-    var alvos=links.map(function(a){return document.querySelector(a.getAttribute('href'));}).filter(Boolean);
-    function marcarAtivo(){
-      var y=window.scrollY+90,atual=alvos[0];
-      alvos.forEach(function(el){if(el.offsetTop<=y)atual=el;});
-      links.forEach(function(a){a.classList.toggle('ativo',atual&&a.getAttribute('href')==='#'+atual.id);});
-      var topo=document.querySelector('.voltar-topo');if(topo)topo.classList.toggle('visivel',window.scrollY>400);
-    }
-    window.addEventListener('scroll',marcarAtivo,{passive:true});marcarAtivo();
-    var topo=document.querySelector('.voltar-topo');if(topo)topo.addEventListener('click',function(){window.scrollTo({top:0,behavior:reduz?'auto':'smooth'});});
-    var imprimir=document.querySelector('.btn-imprimir');if(imprimir)imprimir.addEventListener('click',function(){window.print();});
-  })();
-  `;
+// ---------------------------------------------------------------------------
+// Blocos de HTML
+// ---------------------------------------------------------------------------
+function relatorioVisualAttrsAnim(anim) {
+  return anim ? ' data-numero="' + anim.numero + '" data-prefixo="' + escapeHtmlRelatorio(anim.prefixo) + '" data-sufixo="' + escapeHtmlRelatorio(anim.sufixo) + '" data-decimais="' + anim.decimais + '" data-milhar="' + anim.milhar + '"' : "";
 }
 
 function relatorioVisualKpiHtml(x, i, destaque) {
-  var anim = relatorioVisualKpiAnimacao(x.valor);
-  var attrs = anim ? ' data-numero="' + anim.numero + '" data-prefixo="' + escapeHtmlRelatorio(anim.prefixo) + '" data-sufixo="' + escapeHtmlRelatorio(anim.sufixo) + '" data-decimais="' + anim.decimais + '" data-milhar="' + anim.milhar + '"' : "";
-  return '<div class="kpi' + (destaque ? " kpi-destaque" : "") + ' anima" style="transition-delay:' + (i * 45) + 'ms" title="Clique para copiar">' +
+  return '<div class="kpi' + (destaque ? " kpi-destaque" : "") + ' anima" style="transition-delay:' + (i * 40) + 'ms" title="Clique para copiar">' +
     '<div class="kpi-rotulo">' + escapeHtmlRelatorio(x.rotulo) + "</div>" +
-    '<div class="kpi-valor"' + attrs + ">" + escapeHtmlRelatorio(x.valor) + "</div>" +
-    (x.descricao ? '<div class="kpi-desc">' + escapeHtmlRelatorio(x.descricao) + "</div>" : "") +
-    "</div>";
+    '<div class="kpi-valor"' + relatorioVisualAttrsAnim(x.anim) + ">" + escapeHtmlRelatorio(x.valor) + "</div>" +
+    (x.descricao ? '<div class="kpi-desc">' + escapeHtmlRelatorio(x.descricao) + "</div>" : "") + "</div>";
 }
 
-function relatorioVisualGraficoHtml(g, chaveValor) {
-  if (!g) return "";
-  var max = Math.max(1, g.linhas[0] ? g.linhas[0].VALOR : 1);
-  var linhas = g.linhas.map(function (x, i) {
-    var w = Math.max(2, (x.VALOR / max) * 100).toFixed(1);
-    var part = g.total ? ((x.VALOR / g.total) * 100).toFixed(1) : "0.0";
-    var opacidade = (1 - Math.min(i, 7) * 0.08).toFixed(2);
-    return '<div class="barra-linha" data-rotulo="' + escapeHtmlRelatorio(x.ROTULO) + '" title="' + escapeHtmlRelatorio(x.ROTULO) + ": " + escapeHtmlRelatorio(relatorioVisualFormatarNumero(x.VALOR, chaveValor)) + " (" + part + '% do total) — clique para filtrar a tabela">' +
-      '<div class="barra-rotulo">' + escapeHtmlRelatorio(x.ROTULO) + "</div>" +
-      '<div class="barra-track"><div class="barra-fill" style="--w:' + w + "%;--o:" + opacidade + '"></div></div>' +
-      '<div class="barra-valor">' + escapeHtmlRelatorio(relatorioVisualFormatarNumero(x.VALOR, chaveValor)) + "<small>" + part + "%</small></div></div>";
-  }).join("");
-  return '<div class="grafico"><p class="grafico-titulo"><span>' + escapeHtmlRelatorio(g.titulo) + "</span><span>top " + g.linhas.length + "</span></p>" + linhas + "</div>";
+function relatorioVisualTituloEditorial(titulo) {
+  var partes = String(titulo || "").split(/\s[•|—–]\s/);
+  var a = partes[0].trim(), b = partes.slice(1).join(" · ").trim();
+  var pontua = function (s) { return /[.!?]$/.test(s) ? s : s + "."; };
+  if (!b) return escapeHtmlRelatorio(a);
+  return escapeHtmlRelatorio(pontua(a)) + "<br><em>" + escapeHtmlRelatorio(pontua(b.charAt(0).toUpperCase() + b.slice(1))) + "</em>";
 }
 
-function relatorioVisualTabelaHtml(t, g) {
-  var colunas = (t.colunas || []).map(function (c) {
-    return { label: c.label, valor: typeof c.valor === "function" ? c.valor : function (row) { return row[c.valor]; }, html: !!c.html };
-  });
+function relatorioVisualHeroHtml(r, cls, totalRegistros, geradoEm) {
+  var subtitulo = String(r.subtitulo || "").replace(/<[^>]+>/g, "") || "Leitura executiva gerada automaticamente a partir do Bitrix24.";
+  var principal = cls.primario;
+  var usados = principal ? [principal.indice] : [];
+  var candidatos = [cls.moeda, cls.contagens[0], cls.unidades[0]].filter(Boolean).concat(cls.lista);
+  var minis = [];
+  candidatos.forEach(function (k) { if (minis.length < 4 && usados.indexOf(k.indice) < 0 && k.tipo !== "texto") { minis.push(k); usados.push(k.indice); } });
+  var placar = "";
+  if (principal) {
+    placar = '<div class="placar" aria-label="Resumo dos principais indicadores"><div class="placar-principal"><div><strong' + relatorioVisualAttrsAnim(principal.anim) + ">" + escapeHtmlRelatorio(principal.valor) + '</strong><span class="rot">' + escapeHtmlRelatorio(principal.rotulo) + "</span></div>" +
+      (principal.descricao ? "<p>" + escapeHtmlRelatorio(principal.descricao) + "</p>" : "") + "</div>" +
+      '<div class="placar-minis">' + minis.map(function (k) { return "<div><strong>" + escapeHtmlRelatorio(k.valor) + "</strong><span>" + escapeHtmlRelatorio(k.rotulo) + "</span></div>"; }).join("") + "</div></div>";
+  }
+  return '<header class="hero"><div class="hero-inner"><div><p class="hero-eyebrow">' + escapeHtmlRelatorio(marcaAtiva().nome) + ' · Revenue Intelligence</p><h1>' + relatorioVisualTituloEditorial(r.titulo) + '</h1><p class="subtitulo">' + subtitulo + "</p>" +
+    '<div class="hero-note"><i></i><span>Dados extraídos do Bitrix24 · ' + totalRegistros.toLocaleString("pt-BR") + " registros em " + (r.tabelas || []).length + " análises · atualização em " + geradoEm + "</span></div></div>" + placar + "</div></header>";
+}
+
+function relatorioVisualTileHtml(k, classe, rotuloExtra) {
+  if (!k) return "";
+  return '<article class="tile ' + classe + '"><span class="tile-rotulo">' + escapeHtmlRelatorio(rotuloExtra || k.rotulo) + '</span><div class="tile-valor"' + relatorioVisualAttrsAnim(k.anim) + ">" + escapeHtmlRelatorio(k.valor) + '</div><p class="tile-meta">' + escapeHtmlRelatorio(k.descricao || (rotuloExtra ? k.rotulo : "")) + "</p></article>";
+}
+
+function relatorioVisualBentoHtml(r, cls, diagIA, totalRegistros, geradoEm) {
+  var usados = [];
+  var pegar = function (k) { if (k && usados.indexOf(k.indice) < 0) { usados.push(k.indice); return k; } return null; };
+  var escuro = pegar(cls.moeda) || pegar(cls.primario);
+  var laranja = pegar(cls.primario) || pegar(cls.contagens[0]);
+  var restantes = cls.lista.filter(function (k) { return k.tipo !== "texto"; });
+  var suave1 = null, suave2 = null;
+  restantes.forEach(function (k) { if (usados.indexOf(k.indice) >= 0) return; if (!suave1) suave1 = pegar(k); else if (!suave2) suave2 = pegar(k); });
+  var pe = restantes.filter(function (k) { return usados.indexOf(k.indice) < 0; }).slice(0, 2);
+  var manchete = r.manchete || (diagIA && diagIA.gargalos && diagIA.gargalos[0]) || (diagIA && diagIA.pontosFortes && diagIA.pontosFortes[0]) || ("Leitura executiva de " + r.titulo + ".");
+  var confianca = cls.composicao
+    ? '<article class="tile tile-confianca"><div class="selo">✓</div><div><span class="tile-rotulo">Data Trust</span><b>Coorte reconciliada</b><p>' + escapeHtmlRelatorio(cls.composicao.base.valor + " " + cls.composicao.base.rotulo.toLowerCase() + " = " + cls.composicao.partes.map(function (k) { return k.valor + " " + k.rotulo.toLowerCase(); }).join(" + ")) + ".</p></div></article>"
+    : '<article class="tile tile-confianca"><div class="selo">✓</div><div><span class="tile-rotulo">Data Trust</span><b>Extração direta do CRM</b><p>' + totalRegistros.toLocaleString("pt-BR") + " registros em " + (r.tabelas || []).length + " análises · gerado em " + geradoEm + ", sem ajuste manual.</p></div></article>";
+  var tileEscuro = escuro ? '<article class="tile tile-escuro"><span class="tile-rotulo">' + escapeHtmlRelatorio(escuro.rotulo) + '</span><div class="tile-valor"' + relatorioVisualAttrsAnim(escuro.anim) + ">" + escapeHtmlRelatorio(escuro.valor) + '</div><p class="tile-meta">' + escapeHtmlRelatorio(escuro.descricao) + "</p>" +
+    (pe.length ? '<div class="tile-escuro-pe">' + pe.map(function (k) { return "<div><span>" + escapeHtmlRelatorio(k.rotulo) + "</span><b>" + escapeHtmlRelatorio(k.valor) + "</b></div>"; }).join("") + "</div>" : "") + "</article>" : "";
+  return '<section class="comando" id="visao-executiva"><div class="comando-topo"><div><div class="kicker">Executive pulse</div><h2>' + escapeHtmlRelatorio(manchete) + "</h2></div><p>Primeiro leia a história. Depois abra os dados detalhados em cada análise para auditar linha a linha.</p></div>" +
+    '<div class="bento">' + tileEscuro + relatorioVisualTileHtml(laranja, "tile-laranja", "Indicador principal") + relatorioVisualTileHtml(suave1, "tile-suave tile-verde") + relatorioVisualTileHtml(suave2, "tile-suave tile-ambar") + confianca + "</div></section>";
+}
+
+function relatorioVisualCapituloHtml(num, titulo, descricao, escuro) {
+  return '<div class="capitulo' + (escuro ? " escuro" : "") + '"><div><span class="capitulo-num">' + escapeHtmlRelatorio(num) + "</span><h2>" + escapeHtmlRelatorio(titulo) + "</h2></div><p>" + escapeHtmlRelatorio(descricao) + "</p></div>";
+}
+
+function relatorioVisualCockpitHtml(r, cls, serie, funil) {
+  var cards = [];
+  var p = cls.primario && cls.primario.tipo === "pct" ? cls.primario : null;
+  if (p) {
+    cards.push('<article class="ck-card ck-orbe"><h3>' + escapeHtmlRelatorio(p.rotulo) + '</h3><div class="orbe-wrap"><div class="orbe"><svg width="158" height="158" viewBox="0 0 158 158" aria-hidden="true"><defs><linearGradient id="gradOrbe" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF8008"/><stop offset="100%" stop-color="#FF5618"/></linearGradient></defs><circle class="aro" cx="79" cy="79" r="60"/><circle class="arco" cx="79" cy="79" r="60" data-pct="' + p.anim.numero + '"/></svg><div class="orbe-valor"><div class="v">' + escapeHtmlRelatorio(p.valor) + '</div><div class="r">' + (cls.composicao ? "de " + escapeHtmlRelatorio(cls.composicao.base.valor) + " " + escapeHtmlRelatorio(cls.composicao.base.rotulo.toLowerCase()) : "indicador principal") + "</div></div></div></div>" +
+      '<p class="ck-legenda">' + escapeHtmlRelatorio(p.descricao || "Percentual principal deste relatório.") + "</p></article>");
+  }
+  if (cls.composicao) {
+    var base = cls.composicao.base, cores = ["var(--brand)", "#6f6560", "var(--gold)", "#5b7ba6", "#9c6bd1", "#2d9c8f"];
+    var segs = cls.composicao.partes.map(function (k, i) { var pct = k.anim.numero / base.anim.numero * 100; return { k: k, pct: pct, cor: cores[i % cores.length] }; }).filter(function (s) { return s.pct > 0; });
+    cards.push('<article class="ck-card ck-mix"><h3>Composição de ' + escapeHtmlRelatorio(base.rotulo.toLowerCase()) + '<span class="ck-ir" style="cursor:default">' + escapeHtmlRelatorio(base.valor) + " no total</span></h3>" +
+      '<div class="mix-barra">' + segs.map(function (s) { return '<div class="mix-seg" data-rotulo="' + escapeHtmlRelatorio(s.k.rotulo) + '" style="flex:' + s.pct.toFixed(2) + ' 1 0;background:' + s.cor + '" title="' + escapeHtmlRelatorio(s.k.rotulo + ": " + s.k.valor + " (" + relatorioVisualPct(s.pct) + ")") + '">' + (s.pct > 7 ? relatorioVisualPct(s.pct, 0) : "") + "</div>"; }).join("") + "</div>" +
+      '<div class="mix-legenda">' + segs.map(function (s) { return '<span class="mix-item" title="' + escapeHtmlRelatorio(s.k.descricao) + '"><span class="mix-ponto" style="background:' + s.cor + '"></span>' + escapeHtmlRelatorio(s.k.rotulo) + " <b>" + escapeHtmlRelatorio(s.k.valor) + "</b> · " + relatorioVisualPct(s.pct) + "</span>"; }).join("") + "</div>" +
+      '<p class="ck-legenda">' + segs.map(function (s) { return "<b>" + relatorioVisualPct(s.pct) + "</b> " + escapeHtmlRelatorio(s.k.rotulo.toLowerCase()); }).join(" · ") + ". A soma fecha exatamente com o total — nenhum registro ficou sem classificação.</p></article>");
+  }
+  if (serie) {
+    var pts = serie.pontos, W = 300, H = 100, pad = 6;
+    var mx = Math.max.apply(null, pts.map(function (q) { return q.v; })), mn = Math.min.apply(null, pts.map(function (q) { return q.v; })), span = (mx - mn) || 1;
+    var X = function (i) { return pad + i * (W - 2 * pad) / (pts.length - 1); }, Y = function (v) { return H - pad - ((v - mn) / span) * (H - 2 * pad); };
+    var d = pts.map(function (q, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(q.v).toFixed(1); }).join(" ");
+    var fmtV = function (v) { return serie.ehPct ? relatorioVisualPct(v, 2) : Number(v).toLocaleString("pt-BR"); };
+    var ult = pts[pts.length - 1], pen = pts[pts.length - 2], melhor = pts.reduce(function (a, b) { return b.v > a.v ? b : a; });
+    var dif = ult.v - pen.v;
+    cards.push('<article class="ck-card ck-trend"><h3>Tendência · ' + escapeHtmlRelatorio(serie.rotulo) + '<button type="button" class="ck-ir" data-ir="secao-' + (serie.indice + 1) + '">detalhar ›</button></h3>' +
+      '<div class="spark"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none"><defs><linearGradient id="gradArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF5618" stop-opacity=".28"/><stop offset="100%" stop-color="#FF5618" stop-opacity="0"/></linearGradient></defs><path class="area" d="' + d + " L " + X(pts.length - 1).toFixed(1) + " " + H + " L " + X(0).toFixed(1) + " " + H + ' Z"/><path class="linha" d="' + d + '"/>' +
+      pts.map(function (q, i) { return '<circle class="pt" cx="' + X(i).toFixed(1) + '" cy="' + Y(q.v).toFixed(1) + '" r="3.4" data-rotulo="' + escapeHtmlRelatorio(q.m) + '" data-tip="' + escapeHtmlRelatorio(q.m + " · " + fmtV(q.v) + (q.n != null ? " · " + q.n + " registros" : "")) + '"/>'; }).join("") +
+      '</svg><div class="spark-tip"></div><div class="spark-eixo"><span>' + escapeHtmlRelatorio(pts[0].m) + "</span><span>" + escapeHtmlRelatorio(ult.m) + "</span></div></div>" +
+      '<p class="ck-legenda">Último mês da série: <b>' + escapeHtmlRelatorio(ult.m) + '</b> com <span class="destaque">' + fmtV(ult.v) + "</span> (" + (dif >= 0 ? "+" : "") + (serie.ehPct ? dif.toFixed(1).replace(".", ",") + " p.p." : Number(dif).toLocaleString("pt-BR")) + " sobre " + escapeHtmlRelatorio(pen.m) + "). Melhor mês: <b>" + escapeHtmlRelatorio(melhor.m) + "</b> (" + fmtV(melhor.v) + ")." + (ult.n != null && ult.n <= 4 ? " <b>Atenção:</b> o último mês tem amostra pequena — leia a tendência, não o ponto." : "") + "</p></article>");
+  }
+  if (funil) {
+    var mxv = funil.linhas[0].vol;
+    cards.push('<article class="ck-card ck-funil"><h3>Funil — onde o volume trava<button type="button" class="ck-ir" data-ir="secao-' + (funil.indice + 1) + '">detalhar ›</button></h3><div class="funil3d">' +
+      funil.linhas.map(function (l) { return '<div class="fase' + ((/ganho|perdid/i.test(l.nome) || (l.taxa != null && l.taxa < 5)) ? " fria" : "") + '" data-rotulo="' + escapeHtmlRelatorio(l.nome) + '" title="' + escapeHtmlRelatorio(l.nome + ": " + l.vol + " passaram") + '"><div class="fase-topo"><span>' + escapeHtmlRelatorio(l.nome) + "</span><span><b>" + l.vol.toLocaleString("pt-BR") + "</b> passaram" + (l.taxa != null ? " · avanço <b>" + relatorioVisualPct(l.taxa) + "</b>" : "") + '</span></div><div class="fase-barra" style="width:' + Math.max(8, l.vol / mxv * 100).toFixed(1) + '%">' + (l.vol / mxv > .18 ? l.vol.toLocaleString("pt-BR") : "") + "</div></div>"; }).join("") + "</div>" +
+      '<p class="ck-legenda">' + (funil.gargalo ? "Maior gargalo com volume relevante: <b>" + escapeHtmlRelatorio(funil.gargalo.nome) + "</b> — " + funil.gargalo.vol.toLocaleString("pt-BR") + ' negócios passaram e só <span class="destaque">' + relatorioVisualPct(funil.gargalo.taxa) + "</span> avançaram. Em cinza: etapas terminais ou com avanço abaixo de 5%." : "As barras mostram quantos registros passaram por cada etapa, da maior para a menor.") + "</p></article>");
+  }
+  if ((r.tabelas || []).length) {
+    cards.push('<article class="ck-card ck-foco"><h3>Foco conectado<button type="button" class="foco-limpar" id="focoLimpar" hidden>limpar foco</button></h3><div id="focoCorpo"><p class="foco-vazio">Nenhum item em foco. Clique numa linha de tabela, barra ou etapa — aqui aparece tudo que o relatório sabe sobre ele, reunido das várias análises.</p></div></article>');
+  }
+  if (!cards.length) return "";
+  return '<section class="cockpit" id="cockpit"><div class="ck-grid">' + cards.join("") + "</div></section>";
+}
+
+function relatorioVisualShell(kicker, titulo, desc, stat, statRotulo, corpo) {
+  return '<div class="v-shell"><div class="v-head"><div><span class="k">' + escapeHtmlRelatorio(kicker) + "</span><h4>" + escapeHtmlRelatorio(titulo) + "</h4><p>" + escapeHtmlRelatorio(desc) + "</p></div>" + (stat ? '<div class="v-stat"><b>' + escapeHtmlRelatorio(stat) + "</b><small>" + escapeHtmlRelatorio(statRotulo) + "</small></div>" : "") + "</div>" + corpo + "</div>";
+}
+
+function relatorioVisualVisualHtml(t, tv) {
+  if (tv.tipo === "barras") {
+    var g = tv.grafico, max = Math.max(1, g.linhas[0].VALOR);
+    var linhas = g.linhas.map(function (x, i) {
+      var w = Math.max(3, x.VALOR / max * 100).toFixed(1), part = relatorioVisualPct(x.VALOR / g.total * 100);
+      return '<div class="v-linha" data-rotulo="' + escapeHtmlRelatorio(x.ROTULO) + '" title="Clique para filtrar a tabela e colocar em foco"><div class="v-nome"><b>' + escapeHtmlRelatorio(x.ROTULO) + "</b><small>#" + (i + 1) + " · " + part + ' do total</small></div><div class="v-track"><div class="v-fill" style="--w:' + w + '%">' + (x.VALOR / max > .2 ? escapeHtmlRelatorio(relatorioVisualFormatarNumero(x.VALOR, g.metrica)) : "") + '</div></div><div class="v-meta">' + escapeHtmlRelatorio(relatorioVisualFormatarNumero(x.VALOR, g.metrica)) + (x.PCT != null ? "<small>" + escapeHtmlRelatorio(relatorioVisualRotuloBonito(g.pctChave)) + " " + relatorioVisualPct(x.PCT) + "</small>" : "<small>" + part + "</small>") + "</div></div>";
+    }).join("");
+    return relatorioVisualShell("Ranking", g.titulo, "A largura representa " + relatorioVisualRotuloBonito(g.metrica).toLowerCase() + " de cada item; ao lado, a participação no total. Clique numa barra para filtrar a tabela e ver o item em foco.", relatorioVisualPct(g.linhas[0].VALOR / g.total * 100), "concentrado no maior", '<div class="v-linhas">' + linhas + "</div>");
+  }
+  if (tv.tipo === "comparativo") {
+    var cols = t.colunas || [];
+    var cards = t.dados.map(function (row) {
+      var cel = cols.map(function (c) { return { label: c.label, v: typeof c.valor === "function" ? c.valor(row) : row[c.valor] }; });
+      var atual = cel.find(function (c) { return /atual/i.test(c.label); }), outros = cel.filter(function (c) { return c !== cel[0] && c !== atual; });
+      return '<article class="v-card"><span>' + escapeHtmlRelatorio(cel[0].v) + '</span><div class="atual">' + escapeHtmlRelatorio(atual ? atual.v : "") + "</div><dl>" + outros.map(function (c) { return "<div><dt>" + escapeHtmlRelatorio(c.label) + "</dt><dd>" + escapeHtmlRelatorio(c.v == null ? "—" : c.v) + "</dd></div>"; }).join("") + "</dl></article>";
+    }).join("");
+    return relatorioVisualShell("Comparativo", "Atual versus períodos de referência", "Cada card mostra o valor atual e, abaixo, as referências. Variações muito extremas pedem validação de cobertura histórica antes de virar conclusão.", "", "", '<div class="v-cards">' + cards + "</div>");
+  }
+  if (tv.tipo === "tendencia") {
+    var dados = t.dados.slice().sort(function (a, b) { return String(a[tv.mesChave]).localeCompare(String(b[tv.mesChave])); });
+    var W = 960, H = 340, L = 50, R = 20, T = 25, B = 48, iw = W - L - R, ih = H - T - B;
+    var ys = dados.map(function (d) { return Number(d[tv.yChave]) || 0; });
+    var yMax = tv.ehPct ? 100 : Math.max.apply(null, ys) || 1;
+    var vol = dados.map(function (d) { return tv.ganhosChave && tv.perdasChave ? (Number(d[tv.ganhosChave]) || 0) + (Number(d[tv.perdasChave]) || 0) : (tv.barrasChave ? Number(d[tv.barrasChave]) || 0 : null); });
+    var temVol = vol.some(function (v) { return v != null; }), maxV = Math.max.apply(null, vol.map(function (v) { return v || 0; })) || 1;
+    var x = function (i) { return L + (i + .5) * iw / dados.length; }, y = function (v) { return T + (1 - v / yMax) * ih; };
+    var barras = temVol ? dados.map(function (d, i) { var bw = iw / dados.length * .48, bh = (vol[i] / maxV) * (ih * .68); return '<rect class="bar' + (vol[i] <= 4 ? " parcial" : "") + '" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (T + ih - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" rx="5"><title>' + vol[i] + " registros</title></rect>"; }).join("") : "";
+    var line = dados.map(function (d, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(ys[i]).toFixed(1); }).join(" ");
+    var area = line + " L " + x(dados.length - 1).toFixed(1) + " " + (T + ih) + " L " + x(0).toFixed(1) + " " + (T + ih) + " Z";
+    var grade = [0, .25, .5, .75, 1].map(function (f) { var yy = y(yMax * f); return '<line class="grade" x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy + '"/><text x="4" y="' + (yy + 4) + '">' + (tv.ehPct ? Math.round(yMax * f) + "%" : Math.round(yMax * f).toLocaleString("pt-BR")) + "</text>"; }).join("");
+    var fmtY = function (v) { return tv.ehPct ? relatorioVisualPct(v, 2) : Number(v).toLocaleString("pt-BR"); };
+    var pontos = dados.map(function (d, i) { var m = String(d[tv.mesChave]), lab = m.slice(5, 7) + "/" + m.slice(2, 4); return '<circle class="point' + (temVol && vol[i] <= 4 ? " parcial" : "") + '" cx="' + x(i) + '" cy="' + y(ys[i]) + '" r="4"><title>' + escapeHtmlRelatorio(m + ": " + fmtY(ys[i]) + (temVol ? " · " + vol[i] + " registros" : "")) + '</title></circle><text text-anchor="middle" x="' + x(i) + '" y="' + (H - 21) + '">' + lab + "</text>" + (i === dados.length - 1 ? '<text class="val" text-anchor="end" x="' + (x(i) - 6) + '" y="' + (y(ys[i]) - 10) + '">' + fmtY(ys[i]) + "</text>" : ""); }).join("");
+    var svg = '<div class="v-tendencia"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Tendência"><defs><linearGradient id="gradTend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff5618" stop-opacity=".18"/><stop offset="100%" stop-color="#ff5618" stop-opacity="0"/></linearGradient></defs>' + grade + barras + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + pontos + "</svg>" +
+      '<div class="v-legenda"><span><i></i>' + escapeHtmlRelatorio(relatorioVisualRotuloBonito(tv.yChave)) + "</span>" + (temVol ? '<span><i class="bar"></i>Volume de registros</span><span><i class="parcial"></i>amostra de até 4 registros</span>' : "") + "</div></div>";
+    return relatorioVisualShell("Tendência", relatorioVisualRotuloBonito(tv.yChave) + " mês a mês", "Leia em ordem cronológica. " + (temVol ? "As colunas ao fundo mostram o volume de cada mês: meses com amostra pequena produzem taxas extremas sem representar tendência." : "Compare os pontos entre si, não só o último."), fmtY(ys[ys.length - 1]), "último mês", svg);
+  }
+  if (tv.tipo === "distribuicao") {
+    var maxP = Math.max.apply(null, t.dados.map(function (d) { return Number(d[tv.pctChave]) || 0; })) || 1;
+    var colunas = t.dados.map(function (d) { var p = Number(d[tv.pctChave]) || 0; return '<div class="v-col" data-rotulo="' + escapeHtmlRelatorio(d[tv.rotuloChave]) + '" title="Clique para filtrar a tabela"><div class="val">' + relatorioVisualPct(p) + '</div><div class="v-col-wrap"><div class="v-col-bar" style="--h:' + Math.max(4, p / maxP * 100).toFixed(1) + '%"></div></div><b>' + escapeHtmlRelatorio(d[tv.rotuloChave]) + "</b>" + (tv.contagemChave ? "<small>" + escapeHtmlRelatorio(relatorioVisualFormatarNumero(d[tv.contagemChave], tv.contagemChave)) + " " + escapeHtmlRelatorio(relatorioVisualRotuloBonito(tv.contagemChave).toLowerCase()) + "</small>" : "") + "</div>"; }).join("");
+    var maior = t.dados.reduce(function (a, b) { return (Number(b[tv.pctChave]) || 0) > (Number(a[tv.pctChave]) || 0) ? b : a; });
+    return relatorioVisualShell("Distribuição", "Participação por " + relatorioVisualRotuloBonito(tv.rotuloChave).toLowerCase(), "A altura representa a participação de cada faixa no total. Faixas extremas merecem leitura separada — concentração alta em uma ponta costuma indicar cauda longa.", relatorioVisualPct(maior[tv.pctChave]), escapeHtmlRelatorio(String(maior[tv.rotuloChave])).slice(0, 26), '<div class="v-colunas">' + colunas + "</div>");
+  }
+  return "";
+}
+
+function relatorioVisualTabelaHtml(t, rotuloChave) {
+  var colunas = (t.colunas || []).map(function (c) { return { label: c.label, valor: typeof c.valor === "function" ? c.valor : function (row) { return row[c.valor]; }, html: !!c.html }; });
   var dados = (t.dados || []).slice(0, t.limite || 300);
+  var c0 = relatorioVisualChaves(t);
+  var contagemChave = c0.pcts.length ? c0.numericas.find(function (k) { return /DECIDIDOS|NEGOCIOS|DEALS|TOTAL/i.test(k) && c0.pcts.indexOf(k) < 0; }) : null;
   var thead = "<tr>" + colunas.map(function (c) { return "<th>" + escapeHtmlRelatorio(c.label) + "</th>"; }).join("") + "</tr>";
   var tbody = dados.map(function (row) {
-    var rotulo = g ? ' data-rotulo="' + escapeHtmlRelatorio(row[g.rotuloChave] == null || row[g.rotuloChave] === "" ? "—" : row[g.rotuloChave]) + '"' : "";
-    return "<tr" + rotulo + ">" + colunas.map(function (c) { var v = c.valor(row); return "<td>" + (c.html ? v : escapeHtmlRelatorio(v == null ? "" : v)) + "</td>"; }).join("") + "</tr>";
+    var rot = rotuloChave ? row[rotuloChave] : (c0.textuais[0] ? row[c0.textuais[0]] : null);
+    var attr = rot != null && rot !== "" ? ' data-rotulo="' + escapeHtmlRelatorio(rot) + '"' : "";
+    var n = contagemChave ? Number(row[contagemChave]) : null;
+    var badge = contagemChave && Number.isFinite(n) && n <= 4 ? '<span class="amostra">' + (n === 0 ? "sem decisões" : "amostra baixa · " + n) + "</span>" : "";
+    return "<tr" + attr + ">" + colunas.map(function (c, i) { var v = c.valor(row); return "<td>" + (c.html ? v : escapeHtmlRelatorio(v == null ? "" : v)) + (i === 0 ? badge : "") + "</td>"; }).join("") + "</tr>";
   }).join("");
   return '<div><div class="tabela-wrap"><table class="tabela"><thead>' + thead + "</thead><tbody>" + tbody + "</tbody></table></div>" +
-    '<div class="tabela-rodape"><span>Clique no cabeçalho para ordenar' + (g ? " · clique numa barra do gráfico para filtrar" : "") + '</span><button type="button" class="btn-mini btn-todas" hidden>Mostrar todas</button></div></div>';
+    '<div class="tabela-rodape"><span>Clique no cabeçalho para ordenar · clique numa linha para colocar em foco</span><button type="button" class="btn-mini btn-todas" hidden>Mostrar todas</button></div></div>';
 }
 
 function relatorioVisualSecaoHtml(t, i) {
-  var g = relatorioVisualDadosGrafico(t);
+  var tv = relatorioVisualTipoVisual(t);
+  var visual = relatorioVisualVisualHtml(t, tv);
   var qtd = (t.dados || []).length;
   var colunas = (t.colunas || []).map(function (c) { return c.label; });
-  var comoLer = t.descricao ? escapeHtmlRelatorio(t.descricao) :
-    "Cada linha é um registro" + (colunas.length ? " com " + colunas.length + " coluna(s): " + escapeHtmlRelatorio(colunas.join(", ")) : "") + "." +
-    (g ? " O gráfico mostra os " + g.linhas.length + " maiores por " + escapeHtmlRelatorio(relatorioVisualRotuloBonito(g.metrica).toLowerCase()) + " e a participação de cada um no total." : "");
-  return '<section class="secao anima" id="secao-' + (i + 1) + '" data-limite="12">' +
-    '<div class="secao-head"><span class="secao-num">' + (i + 1) + "</span>" +
-    '<h3 class="secao-titulo">' + escapeHtmlRelatorio(t.titulo || "Tabela " + (i + 1)) + "</h3>" +
-    '<span class="contagem">' + qtd + " registro(s)</span>" +
-    '<div class="secao-tools">' +
-    (g ? '<span class="chip-filtro" hidden title="Remover filtro">Filtro: <span></span> ✕</span>' : "") +
+  var comoLer = t.descricao || ("Cada linha é um registro com as colunas " + colunas.join(", ") + "." + (visual ? " O visual acima resume a tabela; abra os dados para auditar linha a linha, ordenar e filtrar." : ""));
+  var rotuloChave = tv.tipo === "barras" ? tv.grafico.rotuloChave : (tv.mesChave || tv.rotuloChave || null);
+  return '<section class="secao anima' + (visual ? "" : " dados-abertos") + '" id="secao-' + (i + 1) + '" data-limite="12">' +
+    '<div class="secao-head"><span class="secao-num">' + (i + 1) + '</span><h3 class="secao-titulo">' + escapeHtmlRelatorio(t.titulo || "Tabela " + (i + 1)) + '</h3><span class="contagem">' + qtd + (qtd === 1 ? " registro" : " registros") + "</span>" +
+    '<div class="secao-tools">' + (rotuloChave ? '<span class="chip-filtro" hidden title="Remover filtro">Filtro: <span></span> ✕</span>' : "") +
     (qtd > 3 ? '<input type="search" class="filtro-input" placeholder="Filtrar nesta tabela..." aria-label="Filtrar ' + escapeHtmlRelatorio(t.titulo || "tabela") + '">' : "") +
+    (visual ? '<button type="button" class="btn-mini btn-dados">Ver dados <span class="chev">⌄</span></button>' : "") +
     '<button type="button" class="btn-mini secao-toggle" aria-expanded="true" title="Recolher ou expandir"><span class="chev">▾</span></button></div></div>' +
-    '<div class="secao-como-ler"><span class="i">ⓘ</span><span>' + comoLer + "</span></div>" +
-    '<div class="secao-body' + (g ? " com-grafico" : "") + '">' + relatorioVisualGraficoHtml(g, g && g.metrica) + relatorioVisualTabelaHtml(t, g) + "</div></section>";
+    '<div class="secao-como-ler"><span class="i">i</span><span>' + escapeHtmlRelatorio(comoLer) + "</span></div>" +
+    '<div class="secao-body">' + visual + relatorioVisualTabelaHtml(t, rotuloChave) + "</div></section>";
 }
 
 function gerarHTMLRelatorioVisualGenerico(r) {
   if (!r || !r.titulo) return "";
   var marca = marcaAtiva();
-  var kpis = r.kpis || [];
-  var tabelas = r.tabelas || [];
+  var kpis = r.kpis || [], tabelas = r.tabelas || [];
   var totalRegistros = tabelas.reduce(function (s, t) { return s + ((t.dados || []).length); }, 0);
   var geradoEm = formatarDataBR(formatarDataISO(new Date()));
-  var subtitulo = String(r.subtitulo || "").replace(/<[^>]+>/g, "") || "Extraído automaticamente pelo portal " + escapeHtmlRelatorio(marca.nome) + ".";
-
+  var cls = relatorioVisualClassificarKpis(kpis);
   var diagIA = typeof iaDiagnosticarRelatorioCatalogo === "function" ? iaDiagnosticarRelatorioCatalogo(r) : null;
   var iaHtml = diagIA && typeof iaRenderizarCardInsightsHTML === "function" ? iaRenderizarCardInsightsHTML(diagIA, true) : "";
-
-  var destaque = kpis.slice(0, 4).map(function (x, i) { return relatorioVisualKpiHtml(x, i, true); }).join("");
-  var secundarios = kpis.slice(4).map(function (x, i) { return relatorioVisualKpiHtml(x, i + 4, false); }).join("");
-  var glossario = kpis.filter(function (x) { return x.descricao; });
+  var serie = relatorioVisualDadosSerie(tabelas), funil = relatorioVisualDadosFunil(tabelas);
+  var cockpit = relatorioVisualCockpitHtml(r, cls, serie, funil);
+  var glossario = cls.lista.filter(function (x) { return x.descricao; });
   var notas = relatorioVisualNotaEmItens(r.nota);
+  var temMetodologia = glossario.length || notas.length;
 
-  var sumario = '<a href="#visao-geral">Visão geral</a>' +
-    (iaHtml ? '<a href="#diagnostico-ia">Diagnóstico IA</a>' : "") +
-    tabelas.map(function (t, i) { return '<a href="#secao-' + (i + 1) + '"><span class="n">' + (i + 1) + "</span>" + escapeHtmlRelatorio(t.titulo || "Tabela " + (i + 1)) + "</a>"; }).join("") +
-    (glossario.length || notas.length ? '<a href="#como-ler">Como ler</a>' : "");
+  var capAutorais = {};
+  (r.capitulos || []).forEach(function (c) { if (c && typeof c.antes === "number") capAutorais[c.antes] = c; });
+  var numCap = 0, cap = function (titulo, desc, escuro) { numCap++; return relatorioVisualCapituloHtml((numCap < 10 ? "0" : "") + numCap, titulo, desc, escuro); };
 
-  return "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + escapeHtmlRelatorio(r.titulo) + " · " + escapeHtmlRelatorio(marca.nome) + "</title><style>" + relatorioVisualCss(marca) + "</style></head><body>" +
+  var sumario = '<a href="#visao-executiva">Visão executiva</a>' + (cockpit ? '<a href="#cockpit">Cockpit</a>' : "") + (iaHtml ? '<a href="#diagnostico-ia">Diagnóstico</a>' : "") +
+    tabelas.map(function (t, i) { return '<a href="#secao-' + (i + 1) + '"><span class="n">' + (i + 1) + "</span>" + escapeHtmlRelatorio(relatorioVisualRotuloCurto(t.titulo || "Tabela " + (i + 1))) + "</a>"; }).join("") +
+    (temMetodologia ? '<a href="#como-ler">Metodologia</a>' : "");
+
+  var kpisHtml = kpis.length
+    ? '<h2 class="titulo-secao" id="indicadores-complementares">Indicadores complementares</h2><p class="sub-secao">Abra este bloco quando precisar conferir todas as métricas da coorte. Passe o mouse para ler a definição; clique para copiar o valor.</p>' +
+      '<button type="button" class="btn-gaveta" data-rotulo-fechado="Ver todos os ' + kpis.length + ' indicadores +">Ver todos os ' + kpis.length + ' indicadores +</button>' +
+      '<div class="gaveta-kpis"><div class="painel">' + pontosDeAtencaoGenerico(kpis) + '<div class="kpis">' + cls.lista.slice(0, 4).map(function (x, i) { return relatorioVisualKpiHtml(x, i, true); }).join("") + "</div>" +
+      (cls.lista.length > 4 ? '<div class="kpis kpis-sec">' + cls.lista.slice(4).map(function (x, i) { return relatorioVisualKpiHtml(x, i + 4, false); }).join("") + "</div>" : "") + "</div></div>"
+    : "";
+
+  var secoes = tabelas.map(function (t, i) {
+    var a = capAutorais[i];
+    var capHtml = a ? cap(a.titulo, a.descricao || "", numCap % 2 === 0) : (i === 0 ? cap("Análises detalhadas — gráfico primeiro, dados sob demanda.", tabelas.length + " análises. Em cada uma, o visual resume a tabela; o botão \"Ver dados\" abre a tabela completa para ordenar, filtrar e auditar.", true) : "");
+    return capHtml + relatorioVisualSecaoHtml(t, i);
+  }).join("");
+
+  var partes = [
+    '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escapeHtmlRelatorio(marca.nome) + " Intelligence | " + escapeHtmlRelatorio(r.titulo) + "</title>",
+    "<style>" + relatorioVisualCss(marca) + "</style></head><body>",
     '<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">' + marca.logoSvg + '<div class="letterhead-divider"></div><div class="letterhead-tagline">' + escapeHtmlRelatorio(marca.tagline) + "</div></div>" +
-    '<div class="letterhead-ref"><div class="ref"><strong>Relatório Comercial</strong>Extraído do Bitrix24 em ' + geradoEm + '</div><button type="button" class="btn-imprimir" title="Imprimir ou salvar em PDF">🖨 PDF</button></div></div></div>' +
-    '<header class="hero"><div class="hero-inner"><div><p class="hero-eyebrow">Relatório Comercial · Bitrix24</p><h1>' + escapeHtmlRelatorio(r.titulo) + '</h1><p class="subtitulo">' + subtitulo + "</p></div>" +
-    '<div class="hero-chips"><div class="chip"><strong>' + kpis.length + "</strong><span>indicadores</span></div><div class=\"chip\"><strong>" + tabelas.length + "</strong><span>seções</span></div><div class=\"chip\"><strong>" + totalRegistros.toLocaleString("pt-BR") + "</strong><span>registros</span></div></div></div></header>" +
-    '<nav class="sumario" aria-label="Sumário"><div class="sumario-inner">' + sumario + "</div></nav>" +
-    '<div class="wrap">' +
-    '<h2 class="titulo-secao" id="visao-geral">Visão geral</h2><p class="sub-secao">Indicadores calculados sobre o período do relatório. Passe o mouse para ler a definição; clique para copiar o valor.</p>' +
-    '<div class="painel">' + pontosDeAtencaoGenerico(kpis) +
-    (kpis.length ? '<div class="kpis">' + destaque + "</div>" + (secundarios ? '<div class="kpis kpis-sec">' + secundarios + "</div>" : "") : '<p class="sub-secao" style="margin:0">Sem indicadores neste relatório.</p>') + "</div>" +
-    (iaHtml ? '<div id="diagnostico-ia" class="anima">' + iaHtml + "</div>" : "") +
-    '<h2 class="titulo-secao">Detalhamento <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">' + tabelas.length + " seção(ões)</span></h2><p class=\"sub-secao\">Cada seção traz gráfico e tabela interativos — ordene, filtre e recolha o que não precisar.</p>" +
-    (tabelas.length ? tabelas.map(relatorioVisualSecaoHtml).join("") : '<p class="sub-secao">Sem tabelas neste relatório.</p>') +
-    (glossario.length || notas.length ? '<h2 class="titulo-secao" id="como-ler">Como ler este relatório</h2><p class="sub-secao">Definição de cada indicador e as regras de cálculo usadas.</p><div class="painel anima">' +
+      '<div class="letterhead-ref"><div class="ref"><strong>Relatório Comercial</strong>Extraído do Bitrix24 em ' + geradoEm + '</div><button type="button" class="btn-imprimir" title="Imprimir ou salvar em PDF">🖨 PDF</button></div></div></div>',
+    relatorioVisualHeroHtml(r, cls, totalRegistros, geradoEm),
+    '<nav class="sumario" aria-label="Sumário"><div class="sumario-inner">' + sumario + "</div></nav>",
+    '<div class="wrap">',
+    relatorioVisualBentoHtml(r, cls, diagIA, totalRegistros, geradoEm),
+    kpisHtml,
+    cockpit ? cap("Entenda o sistema antes do detalhe.", "Indicador principal, composição, tendência e funil reunidos num painel de leitura integrada. Clique em qualquer item para colocá-lo em foco.", true) + cockpit : "",
+    iaHtml ? cap("Do número para a decisão.", "Os alertas abaixo não repetem KPIs: destacam o que merece investigação e deixam a evidência perto da recomendação.", false) + '<div id="diagnostico-ia" class="anima">' + iaHtml + "</div>" : "",
+    tabelas.length ? secoes : '<p class="sub-secao">Sem tabelas neste relatório.</p>',
+    temMetodologia ? cap("Metodologia e fórmulas.", "O que cada indicador responde, como é calculado e o que fica fora do denominador.", false) + '<div id="como-ler" class="painel anima">' +
       (glossario.length ? '<dl class="glossario">' + glossario.map(function (x) { return '<div class="glossario-item"><dt>' + escapeHtmlRelatorio(x.rotulo) + "</dt><dd>" + escapeHtmlRelatorio(x.descricao) + "</dd></div>"; }).join("") + "</dl>" : "") +
-      (notas.length ? '<ul class="notas">' + notas.map(function (n) { return "<li>" + escapeHtmlRelatorio(n) + "</li>"; }).join("") + "</ul>" : "") + "</div>" : "") +
-    "</div>" +
-    '<button type="button" class="voltar-topo" title="Voltar ao topo" aria-label="Voltar ao topo">↑</button>' +
-    '<footer><div class="footer-brand">' + marca.logoSvg + "<span>" + escapeHtmlRelatorio(marca.nome) + "</span></div>" + escapeHtmlRelatorio(marca.nome) + " · " + escapeHtmlRelatorio(r.titulo) + " · gerado em " + geradoEm + "</footer>" +
-    "<script>" + relatorioVisualJs() + "</script></body></html>";
+      (notas.length ? '<ul class="notas">' + notas.map(function (n) { return "<li>" + escapeHtmlRelatorio(n) + "</li>"; }).join("") + "</ul>" : "") + "</div>" : "",
+    "</div>",
+    '<button type="button" class="voltar-topo" title="Voltar ao topo" aria-label="Voltar ao topo">↑</button>',
+    '<div class="theme-toggle" role="group" aria-label="Tema"><button type="button" data-theme-choice="light">Claro</button><button type="button" data-theme-choice="dark">Escuro</button><button type="button" data-theme-choice="system" class="active">Sistema</button></div>',
+    '<footer><div class="footer-brand">' + marca.logoSvg + "<span>" + escapeHtmlRelatorio(marca.nome) + "</span></div>" + escapeHtmlRelatorio(marca.nome) + " · " + escapeHtmlRelatorio(r.titulo) + " · gerado em " + geradoEm + "</footer>",
+    "<script>" + relatorioVisualJs() + "</script></body></html>"
+  ];
+  return partes.join("");
 }
