@@ -352,22 +352,27 @@ Responda sempre em português do Brasil, de forma executiva, objetiva e fundamen
 // Componentes Visuais de IA Embarcada
 // -----------------------------------------------------------------------------
 
-function iaRenderizarCardInsightsHTML(diag) {
+function iaRenderizarCardInsightsHTML(diag, somenteLeitura) {
   if (!diag) return "";
 
   const fortesLi = diag.pontosFortes.map((p) => `<li><span class="ia-bullet ok">✓</span> <span>${escapeHtmlRelatorio(p)}</span></li>`).join("");
   const gargalosLi = diag.gargalos.map((g) => `<li><span class="ia-bullet alerta">!</span> <span>${escapeHtmlRelatorio(g)}</span></li>`).join("");
   const acoesLi = diag.acoes.map((a) => `<li><span class="ia-bullet acao">→</span> <span>${escapeHtmlRelatorio(a)}</span></li>`).join("");
+  // v39 — usado também dentro do modelo visual exportado/baixado (HTML
+  // isolado, sem os outros <script> do app), onde iaAbrirModalAprofundamento
+  // não existe — somenteLeitura=true omite o botão em vez de deixar um botão
+  // morto (clique daria erro de função indefinida nesse contexto).
+  const botaoAprofundar = somenteLeitura ? "" : `
+        <button type="button" class="secundario ia-btn-aprofundar" onclick="iaAbrirModalAprofundamento()" style="font-size:11.5px;padding:6px 12px;">
+          🤖 Aprofundar com Copiloto IA
+        </button>`;
 
   return `
     <div class="card ia-insights-card" style="margin: 16px 0 20px;">
       <div class="ia-insights-header">
         <div class="ia-insights-badge">
           <span class="ia-sparkle">✨</span> IA Embarcada · Diagnóstico &amp; Recomendações
-        </div>
-        <button type="button" class="secundario ia-btn-aprofundar" onclick="iaAbrirModalAprofundamento()" style="font-size:11.5px;padding:6px 12px;">
-          🤖 Aprofundar com Copiloto IA
-        </button>
+        </div>${botaoAprofundar}
       </div>
 
       <div class="ia-insights-grid">
