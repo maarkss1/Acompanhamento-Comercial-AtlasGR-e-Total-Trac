@@ -49,7 +49,8 @@
       <div class="letterhead-divider"></div>
       <div class="letterhead-tagline">Central de Inteligência Comercial · Extração e Relatórios Bitrix24</div>
     </div>
-    <div class="live-datetime">
+    <div class="live-datetime live-clock" tabindex="0" role="button" aria-label="Clique para copiar a data e hora atuais" onclick="copiarHorarioTopo(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copiarHorarioTopo(event);}">
+      <span class="live-clock-dot" aria-hidden="true"></span>
       <strong id="dataAtualTopo">Carregando data...</strong>
       <span id="horaAtualTopo">--:--:-- · horário local</span>
     </div>
@@ -59,7 +60,6 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · SDR &amp; Leads</div>
       <h1>📞 SDR &amp; Operação.</h1>
       <p>Diário SDR e Análise SDR prontos direto nesta página. Os demais relatórios do grupo SDR &amp; Leads (funil de Leads, produtividade, SLA de primeiro contato, auditoria, decisão final) abrem no motor de extração completo.</p>
     </div>

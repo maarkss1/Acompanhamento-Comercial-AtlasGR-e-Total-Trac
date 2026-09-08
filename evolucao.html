@@ -49,7 +49,8 @@
       <div class="letterhead-divider"></div>
       <div class="letterhead-tagline">Central de Inteligência Comercial · Extração e Relatórios Bitrix24</div>
     </div>
-    <div class="live-datetime">
+    <div class="live-datetime live-clock" tabindex="0" role="button" aria-label="Clique para copiar a data e hora atuais" onclick="copiarHorarioTopo(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copiarHorarioTopo(event);}">
+      <span class="live-clock-dot" aria-hidden="true"></span>
       <strong id="dataAtualTopo">Carregando data...</strong>
       <span id="horaAtualTopo">--:--:-- · horário local</span>
     </div>
@@ -59,7 +60,6 @@
 <header class="hero-extrator">
   <div class="header-conteudo">
     <div class="hero-copy">
-      <div class="hero-eyebrow">AtlasGR · Bitrix24 · v10.0 · Evolução</div>
       <h1>Evolução do Forecast.</h1>
       <p>Cada extração do Forecast (nesta ferramenta ou pela automação semanal) grava uma "foto" de meta, fechado e projeção. Esta página junta esse histórico e mostra a evolução ao longo do tempo — sem precisar reextrair nada.</p>
     </div>

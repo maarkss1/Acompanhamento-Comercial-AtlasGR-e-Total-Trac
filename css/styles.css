@@ -505,13 +505,32 @@
   .live-datetime strong { font-size:12px; color:var(--ink); }
   .live-datetime span { font-size:11px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
 
-  header.hero-extrator { background:linear-gradient(115deg,var(--orange) 0%,var(--orange-3) 55%,var(--orange-2) 100%); color:white; padding:38px 24px 74px; clip-path:polygon(0 0,100% 0,100% 88%,0 100%); }
+  /* Relógio digital interativo: maior, laranja, com "pulso" ao vivo e
+     clique para copiar data+hora (feedback via classe .copiado, sem novo
+     elemento no HTML — reaproveitado em todas as páginas autenticadas). */
+  .live-clock { cursor:pointer; padding:6px 14px; border-radius:14px; border:1px solid transparent; position:relative; transition:background .18s ease, border-color .18s ease, transform .12s ease; }
+  .live-clock:hover { background:var(--soft); border-color:var(--line); }
+  .live-clock:active { transform:scale(.96); }
+  .live-clock:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+  .live-clock-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--brand); margin-right:6px; vertical-align:1px; animation:liveClockPulso 2s ease-in-out infinite; }
+  .live-clock .live-clock-digits { display:inline-block; font-size:19px; font-weight:800; color:var(--brand); font-variant-numeric:tabular-nums; letter-spacing:.01em; }
+  .live-clock::after {
+    content:"Copiado ✓"; position:absolute; right:0; top:100%; margin-top:6px;
+    background:var(--brand); color:#fff; font-size:10px; font-weight:800; padding:4px 9px;
+    border-radius:8px; opacity:0; transform:translateY(-4px); pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease; white-space:nowrap; z-index:5;
+  }
+  .live-clock.copiado::after { opacity:1; transform:translateY(0); }
+  @keyframes liveClockPulso { 0%,100% { box-shadow:0 0 0 0 rgba(255,86,24,.45); } 50% { box-shadow:0 0 0 6px rgba(255,86,24,0); } }
+  @media (prefers-reduced-motion: reduce) { .live-clock-dot { animation:none; } }
+
+  header.hero-extrator { background:linear-gradient(115deg,var(--orange) 0%,var(--orange-3) 55%,var(--orange-2) 100%); color:white; padding:20px 24px 34px; clip-path:polygon(0 0,100% 0,100% 93%,0 100%); }
   header.hero-extrator::after { background:radial-gradient(circle,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 70%); width:520px;height:520px;right:-7%;top:-55%;left:auto;bottom:auto; }
   .hero-extrator .header-conteudo { max-width:1240px; align-items:center; }
   .hero-copy { max-width:780px; }
   .hero-eyebrow { text-transform:uppercase; letter-spacing:.14em; font-size:11px; font-weight:800; opacity:.85; margin-bottom:10px; }
-  header.hero-extrator h1 { font-size:clamp(27px,4vw,39px); line-height:1.08; letter-spacing:-.035em; }
-  header.hero-extrator p { font-size:14px; max-width:720px; }
+  header.hero-extrator h1 { font-size:clamp(20px,2.6vw,27px); line-height:1.15; letter-spacing:-.03em; }
+  header.hero-extrator p { font-size:12.5px; max-width:720px; margin-top:6px; opacity:.92; }
   .hero-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; position:relative; z-index:3; }
   .hero-btn { background:rgba(255,255,255,.14)!important; color:white!important; border:1px solid rgba(255,255,255,.32)!important; box-shadow:none!important; font-size:12px!important; padding:9px 12px!important; }
   .hero-btn:hover { background:rgba(255,255,255,.25)!important; }
@@ -675,7 +694,7 @@
     .letterhead-inner { padding:13px 16px; }
     .letterhead-brand svg { width:100px; }
     .live-datetime { text-align:left; min-width:0; width:100%; }
-    header.hero-extrator { padding:28px 16px 62px; }
+    header.hero-extrator { padding:16px 16px 28px; }
     .hero-extrator .header-conteudo { display:block; }
     .hero-actions { margin-top:15px; justify-content:flex-start; }
     .quick-nav-inner, main { padding-left:14px; padding-right:14px; }
