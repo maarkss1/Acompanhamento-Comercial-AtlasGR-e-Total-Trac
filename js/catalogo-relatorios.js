@@ -491,14 +491,22 @@ async function extrairRelatorioCatalogo(webhook,chave){
         return{...d,_STATUS_REAL:sit==="assinado"?"ganho":sit==="cancelado"?"perda":"aberto"};
       });
       const won=classificados.filter((d)=>d._STATUS_REAL==="ganho"),lost=classificados.filter((d)=>d._STATUS_REAL==="perda");
+      // v37 — Piloto fica fora de "Em aberto" de propósito (mesmo critério do
+      // resto do catálogo: é etapa de teste, não pipeline aberto de verdade),
+      // mas antes ficava fora de QUALQUER contagem detalhada, enquanto
+      // "Oportunidades" (co.length) continuava somando ele — Ganhos+Perdas+
+      // Aberto batia sempre 12 (ou N) a menos que Oportunidades, sem
+      // explicação nenhuma no relatório. Conta à parte e soma de volta nos
+      // KPIs pra fechar a conta.
+      const piloto=classificados.filter((d)=>d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO));
       const aberto=classificados.filter((d)=>d._STATUS_REAL==="aberto"&&!(d._SEMANTICA==="process"&&ehEstagioPiloto(d.STAGE_ID,d._ESTAGIO)));
       const closed=won.length+lost.length;
       const hist=await buscarHistoricoEntidade(webhook,2,co.map((d)=>d.ID)),vis={};hist.forEach((h)=>{const d=co.find((x)=>String(x.ID)===String(h.OWNER_ID));if(!d)return;const cat=String(h.CATEGORY_ID??d.CATEGORY_ID),sid=String(h.STAGE_ID||""),lab=b.meta.estagios?.[cat]?.[sid]?.label||sid;(vis[lab]||=new Set()).add(String(h.OWNER_ID));});
       const wids=new Set(won.map((d)=>String(d.ID))),rows=Object.entries(vis).map(([stage,set])=>({ESTAGIO:stage,VISITARAM:set.size,GANHOS:[...set].filter((id)=>wids.has(id)).length})).map((x)=>({...x,CONVERSAO_PCT:taxaPct(x.GANHOS,x.VISITARAM)})).sort((a,b)=>b.VISITARAM-a.VISITARAM);
       criarResultadoCatalogo(chave,"Conversão Comercial • funil e Win Rate",`Coorte criada entre <strong>${escapeHtmlRelatorio(p.inicio||"início")}</strong> e <strong>${escapeHtmlRelatorio(p.fim||"hoje")}</strong>.`,
-        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",aberto.length),kpi("Win Rate (coorte por criação)",`${taxaPct(won.length,closed)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
+        [kpi("Oportunidades",co.length),kpi("Ganhos",won.length),kpi("Perdas",lost.length),kpi("Em aberto",aberto.length),kpi("Piloto (em teste)",piloto.length),kpi("Win Rate (fechados)",`${taxaPct(won.length,closed)}%`),kpi("Loss Rate (fechados)",`${taxaPct(lost.length,closed)}%`),kpi("Conversão da coorte p/ ganho",`${taxaPct(won.length,co.length)}%`),kpi("Taxa fechamento",`${taxaPct(closed,co.length)}%`),kpi("Receita ganha",moedaRelatorio(won.reduce((a,d)=>a+d._VALOR,0))),kpi("Ticket médio (coorte por criação)",moedaRelatorio(won.length?won.reduce((a,d)=>a+d._VALOR,0)/won.length:0))],
         [{titulo:"Conversão histórica por estágio",dados:rows,colunas:[{label:"Estágio",valor:"ESTAGIO"},{label:"Deals que passaram",valor:"VISITARAM"},{label:"Ganhos",valor:"GANHOS"},{label:"Conversão para ganho",valor:(x)=>`${x.CONVERSAO_PCT}%`}]}],
-        "Ganho = contrato assinado no Financeiro (não apenas \"Negócios Ganhos\" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa.");
+        `Ganho = contrato assinado no Financeiro (não apenas "Negócios Ganhos" no Comercial); negócio ganho no Comercial e depois cancelado no Financeiro conta como perda. Conversão por estágio considera negócios da coorte que historicamente passaram pela etapa. Oportunidades = Ganhos + Perdas + Em aberto + Piloto (em teste) — confira: ${co.length} = ${won.length} + ${lost.length} + ${aberto.length} + ${piloto.length}. Piloto fica fora de "Em aberto" de propósito (mesma regra usada no resto do catálogo: é etapa de teste, não pipeline aberto de verdade), mas segue contado no total da coorte. Win Rate (fechados) considera só quem já foi decidido; Conversão da coorte p/ ganho olha para o total, incluindo quem ainda está em aberto.`);
     }
 
     else if(chave==="aging_sla"){
