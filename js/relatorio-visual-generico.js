@@ -58,11 +58,18 @@ function relatorioVisualTipoKpi(anim) {
 // principal (primeiro percentual), receita (primeiro R$), contagens e a
 // "composição" — subconjunto de contagens que soma exatamente a primeira
 // (ex.: Oportunidades = Ganhos + Perdas + Em aberto + Piloto).
+// Compartilhado com pontosDeAtencaoGenerico: um KPI de alerta ("Sem CLOSEDATE",
+// "CLOSEDATE vencida", "Fora SLA"...) nunca deve virar o indicador principal
+// do hero/bento nem a base da composição — ele continua na lista completa
+// (gaveta) e no banner de atenção, só não disputa destaque.
+var RELATORIO_VISUAL_PADROES_ALERTA = /vencid|atrasad|sem atividade|sem closedate|sem clientedate|fora do sla|fora sla|cr[ií]tico|sem contato|pendente|não localizado/i;
+
 function relatorioVisualClassificarKpis(kpis) {
   var lista = (kpis || []).map(function (k, i) { var anim = relatorioVisualKpiAnimacao(k.valor); return { indice: i, rotulo: k.rotulo, valor: k.valor, descricao: k.descricao || "", anim: anim, tipo: relatorioVisualTipoKpi(anim) }; });
-  var porTipo = function (t) { return lista.filter(function (k) { return k.tipo === t; }); };
+  var destacaveis = lista.filter(function (k) { return !RELATORIO_VISUAL_PADROES_ALERTA.test(k.rotulo || ""); });
+  var porTipo = function (t) { return destacaveis.filter(function (k) { return k.tipo === t; }); };
   var contagens = porTipo("contagem"), pcts = porTipo("pct"), moedas = porTipo("moeda"), unidades = porTipo("unidade");
-  var primario = pcts[0] || contagens[0] || lista[0] || null;
+  var primario = pcts[0] || contagens[0] || destacaveis[0] || lista[0] || null;
   var composicao = null;
   if (contagens.length >= 3) {
     var base = contagens[0], partes = contagens.slice(1);
@@ -190,10 +197,9 @@ function relatorioVisualNotaEmItens(nota) {
 }
 
 function pontosDeAtencaoGenerico(kpis) {
-  var PADROES = /vencid|atrasad|sem atividade|sem closedate|sem clientedate|fora do sla|fora sla|cr[ií]tico|sem contato|pendente|não localizado/i;
   var achados = (kpis || []).filter(function (x) {
     var n = Number(String(x.valor).replace(/[^\d,.-]/g, "").replace(",", "."));
-    return PADROES.test(x.rotulo || "") && Number.isFinite(n) && n > 0;
+    return RELATORIO_VISUAL_PADROES_ALERTA.test(x.rotulo || "") && Number.isFinite(n) && n > 0;
   });
   if (!achados.length) return "";
   var itens = achados.map(function (x) { return "<li><strong>" + escapeHtmlRelatorio(x.valor) + "</strong> — " + escapeHtmlRelatorio(x.rotulo) + "</li>"; }).join("");
@@ -343,7 +349,7 @@ function relatorioVisualVisualHtml(t, tv) {
     var line = dados.map(function (d, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(ys[i]).toFixed(1); }).join(" ");
     var area = line + " L " + x(dados.length - 1).toFixed(1) + " " + (T + ih) + " L " + x(0).toFixed(1) + " " + (T + ih) + " Z";
     var grade = [0, .25, .5, .75, 1].map(function (f) { var yy = y(yMax * f); return '<line class="grade" x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy + '"/><text x="4" y="' + (yy + 4) + '">' + (tv.ehPct ? Math.round(yMax * f) + "%" : Math.round(yMax * f).toLocaleString("pt-BR")) + "</text>"; }).join("");
-    var fmtY = function (v) { return tv.ehPct ? relatorioVisualPct(v, 2) : Number(v).toLocaleString("pt-BR"); };
+    var fmtY = function (v) { return tv.ehPct ? relatorioVisualPct(v, 2) : relatorioVisualFormatarNumero(v, tv.yChave); };
     var pontos = dados.map(function (d, i) { var m = String(d[tv.mesChave]), lab = m.slice(5, 7) + "/" + m.slice(2, 4); return '<circle class="point' + (temVol && vol[i] <= 4 ? " parcial" : "") + '" cx="' + x(i) + '" cy="' + y(ys[i]) + '" r="4"><title>' + escapeHtmlRelatorio(m + ": " + fmtY(ys[i]) + (temVol ? " · " + vol[i] + " registros" : "")) + '</title></circle><text text-anchor="middle" x="' + x(i) + '" y="' + (H - 21) + '">' + lab + "</text>" + (i === dados.length - 1 ? '<text class="val" text-anchor="end" x="' + (x(i) - 6) + '" y="' + (y(ys[i]) - 10) + '">' + fmtY(ys[i]) + "</text>" : ""); }).join("");
     var svg = '<div class="v-tendencia"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Tendência"><defs><linearGradient id="gradTend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff5618" stop-opacity=".18"/><stop offset="100%" stop-color="#ff5618" stop-opacity="0"/></linearGradient></defs>' + grade + barras + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + pontos + "</svg>" +
       '<div class="v-legenda"><span><i></i>' + escapeHtmlRelatorio(relatorioVisualRotuloBonito(tv.yChave)) + "</span>" + (temVol ? '<span><i class="bar"></i>Volume de registros</span><span><i class="parcial"></i>amostra de até 4 registros</span>' : "") + "</div></div>";

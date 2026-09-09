@@ -2196,75 +2196,116 @@ function cockpitExportarJSON() {
   baixarArquivo(JSON.stringify(payload, null, 2), `cockpit_comercial_${dataHoje()}.json`, "application/json;charset=utf-8;");
 }
 
-// Constrói os cards de KPI (grid simples) reaproveitando cockpitListaKpisExport,
-// agrupados por bloco — usado tanto no export "resumo" quanto no "completo".
-function cockpitHtmlKpiBlocos(cache, blocosIncluir) {
-  const linhas = cockpitListaKpisExport(cache);
-  const porBloco: Record<string, any[]> = {};
-  linhas.forEach((l) => {
-    if (blocosIncluir && !blocosIncluir.includes(l.bloco)) return;
-    (porBloco[l.bloco] ||= []).push(l);
-  });
-  return Object.entries(porBloco).map(([bloco, itens]) => {
-    const cards = itens.map((it) => `<div class="kpi"><div class="label">${escapeHtmlRelatorio(it.indicador)}</div><div class="value">${escapeHtmlRelatorio(String(it.valor))}${it.unidade && it.valor !== "não disponível" ? ` <span style="font-size:.6em;color:var(--muted)">${escapeHtmlRelatorio(it.unidade)}</span>` : ""}</div></div>`).join("");
-    return `<h2 class="section">${escapeHtmlRelatorio(bloco)}</h2><div class="kpis">${cards}</div>`;
-  }).join("");
+// v43 — mesmo motor visual do Catálogo (ver js/relatorio-visual-generico.js):
+// em vez de montar um HTML próprio, cockpitMontarResultadoVisual traduz o
+// snapshot já calculado (cache) para o formato {kpis, tabelas} do motor
+// genérico, que decide sozinho gráfico/ranking por tabela.
+function cockpitFormatarValorTexto(valor, unidade) {
+  if (valor == null || valor === "não disponível") return "não disponível";
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return String(valor);
+  if (unidade === "R$") return moedaRelatorio(n);
+  if (unidade === "%") return `${valor}%`;
+  if (unidade === "dias") return `${valor} dia${n === 1 ? "" : "s"}`;
+  if (unidade === "x") return `${valor}x`;
+  if (unidade === "pp") return `${valor} p.p.`;
+  return String(valor);
 }
 
-function cockpitHtmlAlertas(cache) {
-  const info = cache.alertasInfo;
-  if (!info?.lista?.length) return `<p class="small-note">Sem alertas neste snapshot.</p>`;
-  const icone = { critico: "🔴", atencao: "🟡", positivo: "🟢" };
-  return `<div class="month-list">` + info.lista.map((a) =>
-    `<div class="vcard" style="padding:12px 16px;"><div class="vcard-name">${icone[a.nivel] || ""} ${escapeHtmlRelatorio(a.motivo)}</div>` +
-    (a.valor ? `<div class="vcard-stats">${escapeHtmlRelatorio(a.valor)}</div>` : "") +
-    `<div class="small-note">Ação sugerida: ${escapeHtmlRelatorio(a.acao)}</div></div>`
-  ).join("") + `</div>`;
+function cockpitMontarResultadoVisual(completo) {
+  const cache = cockpitExigirCache();
+  if (!cache) return null;
+  const { c, g, s, q, alertasInfo } = cache;
+  const titulo = completo ? "Relatório Executivo Completo" : "Cockpit Comercial";
+  const subtitulo = completo
+    ? "Resumo Executivo, Resultado do Mês, Forecast, Saúde do Pipeline, Proteção de Receita, Pipeline por Estágio, Eficiência da Máquina, Geração de Pipeline, SDR e Qualidade dos Dados — a partir do snapshot já calculado nesta sessão do Cockpit."
+    : "Snapshot dos KPIs do Cockpit Comercial no momento da exportação — mesmos números já calculados na tela, sem novo acesso ao Bitrix.";
+
+  const linhas = cockpitListaKpisExport(cache);
+  const porBloco: Record<string, any[]> = {};
+  linhas.forEach((l) => { (porBloco[l.bloco] ||= []).push(l); });
+
+  const kpis = (porBloco["Resultado do Mês"] || []).map((l) => kpi(l.indicador, cockpitFormatarValorTexto(l.valor, l.unidade)));
+  ["Forecast total do mês", "Gap do Forecast"].forEach((nome) => {
+    const it = (porBloco["Forecast"] || []).find((l) => l.indicador === nome);
+    if (it) kpis.push(kpi(it.indicador, cockpitFormatarValorTexto(it.valor, it.unidade)));
+  });
+
+  const tabelaIndicadorValor = (titulo, itens, excluir: string[] = []) => {
+    const dados = (itens || []).filter((l) => !excluir.includes(l.indicador)).map((l) => ({ INDICADOR: l.indicador, VALOR: cockpitFormatarValorTexto(l.valor, l.unidade) }));
+    return dados.length ? { titulo, dados, colunas: [{ label: "Indicador", valor: "INDICADOR" }, { label: "Valor", valor: "VALOR" }] } : null;
+  };
+
+  const tabelas: any[] = [];
+  tabelas.push(tabelaIndicadorValor("Forecast", porBloco["Forecast"], ["Forecast total do mês", "Gap do Forecast"]));
+  tabelas.push(tabelaIndicadorValor("Saúde do Pipeline", porBloco["Saúde do Pipeline"]));
+
+  if ((c.estagiosForecast || []).length) {
+    tabelas.push({
+      titulo: "Pipeline por Estágio",
+      descricao: "Valor de pipeline aberto por estágio do funil Comercial — a barra mostra a participação de cada estágio no total.",
+      dados: c.estagiosForecast.map((eg) => ({ ESTAGIO: eg.estagio, VALOR: Number(eg.valor) || 0 })),
+      colunas: [{ label: "Estágio", valor: "ESTAGIO" }, { label: "Valor", valor: (r) => moedaRelatorio(r.VALOR), html: true }],
+    });
+  }
+
+  if ((c.protecao || []).length) {
+    tabelas.push({
+      titulo: "Proteção de Receita",
+      descricao: "Cobertura de pipeline elegível contra a meta de cada mês (M, M+1, M+2, M+3) — Coverage é pipeline elegível ÷ gap da meta.",
+      dados: c.protecao.map((p) => ({
+        MES: p.label, META: p.meta ? moedaRelatorio(p.meta) : "—", PIPELINE: moedaRelatorio(p.pipeline || 0),
+        COVERAGE: p.coverage != null ? `${Math.round(p.coverage * 100) / 100}x` : "—",
+        STATUS: p.status?.rotulo || "—", RECOMENDADO: p.coverageRecomendado != null ? `${Math.round(p.coverageRecomendado * 100) / 100}x` : "—",
+      })),
+      colunas: [{ label: "Mês", valor: "MES" }, { label: "Meta", valor: "META" }, { label: "Pipeline elegível", valor: "PIPELINE" }, { label: "Coverage", valor: "COVERAGE" }, { label: "Status", valor: "STATUS" }, { label: "Recomendado", valor: "RECOMENDADO" }],
+    });
+  }
+
+  if (alertasInfo?.lista?.length) {
+    const icone = { critico: "🔴", atencao: "🟡", positivo: "🟢" };
+    tabelas.push({
+      titulo: "Alertas Gerenciais",
+      descricao: "Pontos que pedem decisão agora, na mesma ordem em que aparecem no Cockpit.",
+      dados: alertasInfo.lista.map((a) => ({ NIVEL: `${icone[a.nivel] || ""} ${a.nivel}`, MOTIVO: a.motivo, VALOR: a.valor || "—", ACAO: a.acao })),
+      colunas: [{ label: "Nível", valor: "NIVEL" }, { label: "Motivo", valor: "MOTIVO" }, { label: "Valor", valor: "VALOR" }, { label: "Ação sugerida", valor: "ACAO" }],
+    });
+  }
+
+  tabelas.push(tabelaIndicadorValor("Eficiência da Máquina", porBloco["Eficiência da Máquina"]));
+  if (g) tabelas.push(tabelaIndicadorValor("Geração de Pipeline", porBloco["Geração de Pipeline"]));
+  if (s) tabelas.push(tabelaIndicadorValor("SDR (resumo)", porBloco["SDR (resumo)"]));
+
+  if (q) {
+    tabelas.push({
+      titulo: "Qualidade dos Dados",
+      descricao: "Completude (% preenchido) de cada campo-chave, mais o Data Quality Score geral.",
+      dados: [...(q.campos || []).map((f) => ({ CAMPO: f.label, PCT: Number(f.pct) || 0 })), { CAMPO: "Data Quality Score (geral)", PCT: Number(q.dataQualityScore) || 0 }],
+      colunas: [{ label: "Campo", valor: "CAMPO" }, { label: "Completude", valor: (r) => `${r.PCT}%` }],
+    });
+  }
+
+  const tabelasFiltradas = tabelas.filter(Boolean);
+
+  let nota = 'Os números vêm do snapshot já calculado nesta sessão do Cockpit — nenhuma chamada nova ao Bitrix é feita ao exportar. "não disponível" indica um indicador que depende de um filtro ou fonte não configurada nesta sessão (ex.: meta mensal, SDR).';
+  if (completo) {
+    nota += " Origem, Produtos e Clientes não são recalculados aqui — use o Catálogo de Relatórios, a Análise SDR/Diário SDR e o Forecast semanal, no mesmo portal, para esse detalhamento.";
+  }
+
+  const idx = (t) => tabelasFiltradas.findIndex((x) => x.titulo === t);
+  const capitulos: any[] = [];
+  if (idx("Forecast") > -1) capitulos.push({ antes: idx("Forecast"), titulo: "Previsão e cobertura de meta.", descricao: "Forecast, saúde do pipeline e proteção de receita mês a mês." });
+  if (idx("Alertas Gerenciais") > -1) capitulos.push({ antes: idx("Alertas Gerenciais"), titulo: "O que pede decisão agora.", descricao: "Alertas gerados automaticamente a partir dos mesmos dados do snapshot." });
+  if (idx("Eficiência da Máquina") > -1) capitulos.push({ antes: idx("Eficiência da Máquina"), titulo: "Como a máquina comercial está performando.", descricao: "Win Rate, ciclo de vendas e confirmação Comercial → Financeiro." });
+
+  return { chave: completo ? "cockpit_completo" : "cockpit_resumo", titulo, subtitulo, kpis, tabelas: tabelasFiltradas, nota, capitulos };
 }
 
 // Gera o HTML autônomo do Cockpit (snapshot resumido) ou do Relatório
-// Executivo Completo (mais seções + alertas + links para o Catálogo).
-// completo=false → só os KPIs de topo, igual ao Cockpit na tela.
-// completo=true  → adiciona Alertas Gerenciais e Pipeline por Estágio por
-// extenso, e uma seção final com links para os relatórios que já existem no
-// projeto para Origem/Produtos/Clientes (não recalculados aqui).
+// Executivo Completo (mais seções) usando o mesmo motor visual do Catálogo.
 function cockpitGerarHTMLExport(completo) {
-  const cache = cockpitExigirCache();
-  if (!cache) return "";
-  const marca = marcaAtiva();
-  const paginaHome = `${marca.prefixoArquivo}home.html`;
-  const agora = new Date();
-  const carimbo = formatarDataBR(formatarDataISO(agora)) + " " + String(agora.getHours()).padStart(2, "0") + ":" + String(agora.getMinutes()).padStart(2, "0");
-  const titulo = completo ? "Relatório Executivo Completo" : "Cockpit Comercial";
-  const cabecalhoInfo = completo
-    ? `Resumo Executivo (= Situação Comercial Agora), Resultado do Mês, Forecast, Saúde do Pipeline, Proteção de Receita M/M+1/M+2/M+3, Pipeline por Estágio, Eficiência da Máquina, Geração de Pipeline, SDR, Qualidade dos Dados e Alertas Gerenciais — tudo a partir do snapshot já calculado nesta sessão do Cockpit.`
-    : `Snapshot dos KPIs do Cockpit Comercial no momento da exportação — mesmos números já calculados na tela, sem novo acesso ao Bitrix.`;
-
-  let corpo = `<div class="wrap"><div class="overview-panel" id="visao-geral"><h2 class="section" style="margin-top:0;">${escapeHtmlRelatorio(titulo)}</h2><p class="section-sub">${cabecalhoInfo}</p></div>`;
-
-  corpo += cockpitHtmlKpiBlocos(cache, ["Resultado do Mês", "Forecast", "Saúde do Pipeline", "Eficiência da Máquina"]);
-
-  corpo += `<h2 class="section">Alertas Gerenciais</h2>${cockpitHtmlAlertas(cache)}`;
-
-  corpo += cockpitHtmlKpiBlocos(cache, ["Proteção de Receita", "Pipeline por Estágio", "Geração de Pipeline", "SDR (resumo)", "Qualidade dos Dados"]);
-
-  if (completo) {
-    corpo += `<h2 class="section">Outras análises (relatórios completos do projeto)</h2>` +
-      `<p class="section-sub">O Cockpit não agrega dados de Origem, Produtos ou Clientes numa seção própria (essas fórmulas já existem no Catálogo de Relatórios e não foram duplicadas aqui). Abra a ferramenta e use, na mesma página:</p>` +
-      `<ul><li><strong>Catálogo de Relatórios</strong> — origem, produtos, clientes, aging/SLA, ganhos e perdas por ciclo.</li>` +
-      `<li><strong>Análise SDR / Diário SDR</strong> — leads trabalhados, reuniões, conversão Lead → Oportunidade.</li>` +
-      `<li><strong>Forecast semanal</strong> — visão semana a semana com o mesmo detalhamento de fechados/pendentes/pipeline.</li></ul>` +
-      `<p class="small-note">Este HTML é estático (baixado do navegador) e não tem link direto de volta à ferramenta — reabra "${paginaHome}" e navegue pelos menus para essas telas.</p>`;
-  }
-
-  corpo += `</div>`;
-
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlRelatorio(titulo)} — ${escapeHtmlRelatorio(marca.nome)}</title><style>${modeloExecutivoCssParaMarca(marca)}</style></head><body>` +
-    `<div class="letterhead"><div class="letterhead-inner"><div class="letterhead-brand">${marca.logoSvg}<div class="letterhead-divider"></div><div class="letterhead-tagline">${escapeHtmlRelatorio(marca.tagline)}</div></div><div class="letterhead-ref"><strong>${escapeHtmlRelatorio(titulo)}</strong><br>Gerado em ${carimbo}</div></div></div>` +
-    `<header class="hero"><div class="hero-inner"><p class="eyebrow">Cockpit Comercial · Bitrix24</p><h1>${escapeHtmlRelatorio(titulo)}</h1><p class="subtitle">${cabecalhoInfo}</p></div></header>` +
-    corpo +
-    `<footer><div class="footer-brand">${marca.logoSvg}<span>${escapeHtmlRelatorio(marca.nome)}</span></div>${escapeHtmlRelatorio(marca.nome)} · ${escapeHtmlRelatorio(titulo)} · gerado em ${carimbo} · nenhum webhook/credencial incluído neste arquivo.</footer>` +
-    `</body></html>`;
+  const r = cockpitMontarResultadoVisual(completo);
+  return r ? gerarHTMLRelatorioVisualGenerico(r) : "";
 }
 
 function cockpitAbrirHTMLExport() {
